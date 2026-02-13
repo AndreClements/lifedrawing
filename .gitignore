@@ -1,0 +1,26 @@
+# Dependencies
+/vendor/
+
+# Environment
+.env
+
+# Storage (runtime data)
+/storage/logs/*.log
+/storage/cache/*
+/storage/sessions/*
+
+# Uploads (user content)
+/public/assets/uploads/
+
+# IDE / OS
+*.swp
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Claude Code
+.claude/
+
+# Windows artifacts
+nul

@@ -1,0 +1,67 @@
+<?php $uploadService = app('upload'); ?>
+
+<section class="profile-detail">
+    <div class="profile-header">
+        <h2><?= e($profile['display_name']) ?></h2>
+        <?php if ($profile['bio']): ?>
+            <p class="lead"><?= nl2br(e($profile['bio'])) ?></p>
+        <?php endif; ?>
+
+        <?php if (app('auth')->currentUserId() === (int) $profile['id']): ?>
+            <a href="<?= route('profiles.edit') ?>" class="btn btn-outline">Edit Profile</a>
+        <?php endif; ?>
+    </div>
+
+    <!-- Stats -->
+    <div class="stats-bar">
+        <div class="stat">
+            <span class="stat-value"><?= $profile['total_sessions'] ?></span>
+            <span class="stat-label">Sessions</span>
+        </div>
+        <div class="stat">
+            <span class="stat-value"><?= $profile['total_artworks'] ?></span>
+            <span class="stat-label">Artworks</span>
+        </div>
+        <div class="stat">
+            <span class="stat-value"><?= $profile['current_streak'] ?></span>
+            <span class="stat-label">Week Streak</span>
+        </div>
+        <div class="stat">
+            <span class="stat-value"><?= $profile['longest_streak'] ?></span>
+            <span class="stat-label">Best Streak</span>
+        </div>
+    </div>
+
+    <!-- Claimed Artworks -->
+    <?php if (!empty($artworks)): ?>
+        <h3>Artworks</h3>
+        <div class="gallery-grid">
+            <?php foreach ($artworks as $artwork): ?>
+                <div class="artwork-thumb">
+                    <img src="<?= e($uploadService->url($artwork['thumbnail_path'] ?? $artwork['file_path'])) ?>"
+                         alt="<?= e($artwork['caption'] ?? 'Artwork') ?>"
+                         loading="lazy">
+                    <div class="artwork-overlay">
+                        <span><?= e($artwork['session_title']) ?></span>
+                        <small><?= e($artwork['claim_type']) ?> &middot; <?= format_date($artwork['session_date']) ?></small>
+                    </div>
+                </div>
+            <?php endforeach; ?>
+        </div>
+    <?php endif; ?>
+
+    <!-- Session History -->
+    <?php if (!empty($sessions)): ?>
+        <h3>Session History</h3>
+        <ul class="session-history">
+            <?php foreach ($sessions as $s): ?>
+                <li>
+                    <a href="<?= route('sessions.show', ['id' => $s['id']]) ?>">
+                        <?= format_date($s['session_date']) ?> — <?= e($s['title']) ?>
+                    </a>
+                    <small>(<?= e($s['role']) ?>)</small>
+                </li>
+            <?php endforeach; ?>
+        </ul>
+    <?php endif; ?>
+</section>
