@@ -185,6 +185,12 @@ final class SessionController extends BaseController
             ['title' => $title, 'date' => $date]
         );
 
+        // Notify opted-in users about the new session
+        $session = $this->table('ld_sessions')->where('id', '=', (int) $id)->first();
+        if ($session) {
+            app('notifications')->sessionCreated($session, $this->userId());
+        }
+
         return Response::redirect(route('sessions.show', ['id' => hex_id((int) $id, $title)]));
     }
 
@@ -512,6 +518,9 @@ final class SessionController extends BaseController
             $sessionId,
             ['previous_status' => $session['status']]
         );
+
+        // Notify opted-in participants about the cancellation
+        app('notifications')->sessionCancelled($session);
 
         return Response::redirect(route('sessions.show', ['id' => hex_id($sessionId, session_title($session))]));
     }

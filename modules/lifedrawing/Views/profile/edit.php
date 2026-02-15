@@ -62,6 +62,36 @@
             </div>
         </div>
 
+        <hr>
+        <h3>Email Notifications</h3>
+        <p class="text-muted">Choose which emails you'd like to receive. All off by default.</p>
+
+        <div class="notification-prefs">
+            <label class="checkbox-label">
+                <input type="checkbox" name="notify_new_session" value="1"
+                       <?= !empty($user['notify_new_session']) ? 'checked' : '' ?>>
+                <span><strong>New session announced</strong> — When a new drawing session is scheduled</span>
+            </label>
+
+            <label class="checkbox-label">
+                <input type="checkbox" name="notify_session_cancelled" value="1"
+                       <?= !empty($user['notify_session_cancelled']) ? 'checked' : '' ?>>
+                <span><strong>Session cancelled</strong> — When a session you've joined is cancelled</span>
+            </label>
+
+            <label class="checkbox-label">
+                <input type="checkbox" name="notify_claim_resolved" value="1"
+                       <?= !empty($user['notify_claim_resolved']) ? 'checked' : '' ?>>
+                <span><strong>Claim resolved</strong> — When your artwork claim is approved or rejected</span>
+            </label>
+
+            <label class="checkbox-label">
+                <input type="checkbox" name="notify_comment" value="1"
+                       <?= !empty($user['notify_comment']) ? 'checked' : '' ?>>
+                <span><strong>New comment</strong> — When someone comments on artwork you've claimed</span>
+            </label>
+        </div>
+
         <div class="form-actions">
             <button type="submit" class="btn">Save</button>
             <a href="<?= route('profiles.show', ['id' => hex_id($user['id'])]) ?>" class="btn btn-outline">Cancel</a>

@@ -179,6 +179,11 @@ final class Kernel
                 encryption: $cfg['encryption'],
             );
         });
+
+        // Notification service (email alerts, opt-in)
+        $this->container->singleton('notifications', function (Container $c) {
+            return new \App\Services\NotificationService($c->get('mail'), $c->get('db'));
+        });
     }
 
     private function loadModules(): void

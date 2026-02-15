@@ -438,6 +438,29 @@ textarea {
     margin-top: var(--space-lg);
 }
 
+/* === Notification preferences === */
+.notification-prefs {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+    margin: var(--space-md) 0;
+}
+
+.checkbox-label {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-sm);
+    font-family: var(--font-ui);
+    font-size: 0.9rem;
+    cursor: pointer;
+    line-height: 1.4;
+}
+
+.checkbox-label input[type="checkbox"] {
+    margin-top: 0.25em;
+    flex-shrink: 0;
+}
+
 /* === Consent page === */
 .consent-form .consent-text {
     background: var(--color-surface);

@@ -122,6 +122,9 @@ final class ClaimController extends BaseController
             ['claim_id' => $claimId, 'claimant_id' => $claim['claimant_id']]
         );
 
+        // Notify claimant if they opted in
+        app('notifications')->claimResolved($claim, $newStatus, (int) $claim['artwork_id']);
+
         if ($request->isHtmx()) {
             $label = $newStatus === 'approved' ? 'Approved' : 'Rejected';
             $class = $newStatus === 'approved' ? 'badge-success' : 'badge-error';

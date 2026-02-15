@@ -415,6 +415,9 @@ final class GalleryController extends BaseController
             ['comment_id' => $commentId]
         );
 
+        // Notify claimed artists/models about the new comment
+        app('notifications')->artworkCommented($artworkId, $this->userId(), $body);
+
         return Response::redirect(route('artworks.show', ['id' => hex_id($artworkId)]) . '#comments');
     }
 }
