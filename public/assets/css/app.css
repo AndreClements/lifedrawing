@@ -2,6 +2,50 @@
    Typography-first. Let the art breathe.
    CSS Custom Properties for theming. Minimal chrome. */
 
+/* === IBM Plex (self-hosted) === */
+@font-face {
+    font-family: 'IBM Plex Serif';
+    src: url('../fonts/IBMPlexSerif-Regular.woff2') format('woff2');
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+}
+@font-face {
+    font-family: 'IBM Plex Serif';
+    src: url('../fonts/IBMPlexSerif-Bold.woff2') format('woff2');
+    font-weight: 700;
+    font-style: normal;
+    font-display: swap;
+}
+@font-face {
+    font-family: 'IBM Plex Serif';
+    src: url('../fonts/IBMPlexSerif-Italic.woff2') format('woff2');
+    font-weight: 400;
+    font-style: italic;
+    font-display: swap;
+}
+@font-face {
+    font-family: 'IBM Plex Sans';
+    src: url('../fonts/IBMPlexSans-Regular.woff2') format('woff2');
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+}
+@font-face {
+    font-family: 'IBM Plex Sans';
+    src: url('../fonts/IBMPlexSans-SemiBold.woff2') format('woff2');
+    font-weight: 600;
+    font-style: normal;
+    font-display: swap;
+}
+@font-face {
+    font-family: 'IBM Plex Mono';
+    src: url('../fonts/IBMPlexMono-Regular.woff2') format('woff2');
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+}
+
 /* === Tokens === */
 :root {
     --color-bg: #fafaf8;
@@ -13,9 +57,9 @@
     --color-link: #1a1a1a;
     --color-link-hover: #555;
 
-    --font-body: 'Georgia', 'Times New Roman', serif;
-    --font-ui: system-ui, -apple-system, sans-serif;
-    --font-mono: 'Menlo', 'Consolas', monospace;
+    --font-body: 'IBM Plex Serif', Georgia, serif;
+    --font-ui: 'IBM Plex Sans', system-ui, sans-serif;
+    --font-mono: 'IBM Plex Mono', Menlo, Consolas, monospace;
 
     --space-xs: 0.25rem;
     --space-sm: 0.5rem;
@@ -457,6 +501,14 @@ textarea {
     margin-bottom: var(--space-xs);
 }
 
+.card-subtitle {
+    font-family: var(--font-ui);
+    font-size: 0.7rem;
+    color: var(--color-text-muted);
+    letter-spacing: 0.02em;
+    margin-bottom: var(--space-xs);
+}
+
 .card-meta, .card-stats {
     font-family: var(--font-ui);
     font-size: 0.85rem;
@@ -497,7 +549,60 @@ textarea {
     .badge-cancelled { background: #7f1d1d; color: #fca5a5; }
 }
 
+/* === Tab bar === */
+.tab-bar {
+    display: flex;
+    gap: 0;
+    border-bottom: 2px solid var(--color-border);
+    margin-bottom: var(--space-lg);
+    margin-top: var(--space-md);
+}
+
+.tab {
+    font-family: var(--font-ui);
+    font-size: 0.9rem;
+    font-weight: 500;
+    padding: var(--space-sm) var(--space-md);
+    text-decoration: none;
+    color: var(--color-text-muted);
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+    transition: color 0.2s, border-color 0.2s;
+}
+
+.tab:hover { color: var(--color-text); }
+
+.tab-active {
+    color: var(--color-text);
+    border-bottom-color: var(--color-accent, #1a1a2e);
+    font-weight: 600;
+}
+
+/* === Pagination === */
+.pagination {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: var(--space-md);
+    margin-top: var(--space-xl);
+    padding-top: var(--space-md);
+    border-top: 1px solid var(--color-border);
+}
+
+.pagination-info {
+    font-family: var(--font-ui);
+    font-size: 0.85rem;
+    color: var(--color-text-muted);
+}
+
 /* === Session detail === */
+.session-subtitle {
+    font-family: var(--font-ui);
+    font-size: 0.9rem;
+    color: var(--color-text-muted);
+    margin-bottom: var(--space-xs);
+}
+
 .session-meta {
     font-family: var(--font-ui);
     font-size: 0.9rem;

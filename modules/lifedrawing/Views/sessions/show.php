@@ -3,7 +3,10 @@
 <section class="session-detail">
     <div class="section-header">
         <div>
-            <h2><?= e(session_title($session)) ?></h2>
+            <h2><em><?= e(session_title($session)) ?></em></h2>
+            <?php if (!empty($session['subtitle'])): ?>
+                <div class="session-subtitle"><?= e($session['subtitle']) ?></div>
+            <?php endif; ?>
             <div class="session-meta">
                 <span><?= format_date($session['session_date']) ?></span>
                 <span>&middot;</span>

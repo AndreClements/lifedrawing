@@ -62,6 +62,13 @@
         </div>
 
         <div class="form-group">
+            <label for="subtitle">Format</label>
+            <input type="text" id="subtitle" name="subtitle"
+                   value="<?= e($old['subtitle'] ?? 'Regular Session Format') ?>"
+                   placeholder="Regular Session Format">
+        </div>
+
+        <div class="form-group">
             <label for="description">Description</label>
             <textarea id="description" name="description"
                       placeholder="What to expect, any special theme, materials needed..."><?= e($old['description'] ?? '') ?></textarea>

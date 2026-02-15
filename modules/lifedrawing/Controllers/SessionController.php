@@ -15,7 +15,7 @@ use App\Response;
  */
 final class SessionController extends BaseController
 {
-    /** List all sessions (public). Upcoming first, then past. */
+    /** List sessions (public). Tabbed: upcoming (default) or past (paginated). */
     public function index(Request $request): Response
     {
         $enrichSessions = function (array $sessions): array {
@@ -28,31 +28,53 @@ final class SessionController extends BaseController
             return $sessions;
         };
 
+        $activeView = $request->input('view', '') === 'past' ? 'past' : 'upcoming';
         $today = date('Y-m-d');
+        $perPage = 20;
+        $page = max(1, (int) $request->input('page', 1));
+        $totalPages = 1;
 
-        $upcoming = $enrichSessions(
-            $this->table('ld_sessions')
-                ->select('ld_sessions.*', 'u.display_name as facilitator_name')
-                ->leftJoin('users u', 'ld_sessions.facilitator_id = u.id')
-                ->whereIn('status', ['scheduled', 'active'])
-                ->where('session_date', '>=', $today)
-                ->orderBy('session_date', 'ASC')
-                ->limit(20)->get()
-        );
-
-        $past = $enrichSessions(
-            $this->table('ld_sessions')
-                ->select('ld_sessions.*', 'u.display_name as facilitator_name')
-                ->leftJoin('users u', 'ld_sessions.facilitator_id = u.id')
+        if ($activeView === 'upcoming') {
+            $sessions = $enrichSessions(
+                $this->table('ld_sessions')
+                    ->select('ld_sessions.*', 'u.display_name as facilitator_name')
+                    ->leftJoin('users u', 'ld_sessions.facilitator_id = u.id')
+                    ->whereIn('status', ['scheduled', 'active'])
+                    ->where('session_date', '>=', $today)
+                    ->orderBy('session_date', 'ASC')
+                    ->get()
+            );
+        } else {
+            $total = $this->table('ld_sessions')
                 ->where('session_date', '<', $today)
-                ->orderBy('session_date', 'DESC')
-                ->limit(20)->get()
-        );
+                ->count();
+            $totalPages = max(1, (int) ceil($total / $perPage));
+            $page = min($page, $totalPages);
 
-        return $this->render('sessions.index', [
-            'upcoming' => $upcoming,
-            'past' => $past,
-        ], 'Sessions');
+            $sessions = $enrichSessions(
+                $this->table('ld_sessions')
+                    ->select('ld_sessions.*', 'u.display_name as facilitator_name')
+                    ->leftJoin('users u', 'ld_sessions.facilitator_id = u.id')
+                    ->where('session_date', '<', $today)
+                    ->orderBy('session_date', 'DESC')
+                    ->limit($perPage)
+                    ->offset(($page - 1) * $perPage)
+                    ->get()
+            );
+        }
+
+        $data = [
+            'sessions' => $sessions,
+            'activeView' => $activeView,
+            'page' => $page,
+            'totalPages' => $totalPages,
+        ];
+
+        if ($request->isHtmx()) {
+            return $this->partial('sessions._tab_content', $data);
+        }
+
+        return $this->render('sessions.index', $data, 'Sessions');
     }
 
     /** Show a single session with its artworks (public). */
@@ -114,6 +136,7 @@ final class SessionController extends BaseController
         if ($redirect = $this->requireRole('admin', 'facilitator')) return $redirect;
 
         $title = trim($request->input('title', ''));
+        $subtitle = trim($request->input('subtitle', 'Regular Session Format'));
         $date = $request->input('session_date', '');
         $time = $request->input('start_time', '') ?: null;
         $duration = (int) ($request->input('duration_minutes', 180));
@@ -135,6 +158,7 @@ final class SessionController extends BaseController
 
         $id = $this->table('ld_sessions')->insert([
             'title' => $title ?: null,
+            'subtitle' => $subtitle ?: 'Regular Session Format',
             'session_date' => $date,
             'start_time' => $time,
             'duration_minutes' => $duration,

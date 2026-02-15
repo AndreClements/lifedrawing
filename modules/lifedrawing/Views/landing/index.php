@@ -20,7 +20,7 @@
     <section class="next-session">
         <div class="next-session-inner">
             <span class="next-label">Next Session</span>
-            <h2><?= e(session_title($upcoming)) ?></h2>
+            <h2><em><?= e(session_title($upcoming)) ?></em></h2>
             <div class="next-meta">
                 <span><?= format_date($upcoming['session_date']) ?></span>
                 <?php if ($upcoming['start_time']): ?>
@@ -81,7 +81,7 @@
             <?php foreach ($recentSessions as $session): ?>
                 <a href="<?= route('sessions.show', ['id' => hex_id((int) $session['id'], session_title($session))]) ?>" class="card card-link">
                     <div class="card-date"><?= format_date($session['session_date']) ?></div>
-                    <h3><?= e(session_title($session)) ?></h3>
+                    <h3><em><?= e(session_title($session)) ?></em></h3>
                     <div class="card-meta">
                         <?= e($session['venue']) ?>
                         <?php if ($session['facilitator_name'] && can_see_names()): ?>

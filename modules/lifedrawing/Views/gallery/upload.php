@@ -1,6 +1,6 @@
 <section class="auth-form" style="max-width:560px">
     <h2>Upload Artworks</h2>
-    <p class="lead">Session: <?= e(session_title($session)) ?> (<?= format_date($session['session_date']) ?>)</p>
+    <p class="lead">Session: <em><?= e(session_title($session)) ?></em> (<?= format_date($session['session_date']) ?>)</p>
 
     <?php if (!empty($success ?? '')): ?>
         <div class="alert alert-success"><?= e($success) ?></div>
