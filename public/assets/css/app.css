@@ -329,6 +329,17 @@ textarea {
     background: #a02020;
 }
 
+.btn-outline.btn-danger {
+    background: transparent;
+    color: #8b2020;
+    border-color: #8b2020;
+}
+
+.btn-outline.btn-danger:hover {
+    background: #8b2020;
+    color: #fff;
+}
+
 /* === HTMX indicators === */
 .htmx-indicator {
     opacity: 0;
@@ -1436,4 +1447,192 @@ textarea {
 .banking-details td:first-child {
     color: var(--color-text-muted);
     white-space: nowrap;
+}
+
+/* =============================================
+   Participant Manager — facilitator session tool
+   ============================================= */
+
+.participant-manager {
+    margin: var(--space-lg) 0;
+    padding: var(--space-md);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    background: var(--color-surface, var(--color-bg));
+}
+
+.participant-manager h3 { margin-bottom: var(--space-sm); }
+.participant-manager h4 {
+    font-size: 0.95rem;
+    margin-bottom: var(--space-sm);
+}
+
+.participant-manager .participant-list {
+    margin-bottom: var(--space-md);
+}
+
+.participant-manager .participant {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+}
+
+.participant-manager .participant.tentative {
+    opacity: 0.7;
+    font-style: italic;
+}
+
+.btn-icon {
+    font-family: var(--font-ui);
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 0.75rem;
+    padding: 1px 4px;
+    border-radius: 3px;
+    color: var(--color-text-muted);
+    line-height: 1;
+}
+
+.btn-icon:hover {
+    background: var(--color-border);
+    color: var(--color-text);
+}
+
+.btn-remove:hover {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+@media (prefers-color-scheme: dark) {
+    .btn-remove:hover { background: #7f1d1d; color: #fca5a5; }
+}
+
+.add-participant {
+    border-top: 1px solid var(--color-border);
+    padding-top: var(--space-md);
+}
+
+.add-participant-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-md);
+    margin-bottom: var(--space-sm);
+    font-family: var(--font-ui);
+    font-size: 0.9rem;
+}
+
+.radio-inline, .checkbox-inline {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+}
+
+.search-wrapper {
+    position: relative;
+    max-width: 400px;
+}
+
+.search-wrapper .input {
+    width: 100%;
+}
+
+.search-results {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    z-index: 100;
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-top: none;
+    border-radius: 0 0 var(--radius) var(--radius);
+    max-height: 300px;
+    overflow-y: auto;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+.search-results:empty {
+    display: none;
+}
+
+.search-result-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--space-sm) var(--space-md);
+    cursor: pointer;
+    font-family: var(--font-ui);
+    font-size: 0.9rem;
+    color: var(--color-text);
+}
+
+.search-result-item:hover {
+    background: var(--color-border);
+}
+
+.search-result-count {
+    font-size: 0.8rem;
+    color: var(--color-text-muted);
+}
+
+.search-result-empty {
+    padding: var(--space-sm) var(--space-md);
+    font-family: var(--font-ui);
+    font-size: 0.85rem;
+    color: var(--color-text-muted);
+}
+
+/* =============================================
+   WhatsApp Schedule — facilitator tool
+   ============================================= */
+
+.whatsapp-schedule {
+    max-width: 720px;
+}
+
+.whatsapp-controls {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    margin-bottom: var(--space-md);
+    font-family: var(--font-ui);
+    font-size: 0.9rem;
+}
+
+.input-sm {
+    padding: 4px 8px;
+    font-size: 0.9rem;
+    width: auto;
+}
+
+.schedule-output {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+}
+
+.schedule-textarea {
+    width: 100%;
+    padding: var(--space-md);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    background: var(--color-bg);
+    color: var(--color-text);
+    font-family: var(--font-mono, 'Courier New', monospace);
+    font-size: 0.85rem;
+    line-height: 1.6;
+    resize: vertical;
+    white-space: pre;
+}
+
+.copy-schedule {
+    align-self: flex-start;
+}
+
+.header-actions {
+    display: flex;
+    gap: var(--space-sm);
+    align-items: center;
 }

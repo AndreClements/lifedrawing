@@ -255,9 +255,10 @@ final class AuthService
 
     public function authenticateByToken(string $token): ?array
     {
+        $hashed = hash('sha256', $token);
         return $this->db->fetch(
             "SELECT * FROM users WHERE api_token = ? AND consent_state = ?",
-            [$token, ConsentState::Granted->value]
+            [$hashed, ConsentState::Granted->value]
         );
     }
 
@@ -266,7 +267,7 @@ final class AuthService
         $token = bin2hex(random_bytes(32));
         $this->db->execute(
             "UPDATE users SET api_token = ? WHERE id = ?",
-            [$token, $userId]
+            [hash('sha256', $token), $userId]
         );
         $this->logProvenance($userId, 'user.token.generate', 'user', $userId);
         return $token;

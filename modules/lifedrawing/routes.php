@@ -37,6 +37,12 @@ $router->get('/dashboard',         [DashboardController::class, 'index'], 'dashb
 // --- Facilitator routes (auth + role enforced in controllers) ---
 $router->post('/sessions',                 [SessionController::class, 'store'], 'sessions.store');
 $router->get('/sessions/{id}/upload',      [GalleryController::class, 'uploadForm'], 'gallery.upload');
+$router->get('/sessions/{id}/participants/search', [SessionController::class, 'searchParticipants'], 'sessions.participants.search');
+$router->post('/sessions/{id}/participants/add',   [SessionController::class, 'addParticipant'], 'sessions.participants.add');
+$router->post('/sessions/{id}/participants/remove', [SessionController::class, 'removeParticipant'], 'sessions.participants.remove');
+$router->post('/sessions/{id}/participants/tentative', [SessionController::class, 'toggleTentative'], 'sessions.participants.tentative');
+$router->post('/sessions/{id}/cancel',     [SessionController::class, 'cancel'], 'sessions.cancel');
+$router->get('/schedule/whatsapp',         [SessionController::class, 'whatsappSchedule'], 'schedule.whatsapp');
 $router->post('/claims/{id}/resolve',      [ClaimController::class, 'resolve'], 'claims.resolve');
 $router->post('/artworks/{id}/delete',     [GalleryController::class, 'destroy'], 'artworks.destroy');
 

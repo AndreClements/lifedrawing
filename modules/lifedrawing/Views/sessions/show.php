@@ -18,11 +18,24 @@
                     <span>&middot;</span>
                     <span>hosted by <?= visible_name($session['facilitator_name'], 'Facilitator') ?></span>
                 <?php endif; ?>
+                <?php if ($session['status'] === 'cancelled'): ?>
+                    <span>&middot;</span>
+                    <span class="badge-cancelled">Cancelled</span>
+                <?php endif; ?>
             </div>
         </div>
         <div class="session-actions">
             <?php if (app('auth')->hasRole('admin', 'facilitator')): ?>
                 <a href="<?= route('gallery.upload', ['id' => hex_id((int) $session['id'], session_title($session))]) ?>" class="btn">Upload Artworks</a>
+                <?php if ($session['status'] !== 'cancelled'): ?>
+                    <form method="POST" action="<?= route('sessions.cancel', ['id' => hex_id((int) $session['id'], session_title($session))]) ?>" style="display:inline"
+                          class="confirm-action" data-confirm="Cancel this session?">
+                        <?= csrf_field() ?>
+                        <button type="submit" class="btn btn-outline btn-danger">Cancel Session</button>
+                    </form>
+                <?php else: ?>
+                    <span class="badge-cancelled">Cancelled</span>
+                <?php endif; ?>
             <?php endif; ?>
             <?php if (app('auth')->isLoggedIn()): ?>
                 <form method="POST" action="<?= route('sessions.join', ['id' => hex_id((int) $session['id'], session_title($session))]) ?>" style="display:inline"
@@ -43,7 +56,9 @@
     <?php endif; ?>
 
     <!-- Participants -->
-    <?php if (!empty($participants)): ?>
+    <?php if (app('auth')->hasRole('admin', 'facilitator')): ?>
+        <?php include __DIR__ . '/_participant_manager.php'; ?>
+    <?php elseif (!empty($participants)): ?>
         <div class="participants-section">
             <h3>Participants</h3>
             <div class="participant-list">

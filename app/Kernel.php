@@ -200,203 +200,23 @@ final class Kernel
             return Response::json(['status' => 'ok', 'time' => date('c')]);
         }, '_health');
 
-        // Auth routes (core — not module-specific)
-        $this->router->get('/login', function () {
-            if (app('auth')->isLoggedIn()) {
-                return Response::redirect(route('home'));
-            }
-            return Response::html(app('view')->render('layouts.main', [
-                'title' => 'Login — Life Drawing Randburg',
-                'content' => (new Template(LDR_ROOT . '/modules/lifedrawing/Views'))->render('auth.login'),
-            ]));
-        }, 'auth.login');
+        // Auth routes — delegated to AuthController (extracted from Kernel closures)
+        $auth = \Modules\Lifedrawing\Controllers\AuthController::class;
 
-        $this->router->get('/register', function () {
-            if (app('auth')->isLoggedIn()) {
-                return Response::redirect(route('home'));
-            }
-            return Response::html(app('view')->render('layouts.main', [
-                'title' => 'Register — Life Drawing Randburg',
-                'content' => (new Template(LDR_ROOT . '/modules/lifedrawing/Views'))->render('auth.register'),
-            ]));
-        }, 'auth.register');
+        $this->router->get('/login',           [$auth, 'loginForm'], 'auth.login');
+        $this->router->get('/register',        [$auth, 'registerForm'], 'auth.register');
+        $this->router->get('/consent',         [$auth, 'consentForm'], 'auth.consent');
+        $this->router->post('/consent',        [$auth, 'consent'], 'auth.consent.post');
+        $this->router->get('/logout',          [$auth, 'logout'], 'auth.logout');
+        $this->router->get('/forgot-password', [$auth, 'forgotPasswordForm'], 'auth.forgot_password');
+        $this->router->get('/reset-password',  [$auth, 'resetPasswordForm'], 'auth.reset_password');
 
         // Rate-limited auth POST routes (5 attempts per 15 minutes)
-        $this->router->group('', [\App\Middleware\RateLimitAuth::class], function (Router $router) {
-            $router->post('/login', function (Request $req) {
-                $user = app('auth')->attempt(
-                    $req->input('email', ''),
-                    $req->input('password', ''),
-                );
-                if ($user === null) {
-                    return Response::html(app('view')->render('layouts.main', [
-                        'title' => 'Login — Life Drawing Randburg',
-                        'content' => (new Template(LDR_ROOT . '/modules/lifedrawing/Views'))->render('auth.login', [
-                            'error' => 'Invalid email or password.',
-                            'email' => $req->input('email', ''),
-                        ]),
-                    ]));
-                }
-
-                // Set remember-me cookie if requested
-                if ($req->input('remember', '') === '1') {
-                    $auth = app('auth');
-                    $token = $auth->createRememberToken((int) $user['id']);
-                    $auth->setRememberCookie($token);
-                }
-
-                return Response::redirect(route('home'));
-            }, 'auth.login.post');
-
-            $router->post('/register', function (Request $req) {
-                $name = trim($req->input('display_name', ''));
-                $email = trim($req->input('email', ''));
-                $password = $req->input('password', '');
-                $confirm = $req->input('password_confirm', '');
-
-                $errors = [];
-                if ($name === '') $errors[] = 'Display name is required.';
-                if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) $errors[] = 'Valid email is required.';
-                if (strlen($password) < 8) $errors[] = 'Password must be at least 8 characters.';
-                if ($password !== $confirm) $errors[] = 'Passwords do not match.';
-
-                if (!empty($errors)) {
-                    return Response::html(app('view')->render('layouts.main', [
-                        'title' => 'Register — Life Drawing Randburg',
-                        'content' => (new Template(LDR_ROOT . '/modules/lifedrawing/Views'))->render('auth.register', [
-                            'errors' => $errors,
-                            'name' => $name,
-                            'email' => $email,
-                        ]),
-                    ]));
-                }
-
-                try {
-                    $userId = app('auth')->register($name, $email, $password);
-                    app('auth')->attempt($email, $password);
-                    return Response::redirect(route('auth.consent'));
-                } catch (\App\Exceptions\AppException $e) {
-                    return Response::html(app('view')->render('layouts.main', [
-                        'title' => 'Register — Life Drawing Randburg',
-                        'content' => (new Template(LDR_ROOT . '/modules/lifedrawing/Views'))->render('auth.register', [
-                            'errors' => [$e->getMessage()],
-                            'name' => $name,
-                            'email' => $email,
-                        ]),
-                    ]));
-                }
-            }, 'auth.register.post');
-        });
-
-        $this->router->get('/consent', function () {
-            return Response::html(app('view')->render('layouts.main', [
-                'title' => 'Consent — Life Drawing Randburg',
-                'content' => (new Template(LDR_ROOT . '/modules/lifedrawing/Views'))->render('auth.consent'),
-            ]));
-        }, 'auth.consent');
-
-        $this->router->post('/consent', function (Request $req) {
-            $auth = app('auth');
-            $userId = $auth->currentUserId();
-            if ($userId === null) {
-                return Response::redirect(route('auth.login'));
-            }
-            if ($req->input('grant') === 'yes') {
-                $auth->grantConsent($userId);
-            }
-            return Response::redirect(route('home'));
-        }, 'auth.consent.post');
-
-        $this->router->get('/logout', function () {
-            app('auth')->logout();
-            return Response::redirect(route('auth.login'));
-        }, 'auth.logout');
-
-        // Password reset routes (rate-limited with auth category)
-        $this->router->get('/forgot-password', function () {
-            return Response::html(app('view')->render('layouts.main', [
-                'title' => 'Forgot Password — Life Drawing Randburg',
-                'content' => (new Template(LDR_ROOT . '/modules/lifedrawing/Views'))->render('auth.forgot-password'),
-            ]));
-        }, 'auth.forgot_password');
-
-        $this->router->get('/reset-password', function (Request $req) {
-            $token = $req->input('token', '');
-            $email = app('auth')->verifyResetToken($token);
-
-            if ($email === null) {
-                return Response::html(app('view')->render('layouts.main', [
-                    'title' => 'Invalid Link — Life Drawing Randburg',
-                    'content' => (new Template(LDR_ROOT . '/modules/lifedrawing/Views'))->render('auth.reset-expired'),
-                ]));
-            }
-
-            return Response::html(app('view')->render('layouts.main', [
-                'title' => 'Reset Password — Life Drawing Randburg',
-                'content' => (new Template(LDR_ROOT . '/modules/lifedrawing/Views'))->render('auth.reset-password', [
-                    'token' => $token,
-                ]),
-            ]));
-        }, 'auth.reset_password');
-
-        $this->router->group('', [\App\Middleware\RateLimitAuth::class], function (Router $router) {
-            $router->post('/forgot-password', function (Request $req) {
-                $email = trim($req->input('email', ''));
-
-                if ($email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL)) {
-                    $token = app('auth')->createPasswordResetToken($email);
-                    if ($token !== null) {
-                        $resetUrl = config('app.url', 'http://localhost/lifedrawing/public')
-                            . route('auth.reset_password') . '?token=' . $token;
-                        @mail(
-                            $email,
-                            'Password Reset — Life Drawing Randburg',
-                            "You requested a password reset.\n\nClick here to reset your password:\n{$resetUrl}\n\nThis link expires in 1 hour.\n\nIf you did not request this, please ignore this email.",
-                            "From: noreply@lifedrawingrandburg.co.za\r\nContent-Type: text/plain; charset=UTF-8"
-                        );
-                    }
-                }
-
-                // Always show success (anti-enumeration)
-                return Response::html(app('view')->render('layouts.main', [
-                    'title' => 'Check Your Email — Life Drawing Randburg',
-                    'content' => (new Template(LDR_ROOT . '/modules/lifedrawing/Views'))->render('auth.forgot-password-sent'),
-                ]));
-            }, 'auth.forgot_password.post');
-
-            $router->post('/reset-password', function (Request $req) {
-                $token = $req->input('token', '');
-                $password = $req->input('password', '');
-                $confirm = $req->input('password_confirm', '');
-
-                $errors = [];
-                if (strlen($password) < 8) {
-                    $errors[] = 'Password must be at least 8 characters.';
-                }
-                if ($password !== $confirm) {
-                    $errors[] = 'Passwords do not match.';
-                }
-
-                if (!empty($errors)) {
-                    return Response::html(app('view')->render('layouts.main', [
-                        'title' => 'Reset Password — Life Drawing Randburg',
-                        'content' => (new Template(LDR_ROOT . '/modules/lifedrawing/Views'))->render('auth.reset-password', [
-                            'token' => $token,
-                            'errors' => $errors,
-                        ]),
-                    ]));
-                }
-
-                $success = app('auth')->resetPassword($token, $password);
-                if (!$success) {
-                    return Response::html(app('view')->render('layouts.main', [
-                        'title' => 'Invalid Link — Life Drawing Randburg',
-                        'content' => (new Template(LDR_ROOT . '/modules/lifedrawing/Views'))->render('auth.reset-expired'),
-                    ]));
-                }
-
-                return Response::redirect(route('auth.login'));
-            }, 'auth.reset_password.post');
+        $this->router->group('', [\App\Middleware\RateLimitAuth::class], function (Router $router) use ($auth) {
+            $router->post('/login',           [$auth, 'login'], 'auth.login.post');
+            $router->post('/register',        [$auth, 'register'], 'auth.register.post');
+            $router->post('/forgot-password', [$auth, 'forgotPassword'], 'auth.forgot_password.post');
+            $router->post('/reset-password',  [$auth, 'resetPassword'], 'auth.reset_password.post');
         });
     }
 

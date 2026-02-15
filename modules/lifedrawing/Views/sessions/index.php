@@ -2,7 +2,10 @@
     <div class="section-header">
         <h2>Sessions</h2>
         <?php if (app('auth')->hasRole('admin', 'facilitator')): ?>
-            <a href="<?= route('sessions.create') ?>" class="btn">New Session</a>
+            <div class="header-actions">
+                <a href="<?= route('schedule.whatsapp') ?>" class="btn btn-outline">WhatsApp Schedule</a>
+                <a href="<?= route('sessions.create') ?>" class="btn">New Session</a>
+            </div>
         <?php endif; ?>
     </div>
 

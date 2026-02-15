@@ -401,11 +401,19 @@ final class GalleryController extends BaseController
             return Response::notFound('Artwork not found.');
         }
 
-        $this->table('ld_comments')->insert([
+        $commentId = (int) $this->table('ld_comments')->insert([
             'artwork_id' => $artworkId,
             'user_id' => $this->userId(),
             'body' => $body,
         ]);
+
+        $this->provenance->log(
+            $this->userId(),
+            'artwork.comment',
+            'artwork',
+            $artworkId,
+            ['comment_id' => $commentId]
+        );
 
         return Response::redirect(route('artworks.show', ['id' => hex_id($artworkId)]) . '#comments');
     }

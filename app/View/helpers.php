@@ -44,7 +44,7 @@ function route(string $name, array $params = []): string
 }
 
 /** Format a date nicely. */
-function format_date(string $date, string $format = 'j M Y'): string
+function format_date(string $date, string $format = 'D j M Y'): string
 {
     return date($format, strtotime($date));
 }
