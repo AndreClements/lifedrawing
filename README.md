@@ -8,14 +8,18 @@ The model is not an object but a co-participant. What emerges is not just skill,
 
 A digital home for LDR that enables:
 
-- **Session management** — schedule sessions, track participants and roles (artist, model, facilitator, observer), capacity tracking (X/7)
-- **Artwork archive** — facilitator uploads batches of drawings per session, with automatic image processing (EXIF rotation, 10MP cap, WebP thumbnails)
-- **Claim system** — artists and models claim their work/likeness after sessions, building personal portfolios
-- **Comments** — conversation on individual artworks, with artist/model comments surfaced first
+- **Session management** — schedule sessions, track participants and roles (artist, model, facilitator, observer), capacity tracking (X/7), cancellation, tentative bookings
+- **Participant management** — facilitator can add/remove participants, toggle tentative status, search users by name
+- **Artwork archive** — facilitator uploads batches of drawings per session with pose duration and labels, automatic image processing (EXIF rotation, 10MP cap, WebP conversion, three-tier thumbnails)
+- **Claim system** — artists and models claim their work/likeness after sessions, building personal portfolios. Intent-preserving registration: unauthenticated users are redirected through register/login and returned to their claim
+- **Comments** — conversation on individual artworks, with artist/model comments surfaced first and role badges
 - **Consent system** — `pending → granted → withdrawn` state machine, enforced by middleware before identity-exposing operations
-- **Strava-for-artistry** — personal dashboard with attendance streaks, session history, milestone tracking
+- **Strava-for-artistry** — personal dashboard with attendance streaks, weekly heatmap, session timeline, role distribution, milestone tracking
 - **Public profiles** — artists and models build visible portfolios through participation, with name privacy gating (real names only visible to fellow session participants)
-- **FAQ** — community information page with accordion layout
+- **Notifications** — opt-in email alerts for new artworks, claims, and comments, with per-user preference settings
+- **WhatsApp schedule** — facilitator-facing formatted session schedule for sharing to the community WhatsApp group
+- **FAQ** — community information page with CSS-only accordion layout (no inline JS, CSP-safe)
+- **Historical data** — 245 sessions backfilled from facilitator's Google Sheet (2017–2026), ~220 participant stub accounts awaiting real registration and claim
 
 Eventually, this becomes the first "table" in a modular **Artistry Caffe** platform — a template for community spaces where people can define and manage their own creative gatherings.
 
@@ -39,8 +43,8 @@ If you've worked with Laravel, you'll recognise some of the bones:
 - **No Blade** — PHP templates with `<?= ?>` and `<?php ?>`. Layouts work via `extend`/`section`/`yield` in the Template engine, but there's no compilation step, no directive syntax, no template caching.
 - **No Artisan** — a handful of CLI tools (`migrate.php`, `seed.php`, `refresh-stats.php`, `process_images.php`) that do exactly what they say. No code generation, no queue workers, no scheduler abstraction.
 - **No service providers** — services are wired directly in `Kernel::wireServices()`. Explicit, readable, ~30 lines.
-- **No event system** — stats refresh and provenance logging are called inline. When there are 5 controllers, an event bus is a premature abstraction.
-- **No package ecosystem** — one external dependency (HTMX, loaded via CDN). Composer provides the autoloader and nothing else.
+- **No event system** — stats refresh and provenance logging are called inline. When there are 9 controllers, an event bus is a premature abstraction.
+- **No package ecosystem** — two external dependencies: HTMX (loaded via CDN) and PHPMailer (via Composer for SMTP email delivery). The rest is vanilla PHP.
 
 ### What it does differently
 
@@ -63,7 +67,7 @@ lifedrawing/
 ├── public/                     # Document root (Apache points here)
 │   ├── index.php               # Front controller
 │   ├── .htaccess               # URL rewriting
-│   └── assets/                 # CSS, JS, favicon, uploads
+│   └── assets/                 # CSS, JS, favicon, fonts, uploads
 │
 ├── app/                        # Kernel (~15 files)
 │   ├── Kernel.php              # Bootstrap, DI, middleware pipeline, dispatch
@@ -72,9 +76,9 @@ lifedrawing/
 │   ├── Request.php             # HTTP request wrapper
 │   ├── Response.php            # HTTP response with factory methods
 │   ├── Database/               # Connection, Migration, QueryBuilder
-│   ├── Middleware/              # CSRF, Auth, ConsentGate, RateLimiting
+│   ├── Middleware/              # CSRF, Auth, ConsentGate, RateLimiting, SecurityHeaders
 │   ├── Exceptions/             # AppException, DignityException, ConsentException
-│   ├── Services/               # Auth, Upload, ImageProcessor, Provenance, Stats
+│   ├── Services/               # Auth, Upload, ImageProcessor, Provenance, Stats, Mail, Notification
 │   └── View/                   # Template engine + helpers
 │
 ├── modules/
@@ -84,28 +88,30 @@ lifedrawing/
 │       ├── Models/             # Data models
 │       ├── Repositories/       # Data access layer
 │       ├── Views/              # PHP templates with layouts
-│       └── migrations/         # Module-specific SQL (12 migrations)
+│       └── migrations/         # Module-specific SQL (15 migrations)
 │
-├── config/                     # app.php, database.php, auth.php, axioms.php
+├── config/                     # app.php, database.php, auth.php, axioms.php, mail.php
 ├── database/                   # Core migrations (5) + seeds
-├── deploy/                     # Deployment scripts
-├── storage/                    # Logs, cache, sessions
-└── tools/                      # CLI: migrate, seed, refresh-stats, process-images, import-csv
+├── deploy/                     # Deployment scripts + htaccess templates
+├── storage/                    # Logs, cache, sessions, rate-limit state
+└── tools/                      # CLI: migrate, seed, refresh-stats, process-images, import-csv, reset-production, test-mail
 ```
 
 ### Stack
 
 - **PHP 8.2+** — typed properties, enums, readonly, named arguments, match expressions
 - **MySQL/MariaDB** — InnoDB, utf8mb4, prepared statements only
-- **Apache** with mod_rewrite (XAMPP for local dev)
-- **HTMX** (14KB CDN) — claim buttons, session join, gallery filtering
+- **Apache** with mod_rewrite (XAMPP for local dev, Dreamhost shared for production)
+- **HTMX** (14KB CDN) — claim buttons, session join, participant management, gallery filtering
+- **PHPMailer** (via Composer) — SMTP email delivery for password resets, notifications
 - **Vanilla CSS** — custom properties, CSS Grid, `prefers-color-scheme` dark mode
+- **IBM Plex** font family — Serif for body, Sans for interface, Mono for code
 - **Zero npm/webpack/build pipeline** — the art is the product, not the tooling
 
 ## Setup
 
 ```bash
-# 1. Clone and install autoloader
+# 1. Clone and install dependencies
 composer install
 
 # 2. Create database
@@ -125,17 +131,11 @@ php tools/seed.php --fresh
 
 Copy `.env.example` to `.env` and edit for your environment. Default assumes XAMPP local dev (root, no password, localhost).
 
-### Demo accounts
+### Accounts
 
-All demo users have password `password123`:
+In production, the facilitator (Andre Clements) has a real account. Approximately 220 stub accounts exist from the CSV backfill — these have `.stub@local` email addresses and dead password hashes. They can't log in until the real person registers with their actual email and claims their session history.
 
-| User | Role | Email |
-|---|---|---|
-| Andre Clements | facilitator | andre@example.com |
-| Sarah Ndlovu | participant | sarah@example.com |
-| James van Wyk | participant | james@example.com |
-| Palesa Mokoena | participant | palesa@example.com |
-| David Nkosi | participant | david@example.com |
+For local development, `php tools/seed.php` creates demo accounts with password `password123`.
 
 ## CLI Tools
 
@@ -150,6 +150,10 @@ php tools/process_images.php           # Process unprocessed artworks (EXIF, Web
 php tools/process_images.php --limit=20    # Process at most 20 images
 php tools/process_images.php --reprocess   # Reset all and reprocess
 php tools/import-csv.php [path]        # Backfill sessions/participants from CSV
+php tools/reset-production.php         # Reset production state (dangerous)
+php tools/test-mail.php [email]        # Send test email via configured SMTP
+php tools/svg-to-png.php              # Convert SVG assets to PNG
+php tools/thumbnails.php              # Generate missing thumbnails
 ```
 
 ## Routes
@@ -174,7 +178,7 @@ php tools/import-csv.php [path]        # Backfill sessions/participants from CSV
 | Method | Path | Description |
 |---|---|---|
 | GET/POST | `/login` | Login |
-| GET/POST | `/register` | Registration |
+| GET/POST | `/register` | Registration (supports `?intent=` for post-auth redirect) |
 | GET | `/logout` | Logout |
 | GET/POST | `/consent` | Consent disclosure |
 | GET/POST | `/forgot-password` | Request password reset |
@@ -188,11 +192,17 @@ php tools/import-csv.php [path]        # Backfill sessions/participants from CSV
 | GET | `/dashboard` | Personal stats dashboard | |
 | GET | `/sessions/create` | Create session form | Facilitator |
 | POST | `/sessions` | Store new session | Facilitator |
+| POST | `/sessions/{id}/cancel` | Cancel a session | Facilitator |
 | GET | `/sessions/{id}/upload` | Upload form | Facilitator |
 | POST | `/sessions/{id}/upload` | Upload artworks | Facilitator, rate-limited (10/hr) |
 | POST | `/artworks/{id}/delete` | Delete artwork + files | Facilitator |
 | GET | `/claims/pending` | Pending claims list | Facilitator |
 | POST | `/claims/{id}/resolve` | Approve/reject claim | Facilitator |
+| GET | `/sessions/{id}/participants/search` | Search users (HTMX) | Facilitator |
+| POST | `/sessions/{id}/participants/add` | Add participant | Facilitator |
+| POST | `/sessions/{id}/participants/remove` | Remove participant | Facilitator |
+| POST | `/sessions/{id}/participants/tentative` | Toggle tentative status | Facilitator |
+| GET | `/schedule/whatsapp` | WhatsApp-formatted schedule | Facilitator |
 
 ### Consent-gated (auth + consent middleware)
 
@@ -206,14 +216,16 @@ php tools/import-csv.php [path]        # Backfill sessions/participants from CSV
 
 ## Production
 
+Live at: `https://lifedrawing.andresclements.com/randburg`
+
 ### Cron
 
 ```bash
-# Process uploaded images (EXIF rotation, WebP conversion, thumbnails) — every 5 min with flock
-*/5 * * * * flock -n /tmp/ldr-images.lock php /path/to/tools/process_images.php >> /path/to/storage/logs/cron.log 2>&1
+# Process uploaded images (EXIF rotation, WebP conversion, thumbnails) — every 2 min with flock
+*/2 * * * * flock -n /tmp/ldr-images.lock php ~/lifedrawing.andresclements.com/randburg/tools/process_images.php >> ~/lifedrawing.andresclements.com/randburg/storage/logs/cron.log 2>&1
 
 # Refresh artist stats daily at 2am
-0 2 * * * php /path/to/tools/refresh-stats.php >> /path/to/storage/logs/cron.log 2>&1
+0 2 * * * php ~/lifedrawing.andresclements.com/randburg/tools/refresh-stats.php >> ~/lifedrawing.andresclements.com/randburg/storage/logs/cron.log 2>&1
 ```
 
 ### Environment
@@ -229,6 +241,16 @@ APP_BASE_PATH=/randburg
 `APP_BASE_PATH` tells `Request::capture()` how to strip the URL prefix — needed when the app lives in a subdirectory and `.htaccess` hides `/public` from URLs.
 
 Ensure `storage/` directories are writable by the web server and HTTPS is enforced.
+
+## Lessons Learned
+
+**"Build the room, not the rules."**
+
+The consent simplification was the project's defining architectural decision. Instead of building elaborate permission systems, the code recognises that consent happens face-to-face in the drawing room. Software records the outcome, not the process. This extends everywhere: parametric authorship (govern via slope, not policing), name privacy (presence is the threshold, not permission), stats that reward showing up (not output quality). The best ethical decisions were subtractions — removing code that overstepped into human territory.
+
+**Honest errors scale.** The And-Yet pattern started as a field on exceptions but became a design posture across the entire system. The consent withdrawal code doesn't pretend to handle model likeness takedowns — it confesses the gap, names the risk (Botha, non-economic), and ships anyway. That honesty makes the system more trustworthy, not less.
+
+**Small codebases surface bugs.** Every bug — hex_id misuse, PSR-4 case sensitivity, CSP blocking inline scripts, HEREDOC ternary incompatibility — was visible and fixable because the code was small enough to read. The Router is ~200 lines. The Container is ~80. The whole kernel reads in an afternoon.
 
 ## Session continuity
 
