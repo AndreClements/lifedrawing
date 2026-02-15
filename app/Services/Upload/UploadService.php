@@ -7,19 +7,18 @@ namespace App\Services\Upload;
 use App\Exceptions\AppException;
 
 /**
- * Image upload service.
+ * Image upload service — HTTP upload lifecycle only.
  *
- * Validates, resizes, and stores uploaded images.
+ * Validates, stores, and generates URLs for uploaded images.
+ * Pixel manipulation (EXIF, resize, WebP) is in ImageProcessor (SRP).
  * Safety facet: strict type/size validation. No arbitrary file execution.
  */
 final class UploadService
 {
     private const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
     private const MAX_SIZE = 10 * 1024 * 1024; // 10MB
-    private const THUMB_WIDTH = 400;
-    private const THUMB_HEIGHT = 400;
 
-    private string $uploadDir;
+    public string $uploadDir;
 
     public function __construct()
     {
@@ -56,18 +55,10 @@ final class UploadService
             );
         }
 
-        // Generate thumbnail
-        $thumbPath = null;
-        $thumbFilename = 'thumb_' . $filename;
-        $thumbDest = $dir . '/' . $thumbFilename;
-
-        if ($this->createThumbnail($destination, $thumbDest, $ext)) {
-            $thumbPath = 'sessions/' . $sessionId . '/' . $thumbFilename;
-        }
-
+        // Derivatives generated asynchronously by tools/process_images.php
         return [
             'file_path' => 'sessions/' . $sessionId . '/' . $filename,
-            'thumbnail_path' => $thumbPath,
+            'thumbnail_path' => null,
         ];
     }
 
@@ -130,60 +121,4 @@ final class UploadService
         };
     }
 
-    // --- Thumbnail generation ---
-
-    private function createThumbnail(string $source, string $dest, string $ext): bool
-    {
-        if (!extension_loaded('gd')) {
-            return false; // GD not available — skip thumbnails
-        }
-
-        $image = match ($ext) {
-            'jpg'  => @imagecreatefromjpeg($source),
-            'png'  => @imagecreatefrompng($source),
-            'webp' => @imagecreatefromwebp($source),
-            default => false,
-        };
-
-        if ($image === false) {
-            return false;
-        }
-
-        $origWidth = imagesx($image);
-        $origHeight = imagesy($image);
-
-        // Calculate proportional thumbnail size
-        $ratio = min(self::THUMB_WIDTH / $origWidth, self::THUMB_HEIGHT / $origHeight);
-        if ($ratio >= 1) {
-            // Image is already smaller than thumb size
-            imagedestroy($image);
-            copy($source, $dest);
-            return true;
-        }
-
-        $newWidth = (int) round($origWidth * $ratio);
-        $newHeight = (int) round($origHeight * $ratio);
-
-        $thumb = imagecreatetruecolor($newWidth, $newHeight);
-
-        // Preserve transparency for PNG
-        if ($ext === 'png') {
-            imagealphablending($thumb, false);
-            imagesavealpha($thumb, true);
-        }
-
-        imagecopyresampled($thumb, $image, 0, 0, 0, 0, $newWidth, $newHeight, $origWidth, $origHeight);
-
-        $result = match ($ext) {
-            'jpg'  => imagejpeg($thumb, $dest, 85),
-            'png'  => imagepng($thumb, $dest, 8),
-            'webp' => imagewebp($thumb, $dest, 85),
-            default => false,
-        };
-
-        imagedestroy($image);
-        imagedestroy($thumb);
-
-        return $result;
-    }
 }

@@ -17,9 +17,11 @@ use Modules\Lifedrawing\Controllers\GalleryController;
 use Modules\Lifedrawing\Controllers\ClaimController;
 use Modules\Lifedrawing\Controllers\ProfileController;
 use Modules\Lifedrawing\Controllers\DashboardController;
+use Modules\Lifedrawing\Controllers\PageController;
 
 // --- Public routes (no auth required) ---
 $router->get('/',                   [LandingController::class, 'index'], 'home');
+$router->get('/faq',               [PageController::class, 'faq'], 'pages.faq');
 $router->get('/sessions',          [SessionController::class, 'index'], 'sessions.index');
 $router->get('/sessions/create',   [SessionController::class, 'create'], 'sessions.create');
 $router->get('/sessions/{id}',     [SessionController::class, 'show'], 'sessions.show');

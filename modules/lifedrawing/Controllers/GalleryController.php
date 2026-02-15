@@ -38,7 +38,7 @@ final class GalleryController extends BaseController
         $claims = $this->db->fetchAll(
             "SELECT c.claim_type, c.status, u.display_name, u.id as user_id
              FROM ld_claims c
-             JOIN users u ON c.user_id = u.id
+             JOIN users u ON c.claimant_id = u.id
              WHERE c.artwork_id = ? AND c.status = 'approved' AND u.consent_state = 'granted'
              ORDER BY c.claim_type ASC",
             [$id]
@@ -53,7 +53,7 @@ final class GalleryController extends BaseController
                     (SELECT GROUP_CONCAT(cl.claim_type)
                      FROM ld_claims cl
                      WHERE cl.artwork_id = c.artwork_id
-                       AND cl.user_id = c.user_id
+                       AND cl.claimant_id = c.user_id
                        AND cl.status = 'approved') as claim_roles
              FROM ld_comments c
              JOIN users u ON c.user_id = u.id
@@ -62,7 +62,7 @@ final class GalleryController extends BaseController
                  CASE WHEN EXISTS (
                      SELECT 1 FROM ld_claims cl
                      WHERE cl.artwork_id = c.artwork_id
-                       AND cl.user_id = c.user_id
+                       AND cl.claimant_id = c.user_id
                        AND cl.status = 'approved'
                  ) THEN 0 ELSE 1 END,
                  c.created_at ASC",
@@ -72,7 +72,7 @@ final class GalleryController extends BaseController
         // Build OG meta for social sharing
         $uploadService = app('upload');
         $imageUrl = rtrim(config('app.url', 'http://localhost/lifedrawing'), '/')
-            . $uploadService->url($artwork['file_path']);
+            . $uploadService->url($artwork['web_path'] ?? $artwork['file_path']);
         $pageUrl = full_url(route('artworks.show', ['id' => hex_id($id)]));
         $ogDesc = 'Artwork from ' . session_title($artwork)
             . ' (' . format_date($artwork['session_date']) . ')';

@@ -11,8 +11,9 @@
         <div class="card-grid">
             <?php foreach ($claims as $claim): ?>
                 <div class="card claim-card">
-                    <?php if ($claim['thumbnail_path']): ?>
-                        <img src="<?= e($uploadService->url($claim['thumbnail_path'])) ?>"
+                    <?php $claimImg = $claim['thumbnail_path'] ?? $claim['web_path'] ?? $claim['file_path'] ?? null; ?>
+                    <?php if ($claimImg): ?>
+                        <img src="<?= e($uploadService->url($claimImg)) ?>"
                              alt="Claimed artwork" loading="lazy" class="claim-thumb">
                     <?php endif; ?>
 

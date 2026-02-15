@@ -61,13 +61,9 @@
         <div class="gallery-grid">
             <?php foreach ($galleryHighlights as $artwork): ?>
                 <div class="artwork-thumb">
-                    <img src="<?= e($uploadService->url($artwork['thumbnail_path'] ?? $artwork['file_path'])) ?>"
-                         alt="<?= e($artwork['caption'] ?? 'Artwork from ' . session_title($artwork)) ?>"
+                    <img src="<?= e($uploadService->url($artwork['thumbnail_path'] ?? $artwork['web_path'] ?? $artwork['file_path'])) ?>"
+                         alt="<?= e($artwork['caption'] ?? 'Artwork') ?>"
                          loading="lazy">
-                    <div class="artwork-overlay">
-                        <span><?= e(session_title($artwork)) ?></span>
-                        <small><?= format_date($artwork['session_date']) ?></small>
-                    </div>
                 </div>
             <?php endforeach; ?>
         </div>

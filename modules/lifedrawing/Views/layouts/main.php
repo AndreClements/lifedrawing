@@ -32,6 +32,7 @@
                 <a href="<?= route('gallery.index') ?>"<?= active_if('/gallery') ?>>Gallery</a>
                 <a href="<?= route('profiles.artists') ?>"<?= active_if('/artists') ?>>Artists</a>
                 <a href="<?= route('profiles.sitters') ?>"<?= active_if('/sitters') ?>>Sitters</a>
+                <a href="<?= route('pages.faq') ?>"<?= active_if('/faq') ?>>FAQ</a>
                 <?php if (app('auth')->isLoggedIn()): ?>
                     <span class="nav-sep">|</span>
                     <a href="<?= route('dashboard') ?>"<?= active_if('/dashboard') ?>>Dashboard</a>

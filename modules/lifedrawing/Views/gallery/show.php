@@ -2,7 +2,7 @@
 
 <section class="artwork-detail">
     <div class="artwork-full">
-        <img src="<?= e($uploadService->url($artwork['file_path'])) ?>"
+        <img src="<?= e($uploadService->url($artwork['web_path'] ?? $artwork['file_path'])) ?>"
              alt="<?= e($artwork['caption'] ?? 'Artwork') ?>">
     </div>
 
@@ -12,11 +12,14 @@
         <?php endif; ?>
 
         <div class="artwork-meta">
-            <a href="<?= route('sessions.show', ['id' => hex_id((int) $artwork['session_id'], session_title($artwork))]) ?>">
-                <?= e(session_title($artwork)) ?>
+            <a href="<?= route('sessions.show', ['id' => hex_id((int) $artwork['session_id'])]) ?>">
+                <?= format_date($artwork['session_date']) ?>
             </a>
-            <span>&middot;</span>
-            <span><?= format_date($artwork['session_date']) ?></span>
+            <?php $realTitle = $artwork['title'] ?? $artwork['session_title'] ?? null; ?>
+            <?php if ($realTitle): ?>
+                <span>&middot;</span>
+                <span><?= e($realTitle) ?></span>
+            <?php endif; ?>
             <?php if ($duration): ?>
                 <span>&middot;</span>
                 <span><?= e($duration) ?> pose</span>
@@ -108,7 +111,7 @@
     </div>
 
     <div class="artwork-nav">
-        <a href="<?= route('sessions.show', ['id' => hex_id((int) $artwork['session_id'], session_title($artwork))]) ?>" class="btn btn-outline">&larr; Back to Session</a>
+        <a href="<?= route('sessions.show', ['id' => hex_id((int) $artwork['session_id'])]) ?>" class="btn btn-outline">&larr; Back to Session</a>
         <a href="<?= route('gallery.index') ?>" class="btn btn-outline">Gallery</a>
     </div>
 </section>

@@ -26,13 +26,9 @@
         <div class="gallery-grid">
             <?php foreach ($artworks as $artwork): ?>
                 <a href="<?= route('artworks.show', ['id' => hex_id((int) $artwork['id'], $artwork['caption'] ?? '')]) ?>" class="artwork-thumb">
-                    <img src="<?= e($uploadService->url($artwork['thumbnail_path'] ?? $artwork['file_path'])) ?>"
+                    <img src="<?= e($uploadService->url($artwork['thumbnail_path'] ?? $artwork['web_path'] ?? $artwork['file_path'])) ?>"
                          alt="<?= e($artwork['caption'] ?? 'Artwork') ?>"
                          loading="lazy">
-                    <div class="artwork-overlay">
-                        <span><?= e(session_title($artwork)) ?></span>
-                        <small><?= format_date($artwork['session_date']) ?></small>
-                    </div>
                 </a>
             <?php endforeach; ?>
         </div>

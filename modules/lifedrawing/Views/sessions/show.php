@@ -100,7 +100,7 @@
                     <?php foreach ($batchArtworks as $artwork): ?>
                         <div class="artwork-card">
                             <a href="<?= route('artworks.show', ['id' => hex_id((int) $artwork['id'], $artwork['caption'] ?? '')]) ?>">
-                                <img src="<?= e($uploadService->url($artwork['thumbnail_path'] ?? $artwork['file_path'])) ?>"
+                                <img src="<?= e($uploadService->url($artwork['thumbnail_path'] ?? $artwork['web_path'] ?? $artwork['file_path'])) ?>"
                                      alt="<?= e($artwork['caption'] ?? 'Session artwork') ?>"
                                      loading="lazy">
                             </a>
