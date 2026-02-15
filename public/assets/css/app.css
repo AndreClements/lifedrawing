@@ -214,6 +214,28 @@ strong { font-weight: 600; }
     margin-bottom: var(--space-md);
 }
 
+.password-wrapper {
+    position: relative;
+}
+
+.password-wrapper input {
+    padding-right: 4rem;
+}
+
+.password-toggle {
+    position: absolute;
+    right: var(--space-sm);
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    font-family: var(--font-ui);
+    font-size: 0.85rem;
+    color: var(--color-muted);
+    cursor: pointer;
+    padding: var(--space-xs);
+}
+
 label {
     display: block;
     font-family: var(--font-ui);

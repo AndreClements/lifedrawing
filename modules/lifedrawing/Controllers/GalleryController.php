@@ -45,7 +45,7 @@ final class GalleryController extends BaseController
         );
 
         // Pose metadata
-        $duration = $artwork['pose_duration'] ? format_duration((int) $artwork['pose_duration']) : null;
+        $duration = $artwork['pose_duration'] ?: null;
 
         // Comments — artist and model comments float to top (equal priority)
         $comments = $this->db->fetchAll(
@@ -170,17 +170,7 @@ final class GalleryController extends BaseController
         $uploadService = app('upload');
         $uploaded = 0;
 
-        // Resolve pose duration (preset or custom, stored in seconds)
-        $poseDuration = null;
-        $durationInput = $request->input('pose_duration', '');
-        if ($durationInput === 'custom') {
-            $customMinutes = (float) $request->input('custom_duration', 0);
-            if ($customMinutes > 0) {
-                $poseDuration = (int) round($customMinutes * 60);
-            }
-        } elseif ($durationInput !== '') {
-            $poseDuration = (int) $durationInput;
-        }
+        $poseDuration = trim($request->input('pose_duration', '')) ?: null;
 
         // Get current max pose_index for this session (for sequential numbering across batches)
         $maxIndex = (int) ($this->db->fetch(

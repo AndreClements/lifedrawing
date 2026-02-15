@@ -353,6 +353,28 @@ final class AuthService
         return true;
     }
 
+    // --- Change Password ---
+
+    /**
+     * Change password for an authenticated user.
+     * Verifies the current password before updating.
+     */
+    public function changePassword(int $userId, string $currentPassword, string $newPassword): bool
+    {
+        $user = $this->db->fetch("SELECT password_hash FROM users WHERE id = ?", [$userId]);
+        if (!$user || !password_verify($currentPassword, $user['password_hash'])) {
+            return false;
+        }
+
+        $hash = password_hash($newPassword, PASSWORD_BCRYPT, [
+            'cost' => config('auth.hash_cost', 12),
+        ]);
+        $this->db->execute("UPDATE users SET password_hash = ? WHERE id = ?", [$hash, $userId]);
+        $this->logProvenance($userId, 'user.password_change', 'user', $userId);
+
+        return true;
+    }
+
     // --- Provenance ---
 
     private function logProvenance(int $userId, string $action, string $entityType, int $entityId): void

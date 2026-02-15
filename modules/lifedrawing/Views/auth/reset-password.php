@@ -15,12 +15,18 @@
 
         <div class="form-group">
             <label for="password">New Password</label>
-            <input type="password" id="password" name="password" required minlength="8">
+            <div class="password-wrapper">
+                <input type="password" id="password" name="password" required minlength="8" autocomplete="new-password">
+                <button type="button" class="password-toggle" aria-label="Toggle password visibility">Show</button>
+            </div>
         </div>
 
         <div class="form-group">
             <label for="password_confirm">Confirm Password</label>
-            <input type="password" id="password_confirm" name="password_confirm" required>
+            <div class="password-wrapper">
+                <input type="password" id="password_confirm" name="password_confirm" required autocomplete="new-password">
+                <button type="button" class="password-toggle" aria-label="Toggle password visibility">Show</button>
+            </div>
         </div>
 
         <div class="form-actions">

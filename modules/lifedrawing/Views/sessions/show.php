@@ -90,7 +90,7 @@
                             <strong><?= e($label) ?></strong>
                         <?php endif; ?>
                         <?php if ($duration): ?>
-                            <span class="batch-duration"><?= format_duration((int) $duration) ?> poses</span>
+                            <span class="batch-duration"><?= e($duration) ?> poses</span>
                         <?php endif; ?>
                         <span class="batch-count">(<?= count($batchArtworks) ?> image<?= count($batchArtworks) !== 1 ? 's' : '' ?>)</span>
                     </div>

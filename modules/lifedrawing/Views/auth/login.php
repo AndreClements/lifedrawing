@@ -16,7 +16,10 @@
 
         <div class="form-group">
             <label for="password">Password</label>
-            <input type="password" id="password" name="password" required>
+            <div class="password-wrapper">
+                <input type="password" id="password" name="password" required autocomplete="current-password">
+                <button type="button" class="password-toggle" aria-label="Toggle password visibility">Show</button>
+            </div>
         </div>
 
         <div class="form-group form-check">

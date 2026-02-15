@@ -15,24 +15,10 @@
         <?= csrf_field() ?>
 
         <div class="form-group">
-            <label for="pose_duration">Pose Duration</label>
-            <select id="pose_duration" name="pose_duration">
-                <option value="">— not specified —</option>
-                <option value="60">1 minute</option>
-                <option value="120">2 minutes</option>
-                <option value="300">5 minutes</option>
-                <option value="600">10 minutes</option>
-                <option value="1200">20 minutes</option>
-                <option value="2700">45 minutes</option>
-                <option value="custom">Custom...</option>
-            </select>
-        </div>
-
-        <div class="form-group" id="custom-duration-group" style="display:none">
-            <label for="custom_duration">Custom Duration (minutes)</label>
-            <input type="number" id="custom_duration" name="custom_duration"
-                   min="0.5" max="120" step="0.5"
-                   placeholder="e.g., 1.5 for 90 seconds">
+            <label for="pose_duration">Pose Duration (optional)</label>
+            <input type="text" id="pose_duration" name="pose_duration"
+                   placeholder="e.g., 5 min, 20 min, 3 poses x 30s x 1.5 min x 5 min"
+                   value="<?= e($old['pose_duration'] ?? '') ?>">
         </div>
 
         <div class="form-group">
@@ -63,10 +49,3 @@
         </div>
     </form>
 </section>
-
-<script>
-document.getElementById('pose_duration').addEventListener('change', function() {
-    var customGroup = document.getElementById('custom-duration-group');
-    customGroup.style.display = this.value === 'custom' ? '' : 'none';
-});
-</script>

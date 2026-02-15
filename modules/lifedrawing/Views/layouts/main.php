@@ -35,7 +35,8 @@
                 <?php if (app('auth')->isLoggedIn()): ?>
                     <span class="nav-sep">|</span>
                     <a href="<?= route('dashboard') ?>"<?= active_if('/dashboard') ?>>Dashboard</a>
-                    <a href="<?= route('auth.logout') ?>"><?= e($_SESSION['user_name'] ?? 'Account') ?> (logout)</a>
+                    <a href="<?= route('profiles.edit') ?>"<?= active_if('/profile/edit') ?>><?= e($_SESSION['user_name'] ?? 'Account') ?></a>
+                    <a href="<?= route('auth.logout') ?>">Logout</a>
                 <?php else: ?>
                     <span class="nav-sep">|</span>
                     <a href="<?= route('auth.login') ?>">Sign In</a>
@@ -51,5 +52,6 @@
     <footer class="site-footer">
         <p><?= axiom('footer') ?></p>
     </footer>
+    <script src="<?= asset('js/app.js') ?>" defer></script>
 </body>
 </html>

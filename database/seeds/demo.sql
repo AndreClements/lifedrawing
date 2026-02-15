@@ -4,7 +4,7 @@
 
 -- André (facilitator) — password: 'password123'
 -- bcrypt hash of 'password123' with cost 12
-SET @pw = '$2y$12$LJ3m4ys3UYkRh1gGOqP8/.vZXVHKJxKZiNI7C.Zc8NZPbJQKD2bxe';
+SET @pw = '$2y$12$nK9APe0jR83oXEdbRQYaFOZ950d5wMewu8SN9SKBzmgAnpaUCLmXi';
 
 INSERT INTO users (display_name, email, password_hash, role, consent_state, consent_granted_at, bio) VALUES
 ('André Clements', 'andre@example.com', @pw, 'facilitator', 'granted', NOW(),

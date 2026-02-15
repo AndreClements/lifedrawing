@@ -136,6 +136,34 @@ final class ProfileController extends BaseController
             ], 'Edit Profile');
         }
 
+        // Handle password change (only if current_password is filled)
+        $currentPassword = $request->input('current_password', '');
+        $newPassword = $request->input('new_password', '');
+        $newPasswordConfirm = $request->input('new_password_confirm', '');
+        $passwordChanged = false;
+
+        if ($currentPassword !== '') {
+            if (strlen($newPassword) < 8) {
+                return $this->render('profile.edit', [
+                    'user' => $this->auth->currentUser(),
+                    'error' => 'New password must be at least 8 characters.',
+                ], 'Edit Profile');
+            }
+            if ($newPassword !== $newPasswordConfirm) {
+                return $this->render('profile.edit', [
+                    'user' => $this->auth->currentUser(),
+                    'error' => 'New passwords do not match.',
+                ], 'Edit Profile');
+            }
+            if (!$this->auth->changePassword($this->userId(), $currentPassword, $newPassword)) {
+                return $this->render('profile.edit', [
+                    'user' => $this->auth->currentUser(),
+                    'error' => 'Current password is incorrect.',
+                ], 'Edit Profile');
+            }
+            $passwordChanged = true;
+        }
+
         $this->table('users')
             ->where('id', '=', $this->userId())
             ->update([
@@ -152,6 +180,13 @@ final class ProfileController extends BaseController
             'user',
             $this->userId(),
         );
+
+        if ($passwordChanged) {
+            return $this->render('profile.edit', [
+                'user' => $this->auth->currentUser(),
+                'success' => 'Profile updated and password changed.',
+            ], 'Edit Profile');
+        }
 
         return Response::redirect(route('profiles.show', ['id' => hex_id($this->userId())]));
     }
