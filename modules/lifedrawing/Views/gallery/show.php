@@ -48,24 +48,42 @@
         <?php endif; ?>
 
         <?php if (app('auth')->isLoggedIn()): ?>
-            <div class="artwork-actions">
-                <form method="POST" action="<?= route('claims.claim', ['id' => hex_id((int) $artwork['id'])]) ?>"
-                      hx-post="<?= route('claims.claim', ['id' => hex_id((int) $artwork['id'])]) ?>"
-                      hx-swap="outerHTML"
-                      style="display:inline">
-                    <?= csrf_field() ?>
-                    <input type="hidden" name="claim_type" value="artist">
-                    <button type="submit" class="btn-sm">Claim as Artist</button>
-                </form>
-                <form method="POST" action="<?= route('claims.claim', ['id' => hex_id((int) $artwork['id'])]) ?>"
-                      hx-post="<?= route('claims.claim', ['id' => hex_id((int) $artwork['id'])]) ?>"
-                      hx-swap="outerHTML"
-                      style="display:inline">
-                    <?= csrf_field() ?>
-                    <input type="hidden" name="claim_type" value="model">
-                    <button type="submit" class="btn-sm btn-outline">Claim as Model</button>
-                </form>
-            </div>
+            <?php $uc = $userClaims ?? []; ?>
+            <?php $hasArtistClaim = isset($uc['artist']); ?>
+            <?php $hasModelClaim = isset($uc['model']); ?>
+            <?php if (!$hasArtistClaim || !$hasModelClaim): ?>
+                <div class="artwork-actions">
+                    <?php if (!$hasArtistClaim): ?>
+                        <form method="POST" action="<?= route('claims.claim', ['id' => hex_id((int) $artwork['id'])]) ?>"
+                              hx-post="<?= route('claims.claim', ['id' => hex_id((int) $artwork['id'])]) ?>"
+                              hx-swap="outerHTML"
+                              style="display:inline">
+                            <?= csrf_field() ?>
+                            <input type="hidden" name="claim_type" value="artist">
+                            <button type="submit" class="btn-sm">Claim as Artist</button>
+                        </form>
+                    <?php else: ?>
+                        <span class="badge badge-<?= $uc['artist'] === 'approved' ? 'success' : 'pending' ?>">Artist <?= e($uc['artist']) ?></span>
+                    <?php endif; ?>
+                    <?php if (!$hasModelClaim): ?>
+                        <form method="POST" action="<?= route('claims.claim', ['id' => hex_id((int) $artwork['id'])]) ?>"
+                              hx-post="<?= route('claims.claim', ['id' => hex_id((int) $artwork['id'])]) ?>"
+                              hx-swap="outerHTML"
+                              style="display:inline">
+                            <?= csrf_field() ?>
+                            <input type="hidden" name="claim_type" value="model">
+                            <button type="submit" class="btn-sm btn-outline">Claim as Model</button>
+                        </form>
+                    <?php else: ?>
+                        <span class="badge badge-<?= $uc['model'] === 'approved' ? 'success' : 'pending' ?>">Model <?= e($uc['model']) ?></span>
+                    <?php endif; ?>
+                </div>
+            <?php else: ?>
+                <div class="artwork-actions">
+                    <span class="badge badge-<?= $uc['artist'] === 'approved' ? 'success' : 'pending' ?>">Artist <?= e($uc['artist']) ?></span>
+                    <span class="badge badge-<?= $uc['model'] === 'approved' ? 'success' : 'pending' ?>">Model <?= e($uc['model']) ?></span>
+                </div>
+            <?php endif; ?>
         <?php endif; ?>
     </div>
 
@@ -113,5 +131,13 @@
     <div class="artwork-nav">
         <a href="<?= route('sessions.show', ['id' => hex_id((int) $artwork['session_id'])]) ?>" class="btn btn-outline">&larr; Back to Session</a>
         <a href="<?= route('gallery.index') ?>" class="btn btn-outline">Gallery</a>
+        <?php if (app('auth')->isLoggedIn() && (app('auth')->hasRole('admin') || app('auth')->hasRole('facilitator'))): ?>
+            <form method="POST" action="<?= route('artworks.destroy', ['id' => hex_id((int) $artwork['id'])]) ?>"
+                  onsubmit="return confirm('Delete this artwork? The image files will be removed from the server.')"
+                  style="display:inline">
+                <?= csrf_field() ?>
+                <button type="submit" class="btn btn-danger">Delete</button>
+            </form>
+        <?php endif; ?>
     </div>
 </section>

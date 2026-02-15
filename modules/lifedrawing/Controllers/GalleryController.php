@@ -44,6 +44,19 @@ final class GalleryController extends BaseController
             [$id]
         );
 
+        // Check if current user already has claims on this artwork
+        $userClaims = [];
+        if ($this->auth->isLoggedIn()) {
+            $rows = $this->db->fetchAll(
+                "SELECT claim_type, status FROM ld_claims
+                 WHERE artwork_id = ? AND claimant_id = ? AND status IN ('pending', 'approved')",
+                [$id, $this->userId()]
+            );
+            foreach ($rows as $row) {
+                $userClaims[$row['claim_type']] = $row['status'];
+            }
+        }
+
         // Pose metadata
         $duration = $artwork['pose_duration'] ?: null;
 
@@ -80,6 +93,7 @@ final class GalleryController extends BaseController
         return $this->render('gallery.show', [
             'artwork' => $artwork,
             'claims' => $claims,
+            'userClaims' => $userClaims,
             'comments' => $comments,
             'duration' => $duration,
             'pageUrl' => $pageUrl,
@@ -316,6 +330,55 @@ final class GalleryController extends BaseController
             'session' => $session,
             'success' => "{$uploaded} image(s) uploaded. Add another batch or go back to the session.",
         ], 'Upload Artworks');
+    }
+
+    /** Delete an artwork (facilitator+). Soft-deletes DB record, removes files from disk. */
+    public function destroy(Request $request): Response
+    {
+        if ($redirect = $this->requireAuth()) return $redirect;
+        if ($redirect = $this->requireRole('admin', 'facilitator')) return $redirect;
+
+        $id = from_hex($request->param('id'));
+        $artwork = $this->table('ld_artworks')->where('id', '=', $id)->first();
+
+        if (!$artwork) {
+            return Response::notFound('Artwork not found.');
+        }
+
+        // IDOR check: only this session's facilitator (or admin) can delete
+        $session = $this->table('ld_sessions')->where('id', '=', (int) $artwork['session_id'])->first();
+        if (!$this->auth->hasRole('admin') && (int) ($session['facilitator_id'] ?? 0) !== $this->userId()) {
+            return Response::forbidden('You can only delete artworks from your own sessions.');
+        }
+
+        // Remove physical files
+        $uploadDir = app('upload')->uploadDir;
+        foreach (['file_path', 'web_path', 'thumbnail_path'] as $col) {
+            if (!empty($artwork[$col])) {
+                $fullPath = $uploadDir . '/' . $artwork[$col];
+                if (is_file($fullPath)) {
+                    @unlink($fullPath);
+                }
+            }
+        }
+
+        // Soft-delete: hide from all queries
+        $this->table('ld_artworks')
+            ->where('id', '=', $id)
+            ->update(['visibility' => 'removed']);
+
+        $this->provenance->log(
+            $this->userId(),
+            'artwork.delete',
+            'artwork',
+            $id,
+            [
+                'session_id' => $artwork['session_id'],
+                'file' => $artwork['file_path'],
+            ]
+        );
+
+        return Response::redirect(route('sessions.show', ['id' => hex_id((int) $artwork['session_id'])]));
     }
 
     /** Post a comment on an artwork (auth + consent required via middleware). */

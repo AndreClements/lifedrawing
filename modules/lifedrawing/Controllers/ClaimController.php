@@ -141,7 +141,7 @@ final class ClaimController extends BaseController
 
         $isAdmin = $this->auth->hasRole('admin');
         $claims = $this->db->fetchAll(
-            "SELECT c.*, a.file_path, a.thumbnail_path, a.session_id,
+            "SELECT c.*, a.file_path, a.thumbnail_path, a.web_path, a.session_id,
                     s.title as session_title, s.session_date,
                     u.display_name as claimant_name
              FROM ld_claims c

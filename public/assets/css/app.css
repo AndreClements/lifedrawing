@@ -157,6 +157,22 @@ strong { font-weight: 600; }
 }
 
 /* === Footer === */
+.consent-banner {
+    font-family: var(--font-ui);
+    font-size: 0.9rem;
+    background: #fdf6e3;
+    color: #5c4a1e;
+    border: 1px solid #dcc88e;
+    padding: var(--space-sm) var(--space-md);
+    margin-bottom: var(--space-lg);
+    border-radius: var(--radius);
+}
+.consent-banner a { color: #7c5c00; font-weight: 600; }
+@media (prefers-color-scheme: dark) {
+    .consent-banner { background: #2a2518; color: #e0d5b8; border-color: #5c4a1e; }
+    .consent-banner a { color: #f0d070; }
+}
+
 .site-footer {
     border-top: 1px solid var(--color-border);
     padding: var(--space-lg) var(--space-md);
@@ -302,6 +318,15 @@ textarea {
 .btn-outline:hover {
     background: var(--color-accent);
     color: var(--color-bg);
+}
+
+.btn-danger {
+    background: #8b2020;
+    color: #fff;
+    border-color: #8b2020;
+}
+.btn-danger:hover {
+    background: #a02020;
 }
 
 /* === HTMX indicators === */

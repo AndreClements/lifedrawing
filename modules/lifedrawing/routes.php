@@ -38,6 +38,7 @@ $router->get('/dashboard',         [DashboardController::class, 'index'], 'dashb
 $router->post('/sessions',                 [SessionController::class, 'store'], 'sessions.store');
 $router->get('/sessions/{id}/upload',      [GalleryController::class, 'uploadForm'], 'gallery.upload');
 $router->post('/claims/{id}/resolve',      [ClaimController::class, 'resolve'], 'claims.resolve');
+$router->post('/artworks/{id}/delete',     [GalleryController::class, 'destroy'], 'artworks.destroy');
 
 // Rate-limited upload (10 per hour)
 $router->group('', [\App\Middleware\RateLimitUpload::class], function ($router) {

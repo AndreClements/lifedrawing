@@ -36,6 +36,9 @@
                 <?php if (app('auth')->isLoggedIn()): ?>
                     <span class="nav-sep">|</span>
                     <a href="<?= route('dashboard') ?>"<?= active_if('/dashboard') ?>>Dashboard</a>
+                    <?php if (app('auth')->hasRole('admin') || app('auth')->hasRole('facilitator')): ?>
+                        <a href="<?= route('claims.pending') ?>"<?= active_if('/claims') ?>>Claims</a>
+                    <?php endif; ?>
                     <a href="<?= route('profiles.edit') ?>"<?= active_if('/profile/edit') ?>><?= e($_SESSION['user_name'] ?? 'Account') ?></a>
                     <a href="<?= route('auth.logout') ?>">Logout</a>
                 <?php else: ?>
@@ -47,6 +50,12 @@
     </header>
 
     <main class="container">
+        <?php if (app('auth')->isLoggedIn() && ($_SESSION['consent_state'] ?? '') !== 'granted'): ?>
+            <div class="consent-banner">
+                To join sessions, claim artworks, and participate fully, please
+                <a href="<?= route('auth.consent') ?>">review and grant consent</a>.
+            </div>
+        <?php endif; ?>
         <?= $content ?? '' ?>
     </main>
 
