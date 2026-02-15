@@ -81,3 +81,17 @@
 | **Session fixation** | Medium | Verify `session_regenerate_id(true)` fires on login |
 | **CSRF on HTMX** | Medium | Every `hx-post` / `hx-delete` needs a token — consider middleware approach rather than per-form |
 | **Query complexity** | Low (monitor) | No spaghetti SQL yet, but watch as data model grows. Thin query builder helps. |
+
+---
+
+## Status Update (as of v0.1.0-beta, session 8)
+
+| Concern | Status | Notes |
+|---|---|---|
+| **IDOR audit** | Done | Systematic pass in session 2 — facilitator-scoped checks on claim resolution, upload, participant management |
+| **Image backups** | Not yet | Infrastructure task — not a code change. Currently server-local only. |
+| **Email transport** | Done | SMTP via PHPMailer (configured in `config/mail.php`, wired in Kernel). HTML email templates. |
+| **Rate limiting** | Done | File-based sliding window middleware. Auth: 5 attempts/15 min. Upload: 10/hr. |
+| **Session fixation** | Done | `session_regenerate_id(true)` fires on login |
+| **CSRF on HTMX** | Done | CSRF token included in all forms (including `hx-post` forms). Validated by global CsrfMiddleware. |
+| **Query complexity** | Low | 20 migrations, 9 controllers. Largest queries are dashboard stats (3-4 JOINs). No spaghetti yet. |

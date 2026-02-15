@@ -6,15 +6,15 @@
 
 ## What Was Built
 
-A complete web application across three build sessions — from empty directory to working site with real historical data spanning 2017–2026.
+A complete web application across eight build sessions — from empty directory to working site with real historical data spanning 2017–2026.
 
 ### The Stack
 
 - Custom PHP 8.2+ micro-kernel (~15 core files, no framework)
-- MySQL with 14 migration files (5 core + 9 module)
+- MySQL with 20 migration files (5 core + 15 module)
 - HTMX for interactivity (single `<script>` tag, no build pipeline)
-- Vanilla CSS with custom properties (two font families: Georgia for body, system-ui for interface)
-- PSR-4 autoloading via Composer (the only dependency)
+- Vanilla CSS with custom properties (IBM Plex family: Serif for body, Sans for interface, Mono for code)
+- PSR-4 autoloading via Composer + PHPMailer for SMTP email delivery
 - Octagram `{8/3}` star polygon as identity mark (inline SVG, `fill="currentColor"`)
 
 ### What It Does
@@ -27,7 +27,7 @@ A complete web application across three build sessions — from empty directory 
 - **Comments**: On individual artworks. Artist/model comments float to top with role badges. Consent-gated.
 - **Auth**: Registration, login with remember-me (30-day rotating token), password reset (SHA-256 hashed, 1-hour expiry, anti-enumeration), consent gate.
 - **Name privacy**: Real names visible only to logged-in users who've participated in at least one session. Non-participants see pseudonyms or "Participant".
-- **Historical data**: 245 sessions backfilled from facilitator's Google Sheet (2017–2026), ~220 participant stub accounts awaiting real registration.
+- **Historical data**: 296 sessions backfilled from facilitator's Google Sheet (2017–2026), ~217 participant stub accounts awaiting real registration.
 
 ## How Methodology_CI Manifested
 
@@ -131,15 +131,21 @@ At the end of the first build session:
 
 4. **AI collaboration benefits from axiological framing** — giving the AI an ethical framework to work within produced more coherent architecture than a purely technical brief would have. The framework provided constraints that focused rather than limited.
 
-5. **And-Yet scales** — from a single field on an exception class to a design posture across three build sessions. The consent withdrawal carries an And-Yet. The name privacy gate carries an implicit one (URL slugs can still leak names). The system gets more honest as it grows, not less.
+5. **And-Yet scales** — from a single field on an exception class to a design posture across eight build sessions. The consent withdrawal carries an And-Yet. The name privacy gate carries an implicit one (URL slugs can still leak names). The system gets more honest as it grows, not less.
 
-6. **Historical data validates the model** — 245 real sessions across 8 years of practice, imported without schema changes. The session-centric ontology held because it was designed around how the room actually works, not around a hypothetical.
+6. **Historical data validates the model** — 296 real sessions across 8 years of practice, imported without schema changes. The session-centric ontology held because it was designed around how the room actually works, not around a hypothetical.
 
 ## Reviews
 
-- **Gemini 2.0 Flash** (2026-02-14): "Exceptionally strong conceptually and architecturally." Noted CARDS-to-code mapping as the signature move.
-- **GPT** (2026-02-14): Identified the case study as "an assembly header masquerading as narrative" — disclosing defaults, goals, rules, deltas. Strongest resonance with A7 (Dependency Inversion of Dignity): dignity and consent as high-level policy, technical layer implements.
+**v0.0.1 reviews (2026-02-14):**
+- **Gemini 2.0 Flash**: "Exceptionally strong conceptually and architecturally." Noted CARDS-to-code mapping as the signature move.
+- **GPT**: Identified the case study as "an assembly header masquerading as narrative" — disclosing defaults, goals, rules, deltas. Strongest resonance with A7 (Dependency Inversion of Dignity): dignity and consent as high-level policy, technical layer implements.
 - **Botha Risk lens**: Non-economic risks (dignity, consent, relational) assessed. Consent name leakage fixed. Model likeness gap documented as And-Yet.
+
+**v0.2.0 reviews (2026-02-16):**
+- **Claude chat** (Anthropic): "Quite good." Auth refactoring resolved biggest structural concern. Architecture absorbed growth without structural changes (9 controllers, 20 migrations, kernel got smaller). Image backups remains the one outstanding operational gap.
+- **Gemini 2.5 Flash** (Google): "S-Tier Prototype." And-Yet pattern is "genius" — baking technical debt into exception structure. Micro-kernel gamble paid off. Axiological architecture is "Middleware, not buzzwords." "A glimpse into the future of software development."
+- **GPT** (OpenAI): "Already crossed into real product surface area." Constraints are "executable, not vibes." Backup/retention and auth-email reliability are the two trust cliffs.
 
 ## Sharing the Work
 
@@ -151,5 +157,5 @@ From the post announcing the project:
 
 ---
 
-*Life Drawing Randburg. v0.1.0-beta. February 2026.*
+*Life Drawing Randburg. v0.2.0. February 2026.*
 *Built with [methodology_CI](https://github.com/andreclements/README/blob/main/docs/methods/METHODOLOGY_CI.md).*
