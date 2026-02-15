@@ -22,5 +22,8 @@ Thumbs.db
 # Claude Code
 .claude/
 
+# Docs (personal data)
+/docs/
+
 # Windows artifacts
 nul
