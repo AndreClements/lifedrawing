@@ -89,17 +89,23 @@ final class ProfileController extends BaseController
             [$id]
         );
 
-        // Get session history (GROUP_CONCAT avoids duplicates for multi-role sessions)
+        // Sessions: from next booked session backwards (includes the upcoming one, skips further future)
         $sessions = $this->db->fetchAll(
             "SELECT s.id, s.title, s.session_date,
                     GROUP_CONCAT(sp.role ORDER BY sp.role SEPARATOR ', ') as role
              FROM ld_sessions s
              JOIN ld_session_participants sp ON sp.session_id = s.id
              WHERE sp.user_id = ?
+               AND s.session_date <= COALESCE(
+                   (SELECT MIN(s2.session_date) FROM ld_sessions s2
+                    JOIN ld_session_participants sp2 ON sp2.session_id = s2.id
+                    WHERE sp2.user_id = ? AND s2.session_date > CURDATE()),
+                   CURDATE()
+               )
              GROUP BY s.id
              ORDER BY s.session_date DESC
              LIMIT 20",
-            [$id]
+            [$id, $id]
         );
 
         return $this->render('profile.show', [

@@ -28,7 +28,7 @@
                         <form method="POST" action="<?= route('claims.resolve', ['id' => hex_id((int) $claim['id'])]) ?>"
                               hx-post="<?= route('claims.resolve', ['id' => hex_id((int) $claim['id'])]) ?>"
                               hx-target="closest .claim-card" hx-swap="outerHTML"
-                              style="display:inline">
+                              class="form-inline">
                             <?= csrf_field() ?>
                             <input type="hidden" name="action" value="approve">
                             <button type="submit" class="btn">Approve</button>
@@ -36,7 +36,7 @@
                         <form method="POST" action="<?= route('claims.resolve', ['id' => hex_id((int) $claim['id'])]) ?>"
                               hx-post="<?= route('claims.resolve', ['id' => hex_id((int) $claim['id'])]) ?>"
                               hx-target="closest .claim-card" hx-swap="outerHTML"
-                              style="display:inline">
+                              class="form-inline">
                             <?= csrf_field() ?>
                             <input type="hidden" name="action" value="reject">
                             <button type="submit" class="btn btn-outline">Reject</button>

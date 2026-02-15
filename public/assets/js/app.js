@@ -103,6 +103,15 @@ document.addEventListener('click', function(e) {
     if (results) results.innerHTML = '';
 });
 
+/* Gallery session filter — navigate on select change (CSP-safe, no inline handler) */
+document.addEventListener('change', function(e) {
+    var select = e.target.closest('#session-filter');
+    if (!select || !select.dataset.filterUrl) return;
+    var url = select.dataset.filterUrl;
+    if (select.value) url += '?session=' + select.value;
+    window.location = url;
+});
+
 /* Upload progress bar — intercepts upload form, shows real-time progress */
 document.addEventListener('submit', function(e) {
     var form = e.target;

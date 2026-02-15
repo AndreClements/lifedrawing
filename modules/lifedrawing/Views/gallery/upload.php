@@ -1,4 +1,4 @@
-<section class="auth-form" style="max-width:560px">
+<section class="auth-form wide">
     <h2>Upload Artworks</h2>
     <p class="lead">Session: <em><?= e(session_title($session)) ?></em> (<?= format_date($session['session_date']) ?>)</p>
 

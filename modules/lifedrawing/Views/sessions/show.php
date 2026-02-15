@@ -31,7 +31,7 @@
             <?php if (app('auth')->hasRole('admin', 'facilitator')): ?>
                 <a href="<?= route('gallery.upload', ['id' => hex_id((int) $session['id'], session_title($session))]) ?>" class="btn">Upload Artworks</a>
                 <?php if ($session['status'] !== 'cancelled'): ?>
-                    <form method="POST" action="<?= route('sessions.cancel', ['id' => hex_id((int) $session['id'], session_title($session))]) ?>" style="display:inline"
+                    <form method="POST" action="<?= route('sessions.cancel', ['id' => hex_id((int) $session['id'], session_title($session))]) ?>" class="form-inline"
                           class="confirm-action" data-confirm="Cancel this session?">
                         <?= csrf_field() ?>
                         <button type="submit" class="btn btn-outline btn-danger">Cancel Session</button>
@@ -41,7 +41,7 @@
                 <?php endif; ?>
             <?php endif; ?>
             <?php if (app('auth')->isLoggedIn()): ?>
-                <form method="POST" action="<?= route('sessions.join', ['id' => hex_id((int) $session['id'], session_title($session))]) ?>" style="display:inline"
+                <form method="POST" action="<?= route('sessions.join', ['id' => hex_id((int) $session['id'], session_title($session))]) ?>" class="form-inline"
                       hx-post="<?= route('sessions.join', ['id' => hex_id((int) $session['id'], session_title($session))]) ?>"
                       hx-swap="outerHTML">
                     <?= csrf_field() ?>
@@ -136,7 +136,7 @@
                                     <form method="POST" action="<?= route('claims.claim', ['id' => hex_id((int) $artwork['id'], $artwork['caption'] ?? '')]) ?>"
                                           hx-post="<?= route('claims.claim', ['id' => hex_id((int) $artwork['id'], $artwork['caption'] ?? '')]) ?>"
                                           hx-swap="outerHTML"
-                                          style="display:inline">
+                                          class="form-inline">
                                         <?= csrf_field() ?>
                                         <input type="hidden" name="claim_type" value="artist">
                                         <button type="submit" class="btn-sm">Claim as Artist</button>
@@ -144,7 +144,7 @@
                                     <form method="POST" action="<?= route('claims.claim', ['id' => hex_id((int) $artwork['id'], $artwork['caption'] ?? '')]) ?>"
                                           hx-post="<?= route('claims.claim', ['id' => hex_id((int) $artwork['id'], $artwork['caption'] ?? '')]) ?>"
                                           hx-swap="outerHTML"
-                                          style="display:inline">
+                                          class="form-inline">
                                         <?= csrf_field() ?>
                                         <input type="hidden" name="claim_type" value="model">
                                         <button type="submit" class="btn-sm btn-outline">Claim as Model</button>

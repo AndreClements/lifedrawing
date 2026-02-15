@@ -46,9 +46,9 @@
         </div>
     <?php endif; ?>
 
-    <!-- Session History -->
+    <!-- Sessions -->
     <?php if (!empty($sessions)): ?>
-        <h3>Session History</h3>
+        <h3>Sessions</h3>
         <ul class="session-history">
             <?php foreach ($sessions as $s): ?>
                 <li>

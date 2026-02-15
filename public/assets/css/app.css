@@ -430,6 +430,12 @@ textarea {
     max-width: 420px;
     margin: var(--space-lg) auto;
 }
+.auth-form.wide { max-width: 560px; }
+
+/* Utility classes */
+.form-inline { display: inline; }
+.hidden { display: none; }
+.mt-md { margin-top: var(--space-md); }
 
 .form-actions {
     display: flex;
@@ -848,9 +854,10 @@ textarea {
     margin-top: var(--space-xs);
 }
 
-/* === Profile header === */
+/* === Profile === */
 .profile-header { margin-bottom: var(--space-lg); }
 .profile-header h2 { margin-bottom: var(--space-xs); }
+.profile-detail h3 { margin-top: var(--space-xl); margin-bottom: var(--space-sm); }
 
 /* === Dashboard (Strava-for-Artistry) === */
 .dashboard { max-width: 900px; }

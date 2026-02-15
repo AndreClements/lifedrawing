@@ -7,7 +7,7 @@
     <?php if (!empty($sessions ?? [])): ?>
         <div class="gallery-filter">
             <label for="session-filter">Filter by session:</label>
-            <select id="session-filter" onchange="window.location='<?= route('gallery.index') ?>?session='+this.value">
+            <select id="session-filter" data-filter-url="<?= route('gallery.index') ?>">
                 <option value="">All sessions</option>
                 <?php foreach ($sessions as $s): ?>
                     <option value="<?= $s['id'] ?>" <?= ($currentSession ?? '') == $s['id'] ? 'selected' : '' ?>>

@@ -57,7 +57,7 @@
                         <form method="POST" action="<?= route('claims.claim', ['id' => hex_id((int) $artwork['id'])]) ?>"
                               hx-post="<?= route('claims.claim', ['id' => hex_id((int) $artwork['id'])]) ?>"
                               hx-swap="outerHTML"
-                              style="display:inline">
+                              class="form-inline">
                             <?= csrf_field() ?>
                             <input type="hidden" name="claim_type" value="artist">
                             <button type="submit" class="btn-sm">Claim as Artist</button>
@@ -69,7 +69,7 @@
                         <form method="POST" action="<?= route('claims.claim', ['id' => hex_id((int) $artwork['id'])]) ?>"
                               hx-post="<?= route('claims.claim', ['id' => hex_id((int) $artwork['id'])]) ?>"
                               hx-swap="outerHTML"
-                              style="display:inline">
+                              class="form-inline">
                             <?= csrf_field() ?>
                             <input type="hidden" name="claim_type" value="model">
                             <button type="submit" class="btn-sm btn-outline">Claim as Model</button>
@@ -143,8 +143,8 @@
         <a href="<?= route('gallery.index') ?>" class="btn btn-outline">Gallery</a>
         <?php if (app('auth')->isLoggedIn() && (app('auth')->hasRole('admin') || app('auth')->hasRole('facilitator'))): ?>
             <form method="POST" action="<?= route('artworks.destroy', ['id' => hex_id((int) $artwork['id'])]) ?>"
-                  onsubmit="return confirm('Delete this artwork? The image files will be removed from the server.')"
-                  style="display:inline">
+                  class="form-inline confirm-action"
+                  data-confirm="Delete this artwork? The image files will be removed from the server.">
                 <?= csrf_field() ?>
                 <button type="submit" class="btn btn-danger">Delete</button>
             </form>

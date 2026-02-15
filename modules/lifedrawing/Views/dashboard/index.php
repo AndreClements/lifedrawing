@@ -198,7 +198,7 @@ $memberSince = $stats['member_since'] ?? null;
                     </div>
                 <?php endforeach; ?>
             </div>
-            <a href="<?= route('profiles.show', ['id' => hex_id((int) $user['id'])]) ?>" class="btn btn-outline" style="margin-top: 1rem">
+            <a href="<?= route('profiles.show', ['id' => hex_id((int) $user['id'])]) ?>" class="btn btn-outline mt-md">
                 View Full Profile
             </a>
         </div>

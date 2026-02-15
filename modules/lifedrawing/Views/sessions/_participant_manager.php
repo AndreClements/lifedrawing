@@ -21,7 +21,7 @@ $hexId = hex_id((int) $session['id'], session_title($session));
                           hx-post="<?= route('sessions.participants.tentative', ['id' => $hexId]) ?>"
                           hx-target="#participant-manager"
                           hx-swap="outerHTML"
-                          style="display:inline">
+                          class="form-inline">
                         <?= csrf_field() ?>
                         <input type="hidden" name="pid" value="<?= $p['id'] ?>">
                         <button type="submit" class="btn-icon" title="Toggle tentative">?</button>
@@ -31,7 +31,7 @@ $hexId = hex_id((int) $session['id'], session_title($session));
                           hx-post="<?= route('sessions.participants.remove', ['id' => $hexId]) ?>"
                           hx-target="#participant-manager"
                           hx-swap="outerHTML"
-                          style="display:inline">
+                          class="form-inline">
                         <?= csrf_field() ?>
                         <input type="hidden" name="pid" value="<?= $p['id'] ?>">
                         <button type="submit" class="btn-icon btn-remove" title="Remove">&times;</button>
@@ -67,7 +67,7 @@ $hexId = hex_id((int) $session['id'], session_title($session));
               hx-post="<?= route('sessions.participants.add', ['id' => $hexId]) ?>"
               hx-target="#participant-manager"
               hx-swap="outerHTML"
-              style="display:none">
+              class="hidden">
             <?= csrf_field() ?>
             <input type="hidden" name="user_id" id="add-user-id" value="">
             <input type="hidden" name="role" id="add-role-field" value="artist">

@@ -1,4 +1,4 @@
-<section class="auth-form" style="max-width:560px">
+<section class="auth-form wide">
     <h2>New Session</h2>
 
     <?php if (!empty($errors ?? [])): ?>
