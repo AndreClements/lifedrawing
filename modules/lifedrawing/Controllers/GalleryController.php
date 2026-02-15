@@ -146,9 +146,21 @@ final class GalleryController extends BaseController
         ], 'Upload Artworks');
     }
 
+    /** Debug log for upload instrumentation. */
+    private function uploadLog(string $msg): void
+    {
+        $logFile = defined('LDR_ROOT') ? LDR_ROOT . '/storage/upload.log' : '/tmp/upload.log';
+        $ts = date('Y-m-d H:i:s');
+        file_put_contents($logFile, "[{$ts}] {$msg}\n", FILE_APPEND | LOCK_EX);
+    }
+
     /** Handle artwork upload (facilitator+). */
     public function upload(Request $request): Response
     {
+        $this->uploadLog('=== Upload request started ===');
+        $this->uploadLog('Memory: ' . (memory_get_usage(true) / 1024 / 1024) . 'MB');
+        $this->uploadLog('POST size: ' . ($_SERVER['CONTENT_LENGTH'] ?? 'unknown') . ' bytes');
+
         if ($redirect = $this->requireAuth()) return $redirect;
         if ($redirect = $this->requireRole('admin', 'facilitator')) return $redirect;
 
@@ -172,6 +184,15 @@ final class GalleryController extends BaseController
 
         $poseDuration = trim($request->input('pose_duration', '')) ?: null;
 
+        $fileCount = is_array($files['name'] ?? null) ? count($files['name']) : (empty($files['name']) ? 0 : 1);
+        $this->uploadLog("Files received: {$fileCount}");
+
+        if ($fileCount > 0 && is_array($files['name'] ?? null)) {
+            for ($i = 0; $i < $fileCount; $i++) {
+                $this->uploadLog("File {$i}: {$files['name'][$i]} ({$files['size'][$i]} bytes, error={$files['error'][$i]})");
+            }
+        }
+
         // Get current max pose_index for this session (for sequential numbering across batches)
         $maxIndex = (int) ($this->db->fetch(
             "SELECT COALESCE(MAX(pose_index), 0) as max_idx FROM ld_artworks WHERE session_id = ?",
@@ -181,7 +202,10 @@ final class GalleryController extends BaseController
         // Handle multiple file upload
         if (!empty($files['name']) && is_array($files['name'])) {
             for ($i = 0; $i < count($files['name']); $i++) {
-                if ($files['error'][$i] !== UPLOAD_ERR_OK) continue;
+                if ($files['error'][$i] !== UPLOAD_ERR_OK) {
+                    $this->uploadLog("File {$i}: skipped, upload error code {$files['error'][$i]}");
+                    continue;
+                }
 
                 $singleFile = [
                     'name' => $files['name'][$i],
@@ -192,8 +216,11 @@ final class GalleryController extends BaseController
                 ];
 
                 try {
+                    $this->uploadLog("File {$i}: storing via UploadService...");
                     $paths = $uploadService->storeSessionArtwork($singleFile, $sessionId);
+                    $this->uploadLog("File {$i}: stored OK → {$paths['file_path']}");
 
+                    $this->uploadLog("File {$i}: inserting DB record...");
                     $artworkId = (int) $this->table('ld_artworks')->insert([
                         'session_id' => $sessionId,
                         'uploaded_by' => $this->userId(),
@@ -205,6 +232,7 @@ final class GalleryController extends BaseController
                         'pose_label' => $poseLabel,
                         'visibility' => 'public',
                     ]);
+                    $this->uploadLog("File {$i}: DB OK, artwork_id={$artworkId}");
 
                     $this->provenance->log(
                         $this->userId(),
@@ -216,16 +244,23 @@ final class GalleryController extends BaseController
                     );
 
                     $uploaded++;
+                    $this->uploadLog("File {$i}: complete. Memory: " . (memory_get_usage(true) / 1024 / 1024) . 'MB');
                 } catch (\App\Exceptions\AppException $e) {
-                    // Log but continue with other files
+                    $this->uploadLog("File {$i}: FAILED — " . $e->getMessage());
                     error_log("Upload failed for file {$i}: " . $e->getMessage());
+                } catch (\Throwable $e) {
+                    $this->uploadLog("File {$i}: EXCEPTION — " . get_class($e) . ': ' . $e->getMessage());
+                    error_log("Upload exception for file {$i}: " . $e->getMessage());
                 }
             }
         } elseif (!empty($files['name']) && is_string($files['name'])) {
             // Single file upload
             try {
+                $this->uploadLog("Single file: storing via UploadService...");
                 $paths = $uploadService->storeSessionArtwork($files, $sessionId);
+                $this->uploadLog("Single file: stored OK → {$paths['file_path']}");
 
+                $this->uploadLog("Single file: inserting DB record...");
                 $artworkId = (int) $this->table('ld_artworks')->insert([
                     'session_id' => $sessionId,
                     'uploaded_by' => $this->userId(),
@@ -237,6 +272,7 @@ final class GalleryController extends BaseController
                     'pose_label' => $poseLabel,
                     'visibility' => 'public',
                 ]);
+                $this->uploadLog("Single file: DB OK, artwork_id={$artworkId}");
 
                 $this->provenance->log(
                     $this->userId(),
@@ -248,19 +284,32 @@ final class GalleryController extends BaseController
 
                 $uploaded++;
             } catch (\App\Exceptions\AppException $e) {
+                $this->uploadLog("Single file: FAILED — " . $e->getMessage());
                 return $this->render('gallery.upload', [
                     'session' => $session,
                     'error' => $e->getMessage(),
                 ], 'Upload Artworks');
+            } catch (\Throwable $e) {
+                $this->uploadLog("Single file: EXCEPTION — " . get_class($e) . ': ' . $e->getMessage());
+                return $this->render('gallery.upload', [
+                    'session' => $session,
+                    'error' => 'Upload failed: ' . $e->getMessage(),
+                ], 'Upload Artworks');
             }
+        } else {
+            $this->uploadLog('No files in request. $_FILES keys: ' . implode(', ', array_keys($_FILES)));
+            $this->uploadLog('$files structure: ' . json_encode(array_map(function($v) { return is_array($v) ? 'array(' . count($v) . ')' : gettype($v); }, $files)));
         }
 
         if ($uploaded === 0) {
+            $this->uploadLog('Upload complete: 0 files uploaded');
             return $this->render('gallery.upload', [
                 'session' => $session,
                 'error' => 'No files were uploaded. Please select at least one image.',
             ], 'Upload Artworks');
         }
+
+        $this->uploadLog("Upload complete: {$uploaded} file(s) uploaded successfully");
 
         // Redirect back to upload form for next batch (not to session view)
         return $this->render('gallery.upload', [
