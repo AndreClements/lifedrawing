@@ -1,6 +1,10 @@
 <section class="auth-form">
     <h2>Join Life Drawing Randburg</h2>
-    <p class="lead">Create your account. You'll be asked about consent next.</p>
+    <?php if (!empty($has_intent)): ?>
+        <p class="lead">Create your account to continue. You'll be asked about consent next.</p>
+    <?php else: ?>
+        <p class="lead">Create your account. You'll be asked about consent next.</p>
+    <?php endif; ?>
 
     <?php if (!empty($errors)): ?>
         <div class="alert alert-error">
@@ -17,7 +21,15 @@
 
         <div class="form-group">
             <label for="display_name">Display Name</label>
-            <input type="text" id="display_name" name="display_name" value="<?= e($name ?? '') ?>" required autofocus>
+            <input type="text" id="display_name" name="display_name" value="<?= e($name ?? '') ?>" required autofocus
+                   hx-get="<?= route('auth.register.search_stubs') ?>"
+                   hx-trigger="input changed delay:500ms"
+                   hx-target="#stub-results"
+                   hx-swap="innerHTML"
+                   autocomplete="off">
+            <div id="stub-results" class="stub-results"></div>
+            <input type="hidden" name="claim_stub_id" id="claim-stub-id" value="">
+            <p class="form-hint" id="stub-claim-status"></p>
         </div>
 
         <div class="form-group">

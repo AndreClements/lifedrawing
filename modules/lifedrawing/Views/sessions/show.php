@@ -45,6 +45,8 @@
                     <input type="hidden" name="role" value="artist">
                     <button type="submit" class="btn btn-outline">Join as Artist</button>
                 </form>
+            <?php else: ?>
+                <a href="<?= route('auth.register') ?>?intent=join_session&session_id=<?= hex_id((int) $session['id'], session_title($session)) ?>&role=artist" class="btn btn-outline">Join as Artist</a>
             <?php endif; ?>
         </div>
     </div>

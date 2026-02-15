@@ -84,6 +84,13 @@
                     <span class="badge badge-<?= $uc['model'] === 'approved' ? 'success' : 'pending' ?>">Model <?= e($uc['model']) ?></span>
                 </div>
             <?php endif; ?>
+        <?php else: ?>
+            <?php $hexId = hex_id((int) $artwork['id']); ?>
+            <div class="artwork-actions artwork-actions-guest">
+                <a href="<?= route('auth.register') ?>?intent=claim_artwork&artwork_id=<?= $hexId ?>&claim_type=artist" class="btn-sm">Claim as Artist</a>
+                <a href="<?= route('auth.register') ?>?intent=claim_artwork&artwork_id=<?= $hexId ?>&claim_type=model" class="btn-sm btn-outline">Claim as Model</a>
+                <p class="text-muted text-sm">Already registered? <a href="<?= route('auth.login') ?>?intent=claim_artwork&artwork_id=<?= $hexId ?>&claim_type=artist">Sign in</a></p>
+            </div>
         <?php endif; ?>
     </div>
 
@@ -124,7 +131,10 @@
                 <button type="submit" class="btn">Post Comment</button>
             </form>
         <?php else: ?>
-            <p class="comment-login"><a href="<?= route('auth.login') ?>">Sign in</a> to leave a comment.</p>
+            <p class="comment-login">
+                <a href="<?= route('auth.register') ?>?intent=comment_artwork&artwork_id=<?= hex_id((int) $artwork['id']) ?>">Register</a>
+                or <a href="<?= route('auth.login') ?>?intent=comment_artwork&artwork_id=<?= hex_id((int) $artwork['id']) ?>">sign in</a> to leave a comment.
+            </p>
         <?php endif; ?>
     </div>
 

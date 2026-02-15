@@ -70,3 +70,35 @@ document.addEventListener('click', function(e) {
     var results = document.getElementById('search-results');
     if (results) results.innerHTML = '';
 });
+
+/* Stub account claiming on registration form */
+document.addEventListener('click', function(e) {
+    var item = e.target.closest('.stub-result-item');
+    if (!item || !item.dataset.stubId) return;
+
+    var hidden = document.getElementById('claim-stub-id');
+    if (hidden) hidden.value = item.dataset.stubId;
+
+    var name = item.querySelector('.stub-result-name');
+    var sessions = item.querySelector('.stub-result-sessions');
+    var status = document.getElementById('stub-claim-status');
+    if (status && name) {
+        status.textContent = 'Will claim history for: ' + name.textContent + ' (' + (sessions ? sessions.textContent : '') + ')';
+        status.classList.add('stub-claimed');
+    }
+
+    var nameInput = document.getElementById('display_name');
+    if (nameInput && name) {
+        nameInput.value = name.textContent;
+    }
+
+    var results = document.getElementById('stub-results');
+    if (results) results.innerHTML = '';
+});
+
+/* Close stub results when clicking outside */
+document.addEventListener('click', function(e) {
+    if (e.target.closest('.stub-results') || e.target.id === 'display_name') return;
+    var results = document.getElementById('stub-results');
+    if (results) results.innerHTML = '';
+});

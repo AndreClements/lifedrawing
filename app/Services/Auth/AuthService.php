@@ -58,6 +58,54 @@ final class AuthService
         return $userId;
     }
 
+    /**
+     * Claim an existing stub account: upgrade it with real credentials.
+     * Preserves user ID and all FK references (session history, claims).
+     *
+     * @return int The claimed user ID
+     */
+    public function claimStub(int $stubId, string $displayName, string $email, string $password): int
+    {
+        $stub = $this->db->fetch(
+            "SELECT * FROM users WHERE id = ? AND email LIKE '%.stub@local'",
+            [$stubId]
+        );
+
+        if (!$stub) {
+            throw new \App\Exceptions\AppException(
+                "Account not found or already claimed.",
+                andYet: "Either the stub was already claimed, or someone is trying to claim a real account."
+            );
+        }
+
+        // Check email not taken by another account
+        $existing = $this->db->fetch(
+            "SELECT id FROM users WHERE email = ? AND id != ?",
+            [$email, $stubId]
+        );
+        if ($existing) {
+            throw new \App\Exceptions\AppException(
+                "Email already registered.",
+                andYet: "We don't distinguish 'already registered' from 'registration failed' to avoid enumeration."
+            );
+        }
+
+        $hash = password_hash($password, config('auth.hash_algo', PASSWORD_BCRYPT), [
+            'cost' => config('auth.hash_cost', 12),
+        ]);
+
+        $this->db->execute(
+            "UPDATE users SET display_name = ?, email = ?, password_hash = ?, consent_state = 'pending' WHERE id = ?",
+            [$displayName, $email, $hash, $stubId]
+        );
+
+        $this->logProvenance($stubId, 'user.register.claim_stub', 'user', $stubId, [
+            'previous_name' => $stub['display_name'],
+        ]);
+
+        return $stubId;
+    }
+
     // --- Login / Logout ---
 
     public function attempt(string $email, string $password): ?array

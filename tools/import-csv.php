@@ -17,16 +17,40 @@ define('LDR_ROOT', dirname(__DIR__));
 
 require LDR_ROOT . '/vendor/autoload.php';
 
-$config = require LDR_ROOT . '/config/database.php';
+// Load .env for CLI context
+if (file_exists(LDR_ROOT . '/.env')) {
+    $lines = file(LDR_ROOT . '/.env', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+    foreach ($lines as $line) {
+        $line = trim($line);
+        if ($line === '' || $line[0] === '#') continue;
+        if (str_contains($line, '=')) {
+            putenv($line);
+            [$key, $val] = explode('=', $line, 2);
+            $_ENV[trim($key)] = trim($val, '"\'');
+        }
+    }
+}
 
-$db = new App\Database\Connection(
-    host: $config['host'],
-    database: $config['database'],
-    username: $config['username'],
-    password: $config['password'],
-);
+$dryRun = in_array('--dry-run', $argv, true);
 
-$csvPath = $argv[1] ?? LDR_ROOT . '/docs/Lifedrawing log - Sheet1.csv';
+$db = null;
+if (!$dryRun) {
+    $config = require LDR_ROOT . '/config/database.php';
+    $db = new App\Database\Connection(
+        host: $config['host'],
+        database: $config['database'],
+        username: $config['username'],
+        password: $config['password'],
+    );
+}
+$csvPath = null;
+foreach ($argv as $i => $arg) {
+    if ($i > 0 && $arg !== '--dry-run') {
+        $csvPath = $arg;
+        break;
+    }
+}
+$csvPath = $csvPath ?? LDR_ROOT . '/docs/Lifedrawing log - Sheet1.csv';
 if (!file_exists($csvPath)) {
     echo "CSV file not found: {$csvPath}\n";
     exit(1);
@@ -111,6 +135,40 @@ $nameMap = [
     'ru-ann' => 'Ru-Ann',
     'callyne (andré)' => 'Callyne',
     'lourens & petrus' => null, // skip dual — handled specially
+    'heinrich corienne' => null, // skip dual — handled specially
+
+    // Data artifacts / non-person entries
+    '9 jan' => null,
+    'am' => null,
+    'th' => null,
+    'tbc' => null,
+    'cancelled' => null,
+    'postponed' => null,
+
+    // Capacity notation
+    'annette 7/7' => 'Annette',
+    'david 3/7' => 'David',
+    'kevin 2/7' => 'Kevin',
+    'myra 7/7' => 'Myra',
+
+    // Missing variants
+    'andréc' => 'André Clements',
+    'anette' => 'Annette',
+    'catherina' => 'Catharina',
+    'yamillah' => 'Yamilah',
+    'luci' => 'Lucia',
+
+    // Annotated names
+    'alex (m) sundays' => 'Alex',
+    'ofentse (ah m)' => 'Ofentse',
+
+    // Special characters
+    'corniël' => 'Corniël',
+    'marie-louise' => 'Marie-Louise',
+
+    // Full names
+    'genevieve rathbone' => 'Genevieve Rathbone',
+    'shera goldberg' => 'Shera Goldberg',
 ];
 
 function normalizeName(string $raw): ?string
@@ -122,6 +180,16 @@ function normalizeName(string $raw): ?string
     $lower = mb_strtolower($name);
     if (array_key_exists($lower, $nameMap)) {
         return $nameMap[$lower];
+    }
+
+    // Strip capacity notation (e.g. "Name 3/7" → "Name")
+    $stripped = preg_replace('/\s+\d+\/\d+$/', '', $name);
+    if ($stripped !== $name) {
+        $lower2 = mb_strtolower($stripped);
+        if (array_key_exists($lower2, $nameMap)) {
+            return $nameMap[$lower2];
+        }
+        return mb_convert_case($stripped, MB_CASE_TITLE);
     }
 
     // Title case the name
@@ -238,15 +306,25 @@ foreach ($rows as $i => $row) {
         }
     }
 
-    // Handle dual models ("Lourens & Petrus")
+    // Handle dual models ("Lourens & Petrus", "Heinrich Corienne")
     $modelNames = [];
-    if ($model && str_contains($model, '&')) {
-        $dualParts = explode('&', $model);
-        foreach ($dualParts as $dp) {
-            $n = normalizeName($dp);
-            if ($n) $modelNames[] = $n;
+    $dualModelPatterns = ['&', 'heinrich corienne'];
+    $isDualModel = false;
+    if ($model) {
+        if (str_contains($model, '&')) {
+            $isDualModel = true;
+            $dualParts = explode('&', $model);
+            foreach ($dualParts as $dp) {
+                $n = normalizeName($dp);
+                if ($n) $modelNames[] = $n;
+            }
+        } elseif (mb_strtolower(trim($model, " \t\n\r?")) === 'heinrich corienne') {
+            $isDualModel = true;
+            $modelNames[] = 'Heinrich';
+            $modelNames[] = 'Corienne';
         }
-    } elseif ($modelName && !$isCancelled) {
+    }
+    if (!$isDualModel && $modelName && !$isCancelled) {
         $modelNames[] = $modelName;
     }
 
@@ -263,6 +341,27 @@ foreach ($rows as $i => $row) {
 }
 
 echo "Parsed " . count($sessions) . " sessions ({$cancelled} cancelled, {$skipped} skipped)\n";
+
+// Collect unique participant names for dry-run summary
+$allNames = [];
+foreach ($sessions as $s) {
+    foreach ($s['model_names'] as $n) $allNames[$n] = ($allNames[$n] ?? 0) + 1;
+    foreach ($s['artist_names'] as $n) $allNames[$n] = ($allNames[$n] ?? 0) + 1;
+}
+arsort($allNames);
+echo "Unique participants: " . count($allNames) . "\n";
+
+if ($dryRun) {
+    echo "\n--- DRY RUN — no database changes ---\n\n";
+    echo "Top participants:\n";
+    $i = 0;
+    foreach ($allNames as $name => $count) {
+        echo "  {$name}: {$count} sessions\n";
+        if (++$i >= 30) { echo "  ... and " . (count($allNames) - 30) . " more\n"; break; }
+    }
+    echo "\nPass without --dry-run to import.\n";
+    exit(0);
+}
 
 // Import sessions
 $db->execute("SET FOREIGN_KEY_CHECKS = 0");

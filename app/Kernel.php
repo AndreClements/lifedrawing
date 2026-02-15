@@ -165,6 +165,20 @@ final class Kernel
         $this->container->singleton('stats', function (Container $c) {
             return new \App\Services\StatsService($c->get('db'));
         });
+
+        // Mail service (SMTP via PHPMailer)
+        $this->container->singleton('mail', function () {
+            $cfg = config('mail');
+            return new \App\Services\MailService(
+                host: $cfg['host'],
+                port: $cfg['port'],
+                username: $cfg['username'],
+                password: $cfg['password'],
+                fromAddress: $cfg['from_address'],
+                fromName: $cfg['from_name'],
+                encryption: $cfg['encryption'],
+            );
+        });
     }
 
     private function loadModules(): void
@@ -205,6 +219,7 @@ final class Kernel
 
         $this->router->get('/login',           [$auth, 'loginForm'], 'auth.login');
         $this->router->get('/register',        [$auth, 'registerForm'], 'auth.register');
+        $this->router->get('/register/search-stub', [$auth, 'searchStubs'], 'auth.register.search_stubs');
         $this->router->get('/consent',         [$auth, 'consentForm'], 'auth.consent');
         $this->router->post('/consent',        [$auth, 'consent'], 'auth.consent.post');
         $this->router->get('/logout',          [$auth, 'logout'], 'auth.logout');

@@ -98,3 +98,27 @@ function db(string $table = ''): App\Database\QueryBuilder
     }
     return $qb;
 }
+
+/** Store a pending action intent in session (for post-registration completion). */
+function store_intent(string $action, array $params = []): void
+{
+    $_SESSION['_pending_intent'] = [
+        'action' => $action,
+        'params' => $params,
+        'stored_at' => time(),
+    ];
+}
+
+/** Retrieve and clear a pending intent (consumed once). Returns null if expired or absent. */
+function consume_intent(): ?array
+{
+    $intent = $_SESSION['_pending_intent'] ?? null;
+    unset($_SESSION['_pending_intent']);
+
+    if (!$intent) return null;
+
+    // Expire intents older than 30 minutes
+    if (time() - ($intent['stored_at'] ?? 0) > 1800) return null;
+
+    return $intent;
+}
