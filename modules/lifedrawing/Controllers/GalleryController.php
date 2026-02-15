@@ -317,6 +317,9 @@ final class GalleryController extends BaseController
 
         if ($uploaded === 0) {
             $this->uploadLog('Upload complete: 0 files uploaded');
+            if ($request->wantsJson()) {
+                return Response::json(['success' => false, 'error' => 'No files were uploaded. Please select at least one image.'], 422);
+            }
             return $this->render('gallery.upload', [
                 'session' => $session,
                 'error' => 'No files were uploaded. Please select at least one image.',
@@ -325,10 +328,16 @@ final class GalleryController extends BaseController
 
         $this->uploadLog("Upload complete: {$uploaded} file(s) uploaded successfully");
 
+        $message = "{$uploaded} image(s) uploaded. Add another batch or go back to the session.";
+
+        if ($request->wantsJson()) {
+            return Response::json(['success' => true, 'message' => $message, 'uploaded' => $uploaded]);
+        }
+
         // Redirect back to upload form for next batch (not to session view)
         return $this->render('gallery.upload', [
             'session' => $session,
-            'success' => "{$uploaded} image(s) uploaded. Add another batch or go back to the session.",
+            'success' => $message,
         ], 'Upload Artworks');
     }
 

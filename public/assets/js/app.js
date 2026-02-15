@@ -102,3 +102,89 @@ document.addEventListener('click', function(e) {
     var results = document.getElementById('stub-results');
     if (results) results.innerHTML = '';
 });
+
+/* Upload progress bar — intercepts upload form, shows real-time progress */
+document.addEventListener('submit', function(e) {
+    var form = e.target;
+    if (!form.querySelector('#upload-progress')) return;
+
+    var fileInput = form.querySelector('input[type="file"]');
+    if (!fileInput || !fileInput.files || fileInput.files.length === 0) return;
+
+    e.preventDefault();
+
+    var progress = document.getElementById('upload-progress');
+    var bar = document.getElementById('upload-progress-bar');
+    var text = document.getElementById('upload-progress-text');
+    var btn = document.getElementById('upload-btn');
+    var errorDiv = form.closest('section').querySelector('.alert-error');
+    var successDiv = form.closest('section').querySelector('.alert-success');
+
+    // Hide any previous messages
+    if (errorDiv) errorDiv.style.display = 'none';
+    if (successDiv) successDiv.style.display = 'none';
+
+    // Show progress, disable button
+    progress.hidden = false;
+    bar.style.width = '0%';
+    text.textContent = 'Uploading...';
+    btn.disabled = true;
+    btn.textContent = 'Uploading...';
+
+    var data = new FormData(form);
+    var xhr = new XMLHttpRequest();
+
+    xhr.upload.addEventListener('progress', function(evt) {
+        if (evt.lengthComputable) {
+            var pct = Math.round((evt.loaded / evt.total) * 100);
+            bar.style.width = pct + '%';
+            text.textContent = 'Uploading... ' + pct + '%';
+        }
+    });
+
+    xhr.addEventListener('load', function() {
+        try {
+            var resp = JSON.parse(xhr.responseText);
+            if (resp.success) {
+                bar.style.width = '100%';
+                text.textContent = resp.message || 'Done!';
+                // Reset form for next batch
+                fileInput.value = '';
+                btn.disabled = false;
+                btn.textContent = 'Upload Batch';
+                // Show success message
+                if (!successDiv) {
+                    successDiv = document.createElement('div');
+                    successDiv.className = 'alert alert-success';
+                    form.parentNode.insertBefore(successDiv, form);
+                }
+                successDiv.textContent = resp.message;
+                successDiv.style.display = '';
+                // Fade out progress after a moment
+                setTimeout(function() { progress.hidden = true; }, 2000);
+            } else {
+                bar.style.width = '100%';
+                bar.style.background = 'var(--color-error, #c33)';
+                text.textContent = resp.error || 'Upload failed';
+                btn.disabled = false;
+                btn.textContent = 'Upload Batch';
+            }
+        } catch (ex) {
+            // Non-JSON response — likely a redirect or HTML error page
+            // Fall back to reloading
+            window.location.reload();
+        }
+    });
+
+    xhr.addEventListener('error', function() {
+        bar.style.width = '100%';
+        bar.style.background = 'var(--color-error, #c33)';
+        text.textContent = 'Network error — please retry';
+        btn.disabled = false;
+        btn.textContent = 'Upload Batch';
+    });
+
+    xhr.open('POST', form.action);
+    xhr.setRequestHeader('Accept', 'application/json');
+    xhr.send(data);
+});

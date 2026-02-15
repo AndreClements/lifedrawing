@@ -10,7 +10,7 @@
         <div class="alert alert-error"><?= e($error) ?></div>
     <?php endif; ?>
 
-    <form method="POST" action="<?= route('gallery.upload.post', ['id' => $session['id']]) ?>"
+    <form method="POST" action="<?= route('gallery.upload.post', ['id' => hex_id((int) $session['id'], session_title($session))]) ?>"
           enctype="multipart/form-data">
         <?= csrf_field() ?>
 
@@ -43,9 +43,14 @@
                    placeholder="e.g., Charcoal gesture drawings">
         </div>
 
+        <div class="upload-progress" id="upload-progress" hidden>
+            <div class="upload-progress-bar" id="upload-progress-bar"></div>
+            <span class="upload-progress-text" id="upload-progress-text">Uploading...</span>
+        </div>
+
         <div class="form-actions">
-            <button type="submit" class="btn">Upload Batch</button>
-            <a href="<?= route('sessions.show', ['id' => $session['id']]) ?>" class="btn btn-outline">Back to Session</a>
+            <button type="submit" class="btn" id="upload-btn">Upload Batch</button>
+            <a href="<?= route('sessions.show', ['id' => hex_id((int) $session['id'], session_title($session))]) ?>" class="btn btn-outline">Back to Session</a>
         </div>
     </form>
 </section>
