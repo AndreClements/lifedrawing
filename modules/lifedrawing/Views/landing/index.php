@@ -20,7 +20,7 @@
     <section class="next-session">
         <div class="next-session-inner">
             <span class="next-label">Next Session</span>
-            <h2><?= e($upcoming['title']) ?></h2>
+            <h2><?= e(session_title($upcoming)) ?></h2>
             <div class="next-meta">
                 <span><?= format_date($upcoming['session_date']) ?></span>
                 <?php if ($upcoming['start_time']): ?>

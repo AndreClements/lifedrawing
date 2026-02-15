@@ -6,7 +6,7 @@
     "autoload": {
         "psr-4": {
             "App\\": "app/",
-            "Modules\\": "modules/"
+            "Modules\\Lifedrawing\\": "modules/lifedrawing/"
         },
         "files": [
             "app/helpers.php",

@@ -90,8 +90,8 @@ $memberSince = $stats['member_since'] ?? null;
                                 <small><?= date('M', strtotime($entry['session_date'])) ?></small>
                             </div>
                             <div class="timeline-content">
-                                <a href="<?= route('sessions.show', ['id' => hex_id((int) $entry['id'], $entry['title'])]) ?>">
-                                    <?= e($entry['title']) ?>
+                                <a href="<?= route('sessions.show', ['id' => hex_id((int) $entry['id'], session_title($entry))]) ?>">
+                                    <?= e(session_title($entry)) ?>
                                 </a>
                                 <div class="timeline-meta">
                                     <span class="badge badge-<?= e($entry['role']) ?>"><?= e($entry['role']) ?></span>

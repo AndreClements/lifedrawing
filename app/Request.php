@@ -30,10 +30,17 @@ final class Request
         $uri = $_SERVER['REQUEST_URI'] ?? '/';
         $path = parse_url($uri, PHP_URL_PATH) ?: '/';
 
-        // Strip the base path for subdirectory installs (e.g., /lifedrawing/public/)
-        $scriptDir = dirname($_SERVER['SCRIPT_NAME'] ?? '');
-        if ($scriptDir !== '/' && str_starts_with($path, $scriptDir)) {
-            $path = substr($path, strlen($scriptDir)) ?: '/';
+        // Strip the base path for subdirectory installs.
+        // Prefer APP_BASE_PATH (set in .env for production) over SCRIPT_NAME dirname
+        // because htaccess rewrites make SCRIPT_NAME include /public which isn't in the URL.
+        $basePath = $_ENV['APP_BASE_PATH'] ?? '';
+        if ($basePath && str_starts_with($path, $basePath)) {
+            $path = substr($path, strlen($basePath)) ?: '/';
+        } elseif (!$basePath) {
+            $scriptDir = dirname($_SERVER['SCRIPT_NAME'] ?? '');
+            if ($scriptDir !== '/' && str_starts_with($path, $scriptDir)) {
+                $path = substr($path, strlen($scriptDir)) ?: '/';
+            }
         }
 
         // Normalise: ensure leading slash, strip trailing slash (except root)
