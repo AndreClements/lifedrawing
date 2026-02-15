@@ -8,7 +8,7 @@ $memberSince = $stats['member_since'] ?? null;
     <div class="dashboard-header">
         <div>
             <h2>Your Practice</h2>
-            <p class="lead">Practice made visible. Not judged — witnessed.</p>
+            <p class="lead"><?= e(axiom('dashboard_lead')) ?></p>
         </div>
         <?php if ($memberSince): ?>
             <small class="text-muted">Member since <?= format_date($memberSince) ?></small>
@@ -90,7 +90,7 @@ $memberSince = $stats['member_since'] ?? null;
                                 <small><?= date('M', strtotime($entry['session_date'])) ?></small>
                             </div>
                             <div class="timeline-content">
-                                <a href="<?= route('sessions.show', ['id' => $entry['id']]) ?>">
+                                <a href="<?= route('sessions.show', ['id' => hex_id((int) $entry['id'], $entry['title'])]) ?>">
                                     <?= e($entry['title']) ?>
                                 </a>
                                 <div class="timeline-meta">
@@ -196,13 +196,13 @@ $memberSince = $stats['member_since'] ?? null;
                              alt="<?= e($artwork['caption'] ?? 'Artwork') ?>"
                              loading="lazy">
                         <div class="artwork-overlay">
-                            <span><?= e($artwork['session_title']) ?></span>
+                            <span><?= e(session_title($artwork)) ?></span>
                             <small><?= format_date($artwork['session_date']) ?></small>
                         </div>
                     </div>
                 <?php endforeach; ?>
             </div>
-            <a href="<?= route('profiles.show', ['id' => $user['id']]) ?>" class="btn btn-outline" style="margin-top: 1rem">
+            <a href="<?= route('profiles.show', ['id' => hex_id((int) $user['id'])]) ?>" class="btn btn-outline" style="margin-top: 1rem">
                 View Full Profile
             </a>
         </div>

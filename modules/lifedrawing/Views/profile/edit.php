@@ -15,6 +15,13 @@
         </div>
 
         <div class="form-group">
+            <label for="pseudonym">Pseudonym <small>(optional — shown to public visitors)</small></label>
+            <input type="text" id="pseudonym" name="pseudonym"
+                   value="<?= e($user['pseudonym'] ?? '') ?>"
+                   placeholder="A name for public view">
+        </div>
+
+        <div class="form-group">
             <label for="bio">Bio</label>
             <textarea id="bio" name="bio"
                       placeholder="Tell us about your practice..."><?= e($user['bio'] ?? '') ?></textarea>

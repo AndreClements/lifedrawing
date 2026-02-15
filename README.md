@@ -20,7 +20,7 @@ Eventually, this becomes the first "table" in a modular **Artistry Caffe** platf
 
 ### What it borrows from Laravel
 
-If you've worked with Laravel, you'll recognise the bones:
+If you've worked with Laravel, you'll recognise some of the bones:
 
 - **Service container** with singleton/factory bindings and `app()` global resolver
 - **Middleware pipeline** — request flows through global middleware, then route-specific middleware, then the handler
@@ -41,7 +41,7 @@ If you've worked with Laravel, you'll recognise the bones:
 
 ### What it does differently
 
-**Axiological architecture.** The [README methodology](https://github.com/andresclements/README) embeds ethical commitments directly into code structures:
+**Axiological architecture.** The [README methodology](https://github.com/andreclements/README) embeds ethical commitments directly into code structures:
 
 | Concept | Implementation |
 |---|---|
@@ -186,7 +186,7 @@ Ensure `storage/` directories are writable by the web server and HTTPS is enforc
 
 ## Session continuity
 
-This project follows the [methodology_CI](https://github.com/andresclements/README/blob/main/docs/methods/METHODOLOGY_CI.md) session continuity protocol. The plan file at `.claude/plans/` serves as the staging artifact. Memory files in `.claude/projects/` capture patterns and decisions across sessions.
+This project follows the [methodology_CI](https://github.com/andreclements/README/blob/main/docs/methods/METHODOLOGY_CI.md) session continuity protocol. The plan file at `.claude/plans/` serves as the staging artifact. Memory files in `.claude/projects/` capture patterns and decisions across sessions.
 
 ## License
 

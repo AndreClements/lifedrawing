@@ -1,0 +1,11 @@
+RewriteEngine On
+
+# Life Drawing Randburg — route /randburg/* to the app
+# Place this at ~/lifedrawing.andresclements.com/.htaccess
+
+# Static files: serve directly from public/
+RewriteCond %{DOCUMENT_ROOT}/randburg/public/$1 -f
+RewriteRule ^randburg/(.+)$ randburg/public/$1 [L]
+
+# Everything else: front controller
+RewriteRule ^randburg(/.*)?$ randburg/public/index.php [L]

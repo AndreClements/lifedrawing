@@ -6,22 +6,41 @@
         <?php endif; ?>
     </div>
 
-    <p class="lead">Life drawing sessions are as much <em>shelter</em> as they are <em>dance</em>.</p>
+    <p class="lead"><?= e(axiom('sessions_lead')) ?></p>
 
-    <?php if (empty($sessions ?? [])): ?>
-        <div class="empty-state">
-            <p>No sessions yet. The first one is being drawn up.</p>
-        </div>
-    <?php else: ?>
+    <?php if (!empty($upcoming)): ?>
+        <h3>Upcoming</h3>
         <div class="card-grid">
-            <?php foreach ($sessions as $session): ?>
-                <a href="<?= route('sessions.show', ['id' => $session['id']]) ?>" class="card card-link">
+            <?php foreach ($upcoming as $session): ?>
+                <a href="<?= route('sessions.show', ['id' => hex_id((int) $session['id'], session_title($session))]) ?>" class="card card-link">
                     <div class="card-date"><?= format_date($session['session_date']) ?></div>
-                    <h3><?= e($session['title']) ?></h3>
+                    <h3><?= e(session_title($session)) ?></h3>
                     <div class="card-meta">
                         <?= e($session['venue']) ?>
-                        <?php if ($session['facilitator_name']): ?>
-                            &middot; hosted by <?= e($session['facilitator_name']) ?>
+                        <?php if ($session['model_sex']): ?>
+                            &middot; <?= $session['model_sex'] === 'f' ? '♀' : '♂' ?>
+                        <?php endif; ?>
+                    </div>
+                    <div class="card-stats">
+                        <span><?= $session['participant_count'] ?>/<?= $session['max_capacity'] ?></span>
+                    </div>
+                    <div class="card-badge badge-<?= $session['status'] ?>"><?= e(ucfirst($session['status'])) ?></div>
+                </a>
+            <?php endforeach; ?>
+        </div>
+    <?php endif; ?>
+
+    <?php if (!empty($past)): ?>
+        <h3>Past</h3>
+        <div class="card-grid">
+            <?php foreach ($past as $session): ?>
+                <a href="<?= route('sessions.show', ['id' => hex_id((int) $session['id'], session_title($session))]) ?>" class="card card-link">
+                    <div class="card-date"><?= format_date($session['session_date']) ?></div>
+                    <h3><?= e(session_title($session)) ?></h3>
+                    <div class="card-meta">
+                        <?= e($session['venue']) ?>
+                        <?php if ($session['model_sex']): ?>
+                            &middot; <?= $session['model_sex'] === 'f' ? '♀' : '♂' ?>
                         <?php endif; ?>
                     </div>
                     <div class="card-stats">
@@ -29,9 +48,14 @@
                         <span>&middot;</span>
                         <span><?= $session['artwork_count'] ?> artwork<?= $session['artwork_count'] !== 1 ? 's' : '' ?></span>
                     </div>
-                    <div class="card-badge badge-<?= $session['status'] ?>"><?= e(ucfirst($session['status'])) ?></div>
                 </a>
             <?php endforeach; ?>
+        </div>
+    <?php endif; ?>
+
+    <?php if (empty($upcoming) && empty($past)): ?>
+        <div class="empty-state">
+            <p>No sessions yet. The first one is being drawn up.</p>
         </div>
     <?php endif; ?>
 </section>

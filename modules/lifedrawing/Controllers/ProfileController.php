@@ -19,7 +19,7 @@ final class ProfileController extends BaseController
     public function artists(Request $request): Response
     {
         $artists = $this->db->fetchAll(
-            "SELECT u.id, u.display_name, u.bio, u.avatar_path,
+            "SELECT u.id, u.display_name, u.pseudonym, u.bio, u.avatar_path,
                     COALESCE(s.total_sessions, 0) as total_sessions,
                     COALESCE(s.total_artworks, 0) as total_artworks,
                     COALESCE(s.current_streak, 0) as current_streak
@@ -35,10 +35,31 @@ final class ProfileController extends BaseController
         ], 'Artists');
     }
 
+    /** List sitters (people who have modeled). */
+    public function sitters(Request $request): Response
+    {
+        $sitters = $this->db->fetchAll(
+            "SELECT u.id, u.display_name, u.pseudonym, u.bio, u.avatar_path,
+                    COUNT(DISTINCT sp.session_id) as sessions_sat,
+                    COALESCE(s.total_sessions, 0) as total_sessions,
+                    COALESCE(s.current_streak, 0) as current_streak
+             FROM users u
+             JOIN ld_session_participants sp ON sp.user_id = u.id AND sp.role = 'model'
+             LEFT JOIN ld_artist_stats s ON u.id = s.user_id
+             WHERE u.consent_state = 'granted'
+             GROUP BY u.id
+             ORDER BY sessions_sat DESC, u.display_name ASC"
+        );
+
+        return $this->render('profile.sitters', [
+            'sitters' => $sitters,
+        ], 'Sitters');
+    }
+
     /** Show a single profile (public). */
     public function show(Request $request): Response
     {
-        $id = (int) $request->param('id');
+        $id = from_hex($request->param('id'));
 
         $user = $this->db->fetch(
             "SELECT u.*, COALESCE(s.total_sessions, 0) as total_sessions,
@@ -68,12 +89,14 @@ final class ProfileController extends BaseController
             [$id]
         );
 
-        // Get session history
+        // Get session history (GROUP_CONCAT avoids duplicates for multi-role sessions)
         $sessions = $this->db->fetchAll(
-            "SELECT s.id, s.title, s.session_date, sp.role
+            "SELECT s.id, s.title, s.session_date,
+                    GROUP_CONCAT(sp.role ORDER BY sp.role SEPARATOR ', ') as role
              FROM ld_sessions s
              JOIN ld_session_participants sp ON sp.session_id = s.id
              WHERE sp.user_id = ?
+             GROUP BY s.id
              ORDER BY s.session_date DESC
              LIMIT 20",
             [$id]
@@ -103,6 +126,7 @@ final class ProfileController extends BaseController
         if ($redirect = $this->requireAuth()) return $redirect;
 
         $displayName = trim($request->input('display_name', ''));
+        $pseudonym = trim($request->input('pseudonym', ''));
         $bio = trim($request->input('bio', ''));
 
         if ($displayName === '') {
@@ -116,6 +140,7 @@ final class ProfileController extends BaseController
             ->where('id', '=', $this->userId())
             ->update([
                 'display_name' => $displayName,
+                'pseudonym' => $pseudonym ?: null,
                 'bio' => $bio ?: null,
             ]);
 
@@ -128,6 +153,6 @@ final class ProfileController extends BaseController
             $this->userId(),
         );
 
-        return Response::redirect(route('profiles.show', ['id' => $this->userId()]));
+        return Response::redirect(route('profiles.show', ['id' => hex_id($this->userId())]));
     }
 }

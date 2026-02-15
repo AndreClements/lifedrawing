@@ -26,6 +26,7 @@ final class Kernel
 
     /** @var string[] Global middleware class names (applied to every request) */
     private array $globalMiddleware = [
+        \App\Middleware\SecurityHeadersMiddleware::class,
         \App\Middleware\CsrfMiddleware::class,
     ];
 
@@ -75,7 +76,15 @@ final class Kernel
         // Session
         if (session_status() === PHP_SESSION_NONE && php_sapi_name() !== 'cli') {
             $sessionName = config('auth.session_name', 'ldr_session');
+            $isProduction = config('app.env') === 'production';
             session_name($sessionName);
+            session_set_cookie_params([
+                'lifetime' => 0,
+                'path'     => '/',
+                'secure'   => $isProduction,
+                'httponly'  => true,
+                'samesite'  => 'Lax',
+            ]);
             session_start();
 
             // Generate CSRF token if not present
@@ -95,6 +104,11 @@ final class Kernel
 
         // Wire services
         $this->wireServices();
+
+        // Remember-me: restore session from cookie if not logged in
+        if (empty($_SESSION['user_id']) && !empty($_COOKIE['ldr_remember'])) {
+            $this->container->get('auth')->attemptRememberLogin($_COOKIE['ldr_remember']);
+        }
 
         // Router
         $this->router = new Router();
@@ -197,23 +211,6 @@ final class Kernel
             ]));
         }, 'auth.login');
 
-        $this->router->post('/login', function (Request $req) {
-            $user = app('auth')->attempt(
-                $req->input('email', ''),
-                $req->input('password', ''),
-            );
-            if ($user === null) {
-                return Response::html(app('view')->render('layouts.main', [
-                    'title' => 'Login — Life Drawing Randburg',
-                    'content' => (new Template(LDR_ROOT . '/modules/lifedrawing/Views'))->render('auth.login', [
-                        'error' => 'Invalid email or password.',
-                        'email' => $req->input('email', ''),
-                    ]),
-                ]));
-            }
-            return Response::redirect(route('home'));
-        }, 'auth.login.post');
-
         $this->router->get('/register', function () {
             if (app('auth')->isLoggedIn()) {
                 return Response::redirect(route('home'));
@@ -224,44 +221,72 @@ final class Kernel
             ]));
         }, 'auth.register');
 
-        $this->router->post('/register', function (Request $req) {
-            $name = trim($req->input('display_name', ''));
-            $email = trim($req->input('email', ''));
-            $password = $req->input('password', '');
-            $confirm = $req->input('password_confirm', '');
+        // Rate-limited auth POST routes (5 attempts per 15 minutes)
+        $this->router->group('', [\App\Middleware\RateLimitAuth::class], function (Router $router) {
+            $router->post('/login', function (Request $req) {
+                $user = app('auth')->attempt(
+                    $req->input('email', ''),
+                    $req->input('password', ''),
+                );
+                if ($user === null) {
+                    return Response::html(app('view')->render('layouts.main', [
+                        'title' => 'Login — Life Drawing Randburg',
+                        'content' => (new Template(LDR_ROOT . '/modules/lifedrawing/Views'))->render('auth.login', [
+                            'error' => 'Invalid email or password.',
+                            'email' => $req->input('email', ''),
+                        ]),
+                    ]));
+                }
 
-            $errors = [];
-            if ($name === '') $errors[] = 'Display name is required.';
-            if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) $errors[] = 'Valid email is required.';
-            if (strlen($password) < 8) $errors[] = 'Password must be at least 8 characters.';
-            if ($password !== $confirm) $errors[] = 'Passwords do not match.';
+                // Set remember-me cookie if requested
+                if ($req->input('remember', '') === '1') {
+                    $auth = app('auth');
+                    $token = $auth->createRememberToken((int) $user['id']);
+                    $auth->setRememberCookie($token);
+                }
 
-            if (!empty($errors)) {
-                return Response::html(app('view')->render('layouts.main', [
-                    'title' => 'Register — Life Drawing Randburg',
-                    'content' => (new Template(LDR_ROOT . '/modules/lifedrawing/Views'))->render('auth.register', [
-                        'errors' => $errors,
-                        'name' => $name,
-                        'email' => $email,
-                    ]),
-                ]));
-            }
+                return Response::redirect(route('home'));
+            }, 'auth.login.post');
 
-            try {
-                $userId = app('auth')->register($name, $email, $password);
-                app('auth')->attempt($email, $password);
-                return Response::redirect(route('auth.consent'));
-            } catch (\App\Exceptions\AppException $e) {
-                return Response::html(app('view')->render('layouts.main', [
-                    'title' => 'Register — Life Drawing Randburg',
-                    'content' => (new Template(LDR_ROOT . '/modules/lifedrawing/Views'))->render('auth.register', [
-                        'errors' => [$e->getMessage()],
-                        'name' => $name,
-                        'email' => $email,
-                    ]),
-                ]));
-            }
-        }, 'auth.register.post');
+            $router->post('/register', function (Request $req) {
+                $name = trim($req->input('display_name', ''));
+                $email = trim($req->input('email', ''));
+                $password = $req->input('password', '');
+                $confirm = $req->input('password_confirm', '');
+
+                $errors = [];
+                if ($name === '') $errors[] = 'Display name is required.';
+                if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) $errors[] = 'Valid email is required.';
+                if (strlen($password) < 8) $errors[] = 'Password must be at least 8 characters.';
+                if ($password !== $confirm) $errors[] = 'Passwords do not match.';
+
+                if (!empty($errors)) {
+                    return Response::html(app('view')->render('layouts.main', [
+                        'title' => 'Register — Life Drawing Randburg',
+                        'content' => (new Template(LDR_ROOT . '/modules/lifedrawing/Views'))->render('auth.register', [
+                            'errors' => $errors,
+                            'name' => $name,
+                            'email' => $email,
+                        ]),
+                    ]));
+                }
+
+                try {
+                    $userId = app('auth')->register($name, $email, $password);
+                    app('auth')->attempt($email, $password);
+                    return Response::redirect(route('auth.consent'));
+                } catch (\App\Exceptions\AppException $e) {
+                    return Response::html(app('view')->render('layouts.main', [
+                        'title' => 'Register — Life Drawing Randburg',
+                        'content' => (new Template(LDR_ROOT . '/modules/lifedrawing/Views'))->render('auth.register', [
+                            'errors' => [$e->getMessage()],
+                            'name' => $name,
+                            'email' => $email,
+                        ]),
+                    ]));
+                }
+            }, 'auth.register.post');
+        });
 
         $this->router->get('/consent', function () {
             return Response::html(app('view')->render('layouts.main', [
@@ -286,6 +311,93 @@ final class Kernel
             app('auth')->logout();
             return Response::redirect(route('auth.login'));
         }, 'auth.logout');
+
+        // Password reset routes (rate-limited with auth category)
+        $this->router->get('/forgot-password', function () {
+            return Response::html(app('view')->render('layouts.main', [
+                'title' => 'Forgot Password — Life Drawing Randburg',
+                'content' => (new Template(LDR_ROOT . '/modules/lifedrawing/Views'))->render('auth.forgot-password'),
+            ]));
+        }, 'auth.forgot_password');
+
+        $this->router->get('/reset-password', function (Request $req) {
+            $token = $req->input('token', '');
+            $email = app('auth')->verifyResetToken($token);
+
+            if ($email === null) {
+                return Response::html(app('view')->render('layouts.main', [
+                    'title' => 'Invalid Link — Life Drawing Randburg',
+                    'content' => (new Template(LDR_ROOT . '/modules/lifedrawing/Views'))->render('auth.reset-expired'),
+                ]));
+            }
+
+            return Response::html(app('view')->render('layouts.main', [
+                'title' => 'Reset Password — Life Drawing Randburg',
+                'content' => (new Template(LDR_ROOT . '/modules/lifedrawing/Views'))->render('auth.reset-password', [
+                    'token' => $token,
+                ]),
+            ]));
+        }, 'auth.reset_password');
+
+        $this->router->group('', [\App\Middleware\RateLimitAuth::class], function (Router $router) {
+            $router->post('/forgot-password', function (Request $req) {
+                $email = trim($req->input('email', ''));
+
+                if ($email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                    $token = app('auth')->createPasswordResetToken($email);
+                    if ($token !== null) {
+                        $resetUrl = config('app.url', 'http://localhost/lifedrawing/public')
+                            . route('auth.reset_password') . '?token=' . $token;
+                        @mail(
+                            $email,
+                            'Password Reset — Life Drawing Randburg',
+                            "You requested a password reset.\n\nClick here to reset your password:\n{$resetUrl}\n\nThis link expires in 1 hour.\n\nIf you did not request this, please ignore this email.",
+                            "From: noreply@lifedrawingrandburg.co.za\r\nContent-Type: text/plain; charset=UTF-8"
+                        );
+                    }
+                }
+
+                // Always show success (anti-enumeration)
+                return Response::html(app('view')->render('layouts.main', [
+                    'title' => 'Check Your Email — Life Drawing Randburg',
+                    'content' => (new Template(LDR_ROOT . '/modules/lifedrawing/Views'))->render('auth.forgot-password-sent'),
+                ]));
+            }, 'auth.forgot_password.post');
+
+            $router->post('/reset-password', function (Request $req) {
+                $token = $req->input('token', '');
+                $password = $req->input('password', '');
+                $confirm = $req->input('password_confirm', '');
+
+                $errors = [];
+                if (strlen($password) < 8) {
+                    $errors[] = 'Password must be at least 8 characters.';
+                }
+                if ($password !== $confirm) {
+                    $errors[] = 'Passwords do not match.';
+                }
+
+                if (!empty($errors)) {
+                    return Response::html(app('view')->render('layouts.main', [
+                        'title' => 'Reset Password — Life Drawing Randburg',
+                        'content' => (new Template(LDR_ROOT . '/modules/lifedrawing/Views'))->render('auth.reset-password', [
+                            'token' => $token,
+                            'errors' => $errors,
+                        ]),
+                    ]));
+                }
+
+                $success = app('auth')->resetPassword($token, $password);
+                if (!$success) {
+                    return Response::html(app('view')->render('layouts.main', [
+                        'title' => 'Invalid Link — Life Drawing Randburg',
+                        'content' => (new Template(LDR_ROOT . '/modules/lifedrawing/Views'))->render('auth.reset-expired'),
+                    ]));
+                }
+
+                return Response::redirect(route('auth.login'));
+            }, 'auth.reset_password.post');
+        });
     }
 
     // --- Middleware pipeline ---

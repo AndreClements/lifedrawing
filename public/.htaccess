@@ -1,6 +1,5 @@
 <IfModule mod_rewrite.c>
     RewriteEngine On
-    RewriteBase /lifedrawing/public/
 
     # Serve existing files and directories directly
     RewriteCond %{REQUEST_FILENAME} !-f

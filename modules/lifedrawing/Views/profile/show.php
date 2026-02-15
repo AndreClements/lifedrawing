@@ -2,7 +2,7 @@
 
 <section class="profile-detail">
     <div class="profile-header">
-        <h2><?= e($profile['display_name']) ?></h2>
+        <h2><?= profile_name($profile) ?></h2>
         <?php if ($profile['bio']): ?>
             <p class="lead"><?= nl2br(e($profile['bio'])) ?></p>
         <?php endif; ?>
@@ -37,15 +37,15 @@
         <h3>Artworks</h3>
         <div class="gallery-grid">
             <?php foreach ($artworks as $artwork): ?>
-                <div class="artwork-thumb">
+                <a href="<?= route('artworks.show', ['id' => hex_id((int) $artwork['id'], $artwork['caption'] ?? '')]) ?>" class="artwork-thumb">
                     <img src="<?= e($uploadService->url($artwork['thumbnail_path'] ?? $artwork['file_path'])) ?>"
                          alt="<?= e($artwork['caption'] ?? 'Artwork') ?>"
                          loading="lazy">
                     <div class="artwork-overlay">
-                        <span><?= e($artwork['session_title']) ?></span>
+                        <span><?= e(session_title($artwork)) ?></span>
                         <small><?= e($artwork['claim_type']) ?> &middot; <?= format_date($artwork['session_date']) ?></small>
                     </div>
-                </div>
+                </a>
             <?php endforeach; ?>
         </div>
     <?php endif; ?>
@@ -56,8 +56,8 @@
         <ul class="session-history">
             <?php foreach ($sessions as $s): ?>
                 <li>
-                    <a href="<?= route('sessions.show', ['id' => $s['id']]) ?>">
-                        <?= format_date($s['session_date']) ?> — <?= e($s['title']) ?>
+                    <a href="<?= route('sessions.show', ['id' => hex_id((int) $s['id'], session_title($s))]) ?>">
+                        <?= format_date($s['session_date']) ?> — <?= e(session_title($s)) ?>
                     </a>
                     <small>(<?= e($s['role']) ?>)</small>
                 </li>

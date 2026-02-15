@@ -123,10 +123,19 @@ strong { font-weight: 600; }
 }
 
 .nav-brand {
+    display: inline-flex;
+    align-items: center;
     font-family: var(--font-ui);
     text-decoration: none;
     font-size: 1rem;
     letter-spacing: 0.02em;
+}
+
+.octagram-mark {
+    width: 1.2em;
+    height: 1.2em;
+    vertical-align: -0.15em;
+    margin-right: 0.3em;
 }
 
 .nav-links {
@@ -398,6 +407,14 @@ textarea {
 
 .card-stats { margin-top: var(--space-sm); }
 .card-bio { font-size: 0.9rem; color: var(--color-text-muted); }
+
+.pseudonym {
+    display: block;
+    font-size: 0.8em;
+    font-weight: normal;
+    font-style: italic;
+    color: var(--color-text-muted);
+}
 
 .card-badge {
     display: inline-block;
@@ -966,6 +983,279 @@ textarea {
     line-height: 1;
     color: var(--color-border);
     margin-bottom: var(--space-sm);
+}
+
+/* === Batch headers (grouped uploads) === */
+.batch-header {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-sm);
+    padding: var(--space-sm) 0;
+    margin-top: var(--space-lg);
+    border-bottom: 2px solid var(--accent);
+}
+
+.batch-header:first-of-type {
+    margin-top: 0;
+}
+
+.batch-header h4 {
+    margin: 0;
+    font-size: 1rem;
+    color: var(--text);
+}
+
+.batch-duration {
+    font-weight: 600;
+    color: var(--accent);
+}
+
+.batch-count {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    margin-left: auto;
+}
+
+/* === Auth link (forgot password etc.) === */
+.auth-link {
+    font-size: 0.85rem;
+    font-family: var(--font-ui);
+    color: var(--text-muted);
+}
+
+.auth-link:hover {
+    color: var(--accent);
+}
+
+/* === Artwork detail page === */
+.artwork-detail {
+    max-width: 800px;
+    margin: 0 auto;
+}
+
+.artwork-full {
+    margin-bottom: var(--space-md);
+    border-radius: var(--radius);
+    overflow: hidden;
+    background: var(--bg-card);
+}
+
+.artwork-full img {
+    width: 100%;
+    height: auto;
+    display: block;
+}
+
+.artwork-info {
+    margin-bottom: var(--space-lg);
+}
+
+.artwork-info h2 {
+    margin-bottom: var(--space-xs);
+}
+
+.artwork-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-xs);
+    align-items: center;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    margin-bottom: var(--space-md);
+}
+
+.artwork-meta a {
+    color: var(--accent);
+    text-decoration: none;
+}
+
+.artwork-meta a:hover {
+    text-decoration: underline;
+}
+
+.artwork-credits {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-sm);
+    margin-bottom: var(--space-md);
+}
+
+.credit {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-xs);
+    padding: 0.3rem 0.6rem;
+    border-radius: var(--radius);
+    font-size: 0.85rem;
+}
+
+.credit a {
+    color: inherit;
+    text-decoration: none;
+    font-weight: 600;
+}
+
+.credit a:hover {
+    text-decoration: underline;
+}
+
+.artwork-nav {
+    display: flex;
+    gap: var(--space-sm);
+    margin-top: var(--space-lg);
+    padding-top: var(--space-md);
+    border-top: 1px solid var(--border);
+}
+
+/* === Share buttons === */
+.share-buttons {
+    display: flex;
+    gap: var(--space-xs);
+    align-items: center;
+    margin: var(--space-sm) 0;
+}
+
+.share-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.3rem 0.6rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    border-radius: var(--radius);
+    text-decoration: none;
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+}
+
+.share-btn:hover {
+    color: var(--text);
+    background: var(--bg);
+}
+
+.share-fb:hover { color: #1877f2; }
+.share-x:hover { color: var(--text); }
+.share-wa:hover { color: #25d366; }
+.share-copy:hover { color: var(--accent); }
+
+/* === Comments === */
+.comments-section {
+    margin-top: var(--space-lg);
+    padding-top: var(--space-md);
+    border-top: 1px solid var(--border);
+}
+
+.comments-section h3 {
+    margin-bottom: var(--space-md);
+}
+
+.comments-section h3 small {
+    font-weight: 400;
+    color: var(--text-muted);
+}
+
+.comments-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-md);
+    margin-bottom: var(--space-lg);
+}
+
+.comment {
+    padding: var(--space-sm) var(--space-md);
+    border-left: 3px solid var(--border);
+    background: var(--bg-card);
+    border-radius: 0 var(--radius) var(--radius) 0;
+}
+
+.comment-credited {
+    border-left-color: var(--accent);
+}
+
+.comment-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-xs);
+    margin-bottom: var(--space-xs);
+    font-size: 0.85rem;
+}
+
+.comment-header a {
+    color: var(--text);
+    text-decoration: none;
+}
+
+.comment-header a:hover {
+    color: var(--accent);
+}
+
+.comment-badge {
+    display: inline-block;
+    padding: 0.1rem 0.4rem;
+    border-radius: var(--radius);
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.comment-badge.badge-artist {
+    background: #dbeafe;
+    color: #1e40af;
+}
+
+.comment-badge.badge-model {
+    background: #fce7f3;
+    color: #9d174d;
+}
+
+@media (prefers-color-scheme: dark) {
+    .comment-badge.badge-artist { background: #1e3a5f; color: #93c5fd; }
+    .comment-badge.badge-model { background: #4a1942; color: #f9a8d4; }
+}
+
+.comment-time {
+    color: var(--text-muted);
+    margin-left: auto;
+}
+
+.comment-body {
+    font-size: 0.9rem;
+    line-height: 1.5;
+}
+
+.comment-form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+}
+
+.comment-form textarea {
+    width: 100%;
+    padding: var(--space-sm);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 0.9rem;
+    resize: vertical;
+}
+
+.comment-form .btn {
+    align-self: flex-end;
+}
+
+.comment-login {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+}
+
+.comment-login a {
+    color: var(--accent);
 }
 
 /* === Responsive === */

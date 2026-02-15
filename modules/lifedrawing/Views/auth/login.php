@@ -19,9 +19,15 @@
             <input type="password" id="password" name="password" required>
         </div>
 
+        <div class="form-group form-check">
+            <label><input type="checkbox" name="remember" value="1"> Remember me</label>
+        </div>
+
         <div class="form-actions">
             <button type="submit" class="btn">Sign In</button>
             <a href="<?= route('auth.register') ?>" class="btn btn-outline">Register</a>
         </div>
+
+        <p class="auth-link"><a href="<?= route('auth.forgot_password') ?>">Forgot your password?</a></p>
     </form>
 </section>

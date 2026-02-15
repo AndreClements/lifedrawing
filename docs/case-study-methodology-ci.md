@@ -6,24 +6,28 @@
 
 ## What Was Built
 
-A complete web application in a single extended session (~6 hours of active collaboration), from empty directory to working site with 72 files and 6,400 lines of code.
+A complete web application across three build sessions — from empty directory to working site with real historical data spanning 2017–2026.
 
 ### The Stack
 
 - Custom PHP 8.2+ micro-kernel (~15 core files, no framework)
-- MySQL with 6 migration files (2 core + 4 module)
+- MySQL with 14 migration files (5 core + 9 module)
 - HTMX for interactivity (single `<script>` tag, no build pipeline)
-- Vanilla CSS with custom properties
+- Vanilla CSS with custom properties (two font families: Georgia for body, system-ui for interface)
 - PSR-4 autoloading via Composer (the only dependency)
+- Octagram `{8/3}` star polygon as identity mark (inline SVG, `fill="currentColor"`)
 
 ### What It Does
 
-- **Sessions**: Facilitator creates drawing sessions, participants join with roles (artist, model, observer)
-- **Gallery**: Facilitator uploads snapshots of drawings from sessions
-- **Claims**: Artists claim "I drew this", models claim "I modelled for this" — facilitator approves
-- **Profiles**: Claimed works build an artist's public portfolio over time
-- **Dashboard**: Attendance streaks, session history, milestone tracking, weekly heatmap
-- **Landing page**: Public face explaining LDR to newcomers
+- **Sessions**: Facilitator creates drawing sessions with model sex, capacity, optional titles. Participants join with roles (artist, model, observer). Schedule shows upcoming (with booking counts) then past.
+- **Gallery**: Facilitator uploads artwork snapshots in batches with pose duration and label. Artworks grouped by pose on session view.
+- **Claims**: Artists claim "I drew this", models claim "I modelled for this" — facilitator approves. Multi-role participation handled cleanly (GROUP_CONCAT deduplication).
+- **Profiles**: Claimed works build an artist's public portfolio. Pseudonym support. Sitters page alongside artists.
+- **Dashboard**: Attendance streaks, session history, milestone tracking.
+- **Comments**: On individual artworks. Artist/model comments float to top with role badges. Consent-gated.
+- **Auth**: Registration, login with remember-me (30-day rotating token), password reset (SHA-256 hashed, 1-hour expiry, anti-enumeration), consent gate.
+- **Name privacy**: Real names visible only to logged-in users who've participated in at least one session. Non-participants see pseudonyms or "Participant".
+- **Historical data**: 245 sessions backfilled from facilitator's Google Sheet (2017–2026), ~220 participant stub accounts awaiting real registration.
 
 ## How Methodology_CI Manifested
 
@@ -32,10 +36,10 @@ A complete web application in a single extended session (~6 hours of active coll
 | Facet | How it became architecture |
 |---|---|
 | **Competence** | No quality rankings, no voting. Stats track *engagement* (sessions attended, streaks) not output volume or peer evaluation. |
-| **Autonomy** | Claims are opt-in. Visibility is user-controlled. Artists decide what appears on their profile. |
-| **Relatedness** | Session-centric design. Artworks belong to sessions first, then get claimed into profiles. The session is the container for shared experience. |
-| **Dignity** | `DignityException` halts (not warns). Artworks are "responses" not "depictions". No comments on body. |
-| **Safety** | CSRF on all forms. Prepared statements only. Image validation. Rate limiting middleware. |
+| **Autonomy** | Claims are opt-in. Artists decide what appears on their profile. Pseudonyms let participants choose how they're known. Consent withdrawal hides their uploaded artworks. |
+| **Relatedness** | Session-centric design. Artworks belong to sessions first, then get claimed into profiles. The session is the container for shared experience. Comments prioritise artist and model voices (float to top, role badges). |
+| **Dignity** | `DignityException` halts (not warns). Artworks are "responses" not "depictions". No comments on body. Name privacy: you must have been in the room to see who else was. |
+| **Safety** | CSRF on all forms. Prepared statements only. Image validation. Rate limiting (auth: 5/15min, upload: 10/hr). Security headers (CSP, HSTS in production, X-Frame-Options DENY). IDOR checks on facilitator actions. Password reset with hashed tokens. Remember-me with token rotation. |
 
 ### Try-Catch-And-Yet
 
@@ -49,6 +53,18 @@ public readonly string $andYet = '';
 
 The catch block doesn't just handle the error — it confesses what it fails to handle. This changes the epistemic posture of the entire error system.
 
+The pattern deepened across sessions. The consent withdrawal code is a worked example:
+
+```php
+// And-Yet: This hides artworks uploaded BY the user, but not artworks
+// depicting the user as a model (uploaded by facilitators, claimed by artists).
+// A model-takedown flow — where the model can flag artworks from sessions
+// they modelled for — is a post-beta feature. For now, model takedowns
+// are handled manually by the facilitator. (Risk lens: Botha, non-economic.)
+```
+
+The system does what it can, says what it can't, and names the gap. Not a TODO — a confession with a reason.
+
 ### Parametric Authorship
 
 "Govern via slope, not policing."
@@ -57,6 +73,7 @@ The catch block doesn't just handle the error — it confesses what it fails to 
 - There's no `if ($user->isAllowed('claim'))` permission check. The architecture makes the desired behaviour the path of least resistance.
 - Stats reward attendance, not output volume. The slope encourages showing up.
 - Default visibility is `public` — consent happens in the room, not through software gates.
+- Session titles are optional. When absent, the system provides a deterministic axiom from a curated pool — no blank space, but the facilitator doesn't have to name what doesn't need naming.
 
 ### The Consent Decision
 
@@ -66,9 +83,27 @@ This led to a simplification: default artwork visibility changed from `'session'
 
 This is methodology_CI in practice: the methodology doesn't just produce code — it produces *decisions about what not to code*.
 
+### Name Privacy as Disclosed Default
+
+Session 3 introduced a name visibility gate: `can_see_names()` checks whether the current viewer is logged in *and* has participated in at least one session. Non-participants see pseudonyms (if set) or the word "Participant".
+
+This is an A4 (Defaults Author) move made explicit. The default is not "names are hidden" or "names are public" — it's "you must have been in the room to know who else was in the room." The threshold is presence, not permission. The code discloses this default rather than hiding behind it.
+
+### Withdrawal Right (A5)
+
+Consent withdrawal is implemented as a first-class operation: `withdrawConsent()` sets the user's state and hides all artworks they uploaded. But it carries an And-Yet: artworks *depicting* the user as a model (uploaded by the facilitator, claimed by others) are not automatically hidden. That requires a model-takedown flow that doesn't exist yet.
+
+The system doesn't pretend this is resolved. The gap is documented in the code, assessed through the Botha risk lens (non-economic harm), and scheduled for post-beta. Exit is first-class in intent; the implementation is honest about where it falls short.
+
+### Provenance as Indexical Trace (A6)
+
+Every authentication event writes to `provenance_log`: login, logout, register, consent grant, consent withdrawal, password reset request, password reset completion, remember-me login. Each row carries user ID, action, entity type, entity ID, IP address, and timestamp.
+
+The trace exists in the database, not in the case study narrative. This was the GPT review's observation — "provenance is present as an intention, but the indexical trace is described rather than demonstrated." Fair critique. The ledger runs; the case study now points to it.
+
 ## "Did You Have Fun?"
 
-At the end of the build session:
+At the end of the first build session:
 
 > **Andre:** ...now for the other interesting question, did you have fun?
 >
@@ -96,7 +131,25 @@ At the end of the build session:
 
 4. **AI collaboration benefits from axiological framing** — giving the AI an ethical framework to work within produced more coherent architecture than a purely technical brief would have. The framework provided constraints that focused rather than limited.
 
+5. **And-Yet scales** — from a single field on an exception class to a design posture across three build sessions. The consent withdrawal carries an And-Yet. The name privacy gate carries an implicit one (URL slugs can still leak names). The system gets more honest as it grows, not less.
+
+6. **Historical data validates the model** — 245 real sessions across 8 years of practice, imported without schema changes. The session-centric ontology held because it was designed around how the room actually works, not around a hypothetical.
+
+## Reviews
+
+- **Gemini 2.0 Flash** (2026-02-14): "Exceptionally strong conceptually and architecturally." Noted CARDS-to-code mapping as the signature move.
+- **GPT** (2026-02-14): Identified the case study as "an assembly header masquerading as narrative" — disclosing defaults, goals, rules, deltas. Strongest resonance with A7 (Dependency Inversion of Dignity): dignity and consent as high-level policy, technical layer implements.
+- **Botha Risk lens**: Non-economic risks (dignity, consent, relational) assessed. Consent name leakage fixed. Model likeness gap documented as And-Yet.
+
+## Sharing the Work
+
+From the post announcing the project:
+
+> Building a digital home for Life Drawing Randburg — somewhere to archive session snapshots, let artists claim their drawings and build a profile over time. No rankings, no likes, just a record of practice. Built it with Claude in one sitting, brief was basically "apply my methodology to offer value to participants, artists, and models alike, state of the art but don't get carried away, have fun." And we did B-)
+>
+> https://github.com/andreclements/lifedrawing
+
 ---
 
-*Life Drawing Randburg. v0.0.1. February 2026.*
-*Built with [methodology_CI](https://github.com/andresclements/README/blob/main/docs/methods/METHODOLOGY_CI.md).*
+*Life Drawing Randburg. v0.1.0-beta. February 2026.*
+*Built with [methodology_CI](https://github.com/andreclements/README/blob/main/docs/methods/METHODOLOGY_CI.md).*

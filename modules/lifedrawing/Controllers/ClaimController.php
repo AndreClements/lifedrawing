@@ -21,7 +21,7 @@ final class ClaimController extends BaseController
         if ($redirect = $this->requireAuth()) return $redirect;
         $this->auth->requireConsent();
 
-        $artworkId = (int) $request->param('id');
+        $artworkId = from_hex($request->param('id'));
         $claimType = $request->input('claim_type', 'artist');
 
         if (!in_array($claimType, ['artist', 'model'], true)) {
@@ -45,7 +45,7 @@ final class ClaimController extends BaseController
             if ($request->isHtmx()) {
                 return Response::html('<span class="badge badge-muted">Already claimed</span>');
             }
-            return Response::redirect(route('sessions.show', ['id' => $artwork['session_id']]));
+            return Response::redirect(route('sessions.show', ['id' => hex_id((int) $artwork['session_id'])]));
         }
 
         $claimId = (int) $this->table('ld_claims')->insert([
@@ -67,7 +67,7 @@ final class ClaimController extends BaseController
             return Response::html('<span class="badge badge-pending">Claim pending</span>');
         }
 
-        return Response::redirect(route('sessions.show', ['id' => $artwork['session_id']]));
+        return Response::redirect(route('sessions.show', ['id' => hex_id((int) $artwork['session_id'])]));
     }
 
     /** Approve or reject a claim (facilitator+). */
@@ -76,7 +76,7 @@ final class ClaimController extends BaseController
         if ($redirect = $this->requireAuth()) return $redirect;
         if ($redirect = $this->requireRole('admin', 'facilitator')) return $redirect;
 
-        $claimId = (int) $request->param('id');
+        $claimId = from_hex($request->param('id'));
         $action = $request->input('action'); // 'approve' or 'reject'
 
         if (!in_array($action, ['approve', 'reject'], true)) {
@@ -86,6 +86,16 @@ final class ClaimController extends BaseController
         $claim = $this->table('ld_claims')->where('id', '=', $claimId)->first();
         if (!$claim) {
             return Response::notFound('Claim not found.');
+        }
+
+        // IDOR check: verify this facilitator owns the session (or is admin)
+        $artwork = $this->table('ld_artworks')->where('id', '=', (int) $claim['artwork_id'])->first();
+        if (!$artwork) {
+            return Response::notFound('Associated artwork not found.');
+        }
+        $session = $this->table('ld_sessions')->where('id', '=', (int) $artwork['session_id'])->first();
+        if (!$this->auth->hasRole('admin') && (int) ($session['facilitator_id'] ?? 0) !== $this->userId()) {
+            return Response::forbidden('You can only resolve claims for your own sessions.');
         }
 
         $newStatus = $action === 'approve' ? 'approved' : 'rejected';
@@ -129,6 +139,7 @@ final class ClaimController extends BaseController
         if ($redirect = $this->requireAuth()) return $redirect;
         if ($redirect = $this->requireRole('admin', 'facilitator')) return $redirect;
 
+        $isAdmin = $this->auth->hasRole('admin');
         $claims = $this->db->fetchAll(
             "SELECT c.*, a.file_path, a.thumbnail_path, a.session_id,
                     s.title as session_title, s.session_date,
@@ -138,7 +149,9 @@ final class ClaimController extends BaseController
              JOIN ld_sessions s ON a.session_id = s.id
              JOIN users u ON c.claimant_id = u.id
              WHERE c.status = 'pending'
-             ORDER BY c.claimed_at DESC"
+               AND (s.facilitator_id = ? OR ? = 1)
+             ORDER BY c.claimed_at DESC",
+            [$this->userId(), $isAdmin ? 1 : 0]
         );
 
         return $this->render('gallery.claims', [

@@ -2,7 +2,7 @@
 
 <section class="gallery">
     <h2>Gallery</h2>
-    <p class="lead">Marks are responses, not evaluations.</p>
+    <p class="lead"><?= e(axiom('gallery_lead')) ?></p>
 
     <?php if (!empty($sessions ?? [])): ?>
         <div class="gallery-filter">
@@ -25,15 +25,15 @@
     <?php else: ?>
         <div class="gallery-grid">
             <?php foreach ($artworks as $artwork): ?>
-                <div class="artwork-thumb">
+                <a href="<?= route('artworks.show', ['id' => hex_id((int) $artwork['id'], $artwork['caption'] ?? '')]) ?>" class="artwork-thumb">
                     <img src="<?= e($uploadService->url($artwork['thumbnail_path'] ?? $artwork['file_path'])) ?>"
                          alt="<?= e($artwork['caption'] ?? 'Artwork') ?>"
                          loading="lazy">
                     <div class="artwork-overlay">
-                        <span><?= e($artwork['session_title']) ?></span>
+                        <span><?= e(session_title($artwork)) ?></span>
                         <small><?= format_date($artwork['session_date']) ?></small>
                     </div>
-                </div>
+                </a>
             <?php endforeach; ?>
         </div>
     <?php endif; ?>

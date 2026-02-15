@@ -1,6 +1,6 @@
 <section class="artists-list">
     <h2>Artists</h2>
-    <p class="lead">The circulation of roles feels very true to what we do here.</p>
+    <p class="lead"><?= e(axiom('artists_lead')) ?></p>
 
     <?php if (empty($artists ?? [])): ?>
         <div class="empty-state">
@@ -9,8 +9,8 @@
     <?php else: ?>
         <div class="card-grid">
             <?php foreach ($artists as $artist): ?>
-                <a href="<?= route('profiles.show', ['id' => $artist['id']]) ?>" class="card card-link">
-                    <h3><?= e($artist['display_name']) ?></h3>
+                <a href="<?= route('profiles.show', ['id' => hex_id((int) $artist['id'], can_see_names() ? $artist['display_name'] : '')]) ?>" class="card card-link">
+                    <h3><?= profile_name($artist) ?></h3>
                     <?php if ($artist['bio']): ?>
                         <p class="card-bio"><?= e(excerpt($artist['bio'], 100)) ?></p>
                     <?php endif; ?>

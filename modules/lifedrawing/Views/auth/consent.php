@@ -2,7 +2,7 @@
     <h2>Consent</h2>
 
     <div class="consent-text">
-        <p>Life Drawing Randburg is a practice of <strong>witnessing, not judgement</strong>.</p>
+        <p><?= axiom('consent_opening') ?></p>
 
         <p>By granting consent, you agree to the following:</p>
 

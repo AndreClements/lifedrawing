@@ -20,20 +20,20 @@
                         <strong><?= e($claim['claimant_name']) ?></strong>
                         claims as <em><?= e($claim['claim_type']) ?></em>
                         <br>
-                        <small>Session: <?= e($claim['session_title']) ?> (<?= format_date($claim['session_date']) ?>)</small>
+                        <small>Session: <?= e(session_title($claim)) ?> (<?= format_date($claim['session_date']) ?>)</small>
                     </div>
 
                     <div class="claim-actions">
-                        <form method="POST" action="<?= route('claims.resolve', ['id' => $claim['id']]) ?>"
-                              hx-post="<?= route('claims.resolve', ['id' => $claim['id']]) ?>"
+                        <form method="POST" action="<?= route('claims.resolve', ['id' => hex_id((int) $claim['id'])]) ?>"
+                              hx-post="<?= route('claims.resolve', ['id' => hex_id((int) $claim['id'])]) ?>"
                               hx-target="closest .claim-card" hx-swap="outerHTML"
                               style="display:inline">
                             <?= csrf_field() ?>
                             <input type="hidden" name="action" value="approve">
                             <button type="submit" class="btn">Approve</button>
                         </form>
-                        <form method="POST" action="<?= route('claims.resolve', ['id' => $claim['id']]) ?>"
-                              hx-post="<?= route('claims.resolve', ['id' => $claim['id']]) ?>"
+                        <form method="POST" action="<?= route('claims.resolve', ['id' => hex_id((int) $claim['id'])]) ?>"
+                              hx-post="<?= route('claims.resolve', ['id' => hex_id((int) $claim['id'])]) ?>"
                               hx-target="closest .claim-card" hx-swap="outerHTML"
                               style="display:inline">
                             <?= csrf_field() ?>

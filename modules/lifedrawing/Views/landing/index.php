@@ -3,11 +3,8 @@
 <!-- Hero -->
 <section class="hero">
     <h1>Life Drawing Randburg</h1>
-    <p class="hero-subtitle">A practice of witnessing, not judgement.</p>
-    <p class="hero-body">
-        We meet to draw, to model, to hold space for the human form.
-        The marks we make are responses &mdash; not evaluations.
-    </p>
+    <p class="hero-subtitle"><?= e(axiom('hero_subtitle')) ?></p>
+    <p class="hero-body"><?= e(axiom('hero_body')) ?></p>
     <div class="hero-actions">
         <a href="<?= route('sessions.index') ?>" class="btn btn-lg">View Sessions</a>
         <?php if (!app('auth')->isLoggedIn()): ?>
@@ -31,7 +28,7 @@
                 <?php endif; ?>
                 <span>&middot; <?= e($upcoming['venue']) ?></span>
             </div>
-            <a href="<?= route('sessions.show', ['id' => $upcoming['id']]) ?>" class="btn btn-sm">Details &amp; RSVP</a>
+            <a href="<?= route('sessions.show', ['id' => hex_id((int) $upcoming['id'], session_title($upcoming))]) ?>" class="btn btn-sm">Details &amp; RSVP</a>
         </div>
     </section>
 <?php endif; ?>
@@ -65,10 +62,10 @@
             <?php foreach ($galleryHighlights as $artwork): ?>
                 <div class="artwork-thumb">
                     <img src="<?= e($uploadService->url($artwork['thumbnail_path'] ?? $artwork['file_path'])) ?>"
-                         alt="<?= e($artwork['caption'] ?? 'Artwork from ' . $artwork['session_title']) ?>"
+                         alt="<?= e($artwork['caption'] ?? 'Artwork from ' . session_title($artwork)) ?>"
                          loading="lazy">
                     <div class="artwork-overlay">
-                        <span><?= e($artwork['session_title']) ?></span>
+                        <span><?= e(session_title($artwork)) ?></span>
                         <small><?= format_date($artwork['session_date']) ?></small>
                     </div>
                 </div>
@@ -86,12 +83,12 @@
         </div>
         <div class="card-grid">
             <?php foreach ($recentSessions as $session): ?>
-                <a href="<?= route('sessions.show', ['id' => $session['id']]) ?>" class="card card-link">
+                <a href="<?= route('sessions.show', ['id' => hex_id((int) $session['id'], session_title($session))]) ?>" class="card card-link">
                     <div class="card-date"><?= format_date($session['session_date']) ?></div>
-                    <h3><?= e($session['title']) ?></h3>
+                    <h3><?= e(session_title($session)) ?></h3>
                     <div class="card-meta">
                         <?= e($session['venue']) ?>
-                        <?php if ($session['facilitator_name']): ?>
+                        <?php if ($session['facilitator_name'] && can_see_names()): ?>
                             &middot; hosted by <?= e($session['facilitator_name']) ?>
                         <?php endif; ?>
                     </div>
@@ -109,8 +106,6 @@
 <!-- Philosophy -->
 <section class="philosophy">
     <blockquote>
-        <p>The circulation of roles feels very true to what we do here.
-           Sometimes you draw, sometimes you model, sometimes you watch.
-           Each position teaches something the others cannot.</p>
+        <p><?= e(axiom('philosophy')) ?></p>
     </blockquote>
 </section>

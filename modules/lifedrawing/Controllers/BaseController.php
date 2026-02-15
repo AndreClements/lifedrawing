@@ -35,13 +35,13 @@ abstract class BaseController
     }
 
     /** Render a module view inside the main layout. */
-    protected function render(string $view, array $data = [], ?string $title = null): Response
+    protected function render(string $view, array $data = [], ?string $title = null, array $meta = []): Response
     {
         $content = $this->view->render($view, $data);
-        return Response::html($this->view->render('layouts.main', [
+        return Response::html($this->view->render('layouts.main', array_merge([
             'title' => ($title ? $title . ' — ' : '') . 'Life Drawing Randburg',
             'content' => $content,
-        ]));
+        ], $meta)));
     }
 
     /** Get a query builder for a table. */

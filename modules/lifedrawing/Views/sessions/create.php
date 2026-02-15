@@ -14,14 +14,6 @@
     <form method="POST" action="<?= route('sessions.store') ?>">
         <?= csrf_field() ?>
 
-        <div class="form-group">
-            <label for="title">Title</label>
-            <input type="text" id="title" name="title"
-                   value="<?= e($old['title'] ?? '') ?>"
-                   placeholder="e.g., Thursday Evening Session"
-                   required>
-        </div>
-
         <div class="form-row">
             <div class="form-group">
                 <label for="session_date">Date</label>
@@ -44,10 +36,29 @@
             </div>
         </div>
 
+        <div class="form-row">
+            <div class="form-group">
+                <label for="venue">Venue</label>
+                <input type="text" id="venue" name="venue"
+                       value="<?= e($old['venue'] ?? 'Randburg') ?>">
+            </div>
+
+            <div class="form-group">
+                <label for="model_sex">Model</label>
+                <?php $ms = $old['model_sex'] ?? ''; ?>
+                <select id="model_sex" name="model_sex">
+                    <option value="">—</option>
+                    <option value="f"<?= $ms === 'f' ? ' selected' : '' ?>>Female</option>
+                    <option value="m"<?= $ms === 'm' ? ' selected' : '' ?>>Male</option>
+                </select>
+            </div>
+        </div>
+
         <div class="form-group">
-            <label for="venue">Venue</label>
-            <input type="text" id="venue" name="venue"
-                   value="<?= e($old['venue'] ?? 'Randburg') ?>">
+            <label for="title">Title <small>(optional — for themed sessions)</small></label>
+            <input type="text" id="title" name="title"
+                   value="<?= e($old['title'] ?? '') ?>"
+                   placeholder="e.g., Charcoal Focus, Tutored: Perspective">
         </div>
 
         <div class="form-group">

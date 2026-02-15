@@ -226,10 +226,10 @@ final class StatsService
             $stats['media_explored'] = json_decode($stats['media_explored'], true) ?: [];
         }
 
-        // Recent session timeline (last 10 sessions with artworks and roles)
+        // Recent session timeline (GROUP_CONCAT avoids duplicates for multi-role sessions)
         $timeline = $this->db->fetchAll(
             "SELECT s.id, s.title, s.session_date, s.venue, s.duration_minutes,
-                    sp.role,
+                    GROUP_CONCAT(sp.role ORDER BY sp.role SEPARATOR ', ') as role,
                     (SELECT COUNT(*) FROM ld_artworks a WHERE a.session_id = s.id) as artwork_count,
                     (SELECT COUNT(*) FROM ld_claims c
                      JOIN ld_artworks a2 ON c.artwork_id = a2.id
@@ -237,6 +237,7 @@ final class StatsService
              FROM ld_sessions s
              JOIN ld_session_participants sp ON sp.session_id = s.id
              WHERE sp.user_id = ?
+             GROUP BY s.id
              ORDER BY s.session_date DESC
              LIMIT 10",
             [$userId, $userId]

@@ -82,6 +82,7 @@ final class AuthService
     {
         $userId = $this->currentUserId();
         if ($userId) {
+            $this->clearRememberToken($userId);
             $this->logProvenance($userId, 'user.logout', 'user', $userId);
         }
 
@@ -98,6 +99,8 @@ final class AuthService
                 $params['httponly'],
             );
         }
+        // Clear remember-me cookie
+        setcookie('ldr_remember', '', time() - 42000, '/', '', false, true);
         session_destroy();
     }
 
@@ -137,6 +140,67 @@ final class AuthService
         return in_array($userRole, $roles, true);
     }
 
+    // --- Remember me ---
+
+    /** Create a remember token, store its hash, return the raw token. */
+    public function createRememberToken(int $userId): string
+    {
+        $token = bin2hex(random_bytes(32));
+        $this->db->execute(
+            "UPDATE users SET remember_token = ? WHERE id = ?",
+            [hash('sha256', $token), $userId]
+        );
+        return $token;
+    }
+
+    /** Attempt login from a remember-me cookie. Returns the user or null. */
+    public function attemptRememberLogin(string $token): ?array
+    {
+        $hashed = hash('sha256', $token);
+        $user = $this->db->fetch(
+            "SELECT * FROM users WHERE remember_token = ?",
+            [$hashed]
+        );
+        if (!$user) {
+            return null;
+        }
+
+        $this->setSession($user);
+        $this->logProvenance((int) $user['id'], 'user.login.remember', 'user', (int) $user['id']);
+
+        // Rotate token on use (prevents replay)
+        $newToken = bin2hex(random_bytes(32));
+        $this->db->execute(
+            "UPDATE users SET remember_token = ? WHERE id = ?",
+            [hash('sha256', $newToken), $user['id']]
+        );
+        $this->setRememberCookie($newToken);
+
+        return $user;
+    }
+
+    /** Clear the remember token from DB. */
+    public function clearRememberToken(int $userId): void
+    {
+        $this->db->execute(
+            "UPDATE users SET remember_token = NULL WHERE id = ?",
+            [$userId]
+        );
+    }
+
+    /** Set the remember-me cookie (30 days). */
+    public function setRememberCookie(string $token): void
+    {
+        $isProduction = config('app.env') === 'production';
+        setcookie('ldr_remember', $token, [
+            'expires'  => time() + (30 * 24 * 60 * 60),
+            'path'     => '/',
+            'secure'   => $isProduction,
+            'httponly'  => true,
+            'samesite'  => 'Lax',
+        ]);
+    }
+
     // --- Consent ---
 
     public function grantConsent(int $userId): void
@@ -162,6 +226,11 @@ final class AuthService
             "UPDATE ld_artworks SET visibility = 'private' WHERE uploaded_by = ?",
             [$userId]
         );
+        // And-Yet: This hides artworks uploaded BY the user, but not artworks
+        // depicting the user as a model (uploaded by facilitators, claimed by artists).
+        // A model-takedown flow — where the model can flag artworks from sessions
+        // they modelled for — is a post-beta feature. For now, model takedowns
+        // are handled manually by the facilitator. (Risk lens: Botha, non-economic.)
 
         $this->logProvenance($userId, 'user.consent.withdraw', 'user', $userId);
     }
@@ -201,6 +270,87 @@ final class AuthService
         );
         $this->logProvenance($userId, 'user.token.generate', 'user', $userId);
         return $token;
+    }
+
+    // --- Password Reset ---
+
+    /**
+     * Create a password reset token and return the raw token.
+     * The token is stored as a SHA-256 hash in the DB.
+     * Returns null silently for non-existent emails (anti-enumeration).
+     */
+    public function createPasswordResetToken(string $email): ?string
+    {
+        $user = $this->db->fetch("SELECT id FROM users WHERE email = ?", [$email]);
+        if (!$user) {
+            return null;
+        }
+
+        // Invalidate old tokens for this email
+        $this->db->execute("DELETE FROM password_resets WHERE email = ?", [$email]);
+
+        $token = bin2hex(random_bytes(32));
+
+        $this->db->execute(
+            "INSERT INTO password_resets (email, token) VALUES (?, ?)",
+            [$email, hash('sha256', $token)]
+        );
+
+        $this->logProvenance((int) $user['id'], 'user.password_reset.request', 'user', (int) $user['id']);
+
+        return $token;
+    }
+
+    /**
+     * Verify a password reset token.
+     * Returns the associated email if valid, null if expired/invalid/used.
+     * Tokens expire after 1 hour.
+     */
+    public function verifyResetToken(string $token): ?string
+    {
+        $hashedToken = hash('sha256', $token);
+
+        $record = $this->db->fetch(
+            "SELECT email FROM password_resets
+             WHERE token = ? AND used_at IS NULL AND created_at > DATE_SUB(NOW(), INTERVAL 1 HOUR)",
+            [$hashedToken]
+        );
+
+        return $record['email'] ?? null;
+    }
+
+    /**
+     * Reset password using a valid token.
+     * Verifies token, updates password, marks token as used.
+     */
+    public function resetPassword(string $token, string $newPassword): bool
+    {
+        $email = $this->verifyResetToken($token);
+        if ($email === null) {
+            return false;
+        }
+
+        $hash = password_hash($newPassword, config('auth.hash_algo', PASSWORD_BCRYPT), [
+            'cost' => config('auth.hash_cost', 12),
+        ]);
+
+        $this->db->execute(
+            "UPDATE users SET password_hash = ? WHERE email = ?",
+            [$hash, $email]
+        );
+
+        // Mark token as used
+        $this->db->execute(
+            "UPDATE password_resets SET used_at = NOW() WHERE token = ?",
+            [hash('sha256', $token)]
+        );
+
+        $user = $this->db->fetch("SELECT id FROM users WHERE email = ?", [$email]);
+        if ($user) {
+            $this->logProvenance((int) $user['id'], 'user.password_reset.complete', 'user', (int) $user['id']);
+        }
+
+        return true;
     }
 
     // --- Provenance ---
