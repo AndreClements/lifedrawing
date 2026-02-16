@@ -131,6 +131,69 @@ final class NotificationService
     }
 
     /**
+     * Operational: new claim submitted.
+     * Notifies facilitators so they can review and approve/reject.
+     */
+    public function claimSubmitted(int $artworkId, int $claimantId, string $claimType): void
+    {
+        $facilitators = $this->db->fetchAll(
+            "SELECT id, email, display_name FROM users
+             WHERE role IN ('admin', 'facilitator') AND id != ?
+               AND email NOT LIKE '%.stub@local'",
+            [$claimantId]
+        );
+
+        if (empty($facilitators)) return;
+
+        $claimant = $this->db->fetch("SELECT display_name FROM users WHERE id = ?", [$claimantId]);
+        $claimantName = $claimant['display_name'] ?? 'Someone';
+
+        $artwork = $this->db->fetch(
+            "SELECT a.id, s.title, s.session_date
+             FROM ld_artworks a JOIN ld_sessions s ON a.session_id = s.id
+             WHERE a.id = ?",
+            [$artworkId]
+        );
+        $sessionTitle = $artwork ? session_title($artwork) : 'Unknown session';
+        $claimsLink = $this->baseUrl . route('claims.pending');
+
+        foreach ($facilitators as $user) {
+            $body = "Hi {$user['display_name']},\n\n"
+                . "{$claimantName} has submitted a {$claimType} claim on an artwork from \"{$sessionTitle}\".\n\n"
+                . "Review pending claims: {$claimsLink}\n\n"
+                . "— Life Drawing Randburg";
+
+            $this->mail->send($user['email'], "New {$claimType} claim from {$claimantName}", $body);
+        }
+    }
+
+    /**
+     * Operational: stub account claimed during registration.
+     * Notifies facilitators of the provenance change.
+     */
+    public function stubClaimed(int $stubId, string $newName, string $newEmail, string $previousName, int $sessionCount): void
+    {
+        $facilitators = $this->db->fetchAll(
+            "SELECT id, email, display_name FROM users
+             WHERE role IN ('admin', 'facilitator')
+               AND email NOT LIKE '%.stub@local'"
+        );
+
+        if (empty($facilitators)) return;
+
+        $profileLink = $this->baseUrl . route('profiles.show', ['id' => hex_id($stubId)]);
+
+        foreach ($facilitators as $user) {
+            $body = "Hi {$user['display_name']},\n\n"
+                . "{$newName} ({$newEmail}) has registered and claimed the stub account \"{$previousName}\" ({$sessionCount} sessions of history).\n\n"
+                . "View their profile: {$profileLink}\n\n"
+                . "— Life Drawing Randburg";
+
+            $this->mail->send($user['email'], "Stub claimed: {$previousName} → {$newName}", $body);
+        }
+    }
+
+    /**
      * Targeted: new comment on artwork.
      * Notifies claimed artist/model (excluding the commenter) if they have notify_comment=1.
      */

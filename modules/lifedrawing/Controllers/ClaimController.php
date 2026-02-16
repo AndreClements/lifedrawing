@@ -63,6 +63,8 @@ final class ClaimController extends BaseController
             ['claim_id' => $claimId, 'claim_type' => $claimType]
         );
 
+        app('notifications')->claimSubmitted($artworkId, $this->userId(), $claimType);
+
         if ($request->isHtmx()) {
             return Response::html('<span class="badge badge-pending">Claim pending</span>');
         }

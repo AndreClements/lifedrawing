@@ -95,7 +95,20 @@ final class AuthController extends BaseController
 
         try {
             if ($claimStubId > 0) {
+                // Capture stub info before claim overwrites it
+                $stub = $this->db->fetch(
+                    "SELECT display_name FROM users WHERE id = ? AND email LIKE '%.stub@local'",
+                    [$claimStubId]
+                );
+                $previousName = $stub['display_name'] ?? 'Unknown';
+                $sessionCount = (int) $this->db->fetch(
+                    "SELECT COUNT(*) as cnt FROM ld_session_participants WHERE user_id = ?",
+                    [$claimStubId]
+                )['cnt'];
+
                 $this->auth->claimStub($claimStubId, $name, $email, $password);
+
+                app('notifications')->stubClaimed($claimStubId, $name, $email, $previousName, $sessionCount);
             } else {
                 $this->auth->register($name, $email, $password);
             }
@@ -283,6 +296,7 @@ final class AuthController extends BaseController
                         $this->provenance->log($userId, 'claim.create', 'claim', (int) $this->db->lastInsertId(), [
                             'claim_type' => $claimType, 'via' => 'intent',
                         ]);
+                        app('notifications')->claimSubmitted($artworkId, $userId, $claimType);
                     }
                     return Response::redirect(route('artworks.show', ['id' => hex_id($artworkId)]));
                 }
