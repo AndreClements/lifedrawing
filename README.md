@@ -13,13 +13,13 @@ A digital home for LDR that enables:
 - **Artwork archive** — facilitator uploads batches of drawings per session with pose duration and labels, automatic image processing (EXIF rotation, 10MP cap, WebP conversion, three-tier thumbnails)
 - **Claim system** — artists and models claim their work/likeness after sessions, building personal portfolios. Intent-preserving registration: unauthenticated users are redirected through register/login and returned to their claim
 - **Comments** — conversation on individual artworks, with artist/model comments surfaced first and role badges
-- **Consent system** — `pending → granted → withdrawn` state machine, enforced by middleware before identity-exposing operations
+- **Consent system** — `pending → granted → withdrawn` state machine, enforced by middleware before identity-exposing operations. Non-consented users see contextual prompts instead of disabled buttons; HTMX errors redirect to consent page
 - **Strava-for-artistry** — personal dashboard with attendance streaks, weekly heatmap, session timeline, role distribution, milestone tracking
 - **Public profiles** — artists and models build visible portfolios through participation, with name privacy gating (real names only visible to fellow session participants)
-- **Notifications** — opt-in email alerts for new artworks, claims, and comments, with per-user preference settings
+- **Notifications** — opt-in email alerts for new sessions, cancellations, claim resolution, and comments. Facilitators automatically receive operational emails for new claims and stub account registrations
 - **WhatsApp schedule** — facilitator-facing formatted session schedule for sharing to the community WhatsApp group
 - **FAQ** — community information page with CSS-only accordion layout (no inline JS, CSP-safe)
-- **Historical data** — 245 sessions backfilled from facilitator's Google Sheet (2017–2026), ~220 participant stub accounts awaiting real registration and claim
+- **Historical data** — 296 sessions backfilled from facilitator's Google Sheet (2017–2026), ~214 participant stub accounts awaiting real registration and claim
 
 Eventually, this becomes the first "table" in a modular **Artistry Caffe** platform — a template for community spaces where people can define and manage their own creative gatherings.
 
@@ -133,7 +133,7 @@ Copy `.env.example` to `.env` and edit for your environment. Default assumes XAM
 
 ### Accounts
 
-In production, the facilitator (Andre Clements) has a real account. Approximately 220 stub accounts exist from the CSV backfill — these have `.stub@local` email addresses and dead password hashes. They can't log in until the real person registers with their actual email and claims their session history.
+In production, the facilitator (Andre Clements) has a real account. Ten users have registered so far — when registering, users can claim their stub account to inherit their session history. Approximately 214 stub accounts remain from the CSV backfill — these have `.stub@local` email addresses and dead password hashes, and can't log in until the real person registers.
 
 For local development, `php tools/seed.php` creates demo accounts with password `password123`.
 
