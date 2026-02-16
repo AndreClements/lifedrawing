@@ -133,7 +133,7 @@ Copy `.env.example` to `.env` and edit for your environment. Default assumes XAM
 
 ### Accounts
 
-In production, the facilitator (Andre Clements) has a real account. Ten users have registered so far — when registering, users can claim their stub account to inherit their session history. Approximately 214 stub accounts remain from the CSV backfill — these have `.stub@local` email addresses and dead password hashes, and can't log in until the real person registers.
+In production, the facilitator (Andre Clements) has a real account. Eleven users have registered so far — when registering, users can claim their stub account to inherit their session history. Approximately 207 stub accounts remain from the CSV backfill — these have `.stub@local` email addresses and dead password hashes, and can't log in until the real person registers. Facilitators can also manually merge stubs that weren't claimed during registration.
 
 For local development, `php tools/seed.php` creates demo accounts with password `password123`.
 
