@@ -212,6 +212,7 @@ strong { font-weight: 600; }
     border-radius: var(--radius);
 }
 .consent-banner a { color: #7c5c00; font-weight: 600; }
+.site-header.authenticated { border-bottom: 2px solid #4a7; }
 @media (prefers-color-scheme: dark) {
     .consent-banner { background: #2a2518; color: #e0d5b8; border-color: #5c4a1e; }
     .consent-banner a { color: #f0d070; }

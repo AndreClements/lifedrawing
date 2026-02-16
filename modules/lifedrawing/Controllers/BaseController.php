@@ -56,10 +56,15 @@ abstract class BaseController
         return $this->auth->currentUserId();
     }
 
-    /** Require authentication — redirect to login if not logged in. */
+    /** Require authentication — redirect to login if not logged in or session is stale. */
     protected function requireAuth(): ?Response
     {
         if (!$this->auth->isLoggedIn()) {
+            return Response::redirect(route('auth.login'));
+        }
+        // Guard against stale sessions (user_id in session but user deleted from DB)
+        if ($this->auth->currentUser() === null) {
+            $this->auth->logout();
             return Response::redirect(route('auth.login'));
         }
         return null;
