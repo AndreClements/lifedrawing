@@ -112,6 +112,25 @@ document.addEventListener('change', function(e) {
     window.location = url;
 });
 
+/* HTMX error handling — surface consent/auth errors instead of silent failure */
+document.addEventListener('htmx:responseError', function(e) {
+    var xhr = e.detail.xhr;
+    var consentUrl = (document.querySelector('meta[name="consent-url"]') || {}).content || '/consent';
+    var loginUrl = (document.querySelector('meta[name="login-url"]') || {}).content || '/login';
+    if (xhr.status === 403) {
+        try {
+            var data = JSON.parse(xhr.responseText);
+            if (data.consent_state && data.consent_state !== 'granted') {
+                window.location = consentUrl;
+                return;
+            }
+        } catch (ex) { /* not JSON, fall through */ }
+        alert('This action is not permitted.');
+    } else if (xhr.status === 401) {
+        window.location = loginUrl;
+    }
+});
+
 /* Upload progress bar — intercepts upload form, shows real-time progress */
 document.addEventListener('submit', function(e) {
     var form = e.target;

@@ -48,6 +48,7 @@
         <?php endif; ?>
 
         <?php if (app('auth')->isLoggedIn()): ?>
+          <?php if (app('auth')->consentState()->canParticipate()): ?>
             <?php $uc = $userClaims ?? []; ?>
             <?php $hasArtistClaim = isset($uc['artist']); ?>
             <?php $hasModelClaim = isset($uc['model']); ?>
@@ -84,6 +85,12 @@
                     <span class="badge badge-<?= $uc['model'] === 'approved' ? 'success' : 'pending' ?>">Model <?= e($uc['model']) ?></span>
                 </div>
             <?php endif; ?>
+          <?php else: ?>
+                <div class="artwork-actions">
+                    <a href="<?= route('auth.consent') ?>" class="btn-sm">Grant Consent to Claim</a>
+                    <p class="text-muted text-sm">You need to grant consent before claiming artworks.</p>
+                </div>
+          <?php endif; ?>
         <?php else: ?>
             <?php $hexId = hex_id((int) $artwork['id']); ?>
             <div class="artwork-actions artwork-actions-guest">
@@ -124,12 +131,16 @@
             </div>
         <?php endif; ?>
 
-        <?php if (app('auth')->isLoggedIn()): ?>
+        <?php if (app('auth')->isLoggedIn() && app('auth')->consentState()->canParticipate()): ?>
             <form method="POST" action="<?= route('artworks.comment', ['id' => hex_id((int) $artwork['id'])]) ?>" class="comment-form">
                 <?= csrf_field() ?>
                 <textarea name="body" rows="3" placeholder="Add a comment..." required maxlength="2000"></textarea>
                 <button type="submit" class="btn">Post Comment</button>
             </form>
+        <?php elseif (app('auth')->isLoggedIn()): ?>
+            <p class="comment-login">
+                <a href="<?= route('auth.consent') ?>">Grant consent</a> to leave a comment.
+            </p>
         <?php else: ?>
             <p class="comment-login">
                 <a href="<?= route('auth.register') ?>?intent=comment_artwork&artwork_id=<?= hex_id((int) $artwork['id']) ?>">Register</a>

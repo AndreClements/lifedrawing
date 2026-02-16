@@ -18,6 +18,8 @@
     <?php endif; ?>
     <title><?= e($title ?? 'Life Drawing Randburg') ?></title>
     <link rel="stylesheet" href="<?= asset('css/app.css') ?>">
+    <meta name="consent-url" content="<?= route('auth.consent') ?>">
+    <meta name="login-url" content="<?= route('auth.login') ?>">
     <script src="https://unpkg.com/htmx.org@2.0.4" integrity="sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+" crossorigin="anonymous" defer></script>
 </head>
 <body>
