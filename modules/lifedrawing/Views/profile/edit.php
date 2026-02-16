@@ -22,7 +22,8 @@
             <label for="pseudonym">Pseudonym <small>(optional — shown to public visitors)</small></label>
             <input type="text" id="pseudonym" name="pseudonym"
                    value="<?= e($user['pseudonym'] ?? '') ?>"
-                   placeholder="A name for public view">
+                   placeholder="A name for public view"
+                   autocomplete="off">
         </div>
 
         <div class="form-group">
