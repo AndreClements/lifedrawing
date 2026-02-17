@@ -493,7 +493,8 @@ textarea {
     transform: translate(-50%, -50%);
     font-family: var(--font-ui);
     font-size: 0.85rem;
-    color: var(--color-text);
+    color: #fff;
+    mix-blend-mode: difference;
     white-space: nowrap;
 }
 
