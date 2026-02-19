@@ -75,13 +75,13 @@ if ($nameFilter) {
             $r['sessions'], $r['claims'], $r['created_at']);
 
         // Check provenance
-        $prov = $pdo->prepare("SELECT action, details, created_at FROM provenance_log WHERE target_id = ? ORDER BY created_at DESC LIMIT 5");
+        $prov = $pdo->prepare("SELECT action, context, created_at FROM provenance_log WHERE entity_id = ? AND entity_type = 'user' ORDER BY created_at DESC LIMIT 5");
         $prov->execute([$r['id']]);
         $logs = $prov->fetchAll(PDO::FETCH_ASSOC);
         if ($logs) {
             echo "         provenance:\n";
             foreach ($logs as $log) {
-                echo "           {$log['created_at']} | {$log['action']} | {$log['details']}\n";
+                echo "           {$log['created_at']} | {$log['action']} | {$log['context']}\n";
             }
         }
         echo "\n";

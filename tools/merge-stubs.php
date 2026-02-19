@@ -187,7 +187,7 @@ foreach ($merges as [$realId, $stubId, $desc]) {
         // 6. Log the merge
         if (!$dryRun) {
             $pdo->prepare(
-                "INSERT INTO provenance_log (user_id, action, target_type, target_id, details)
+                "INSERT INTO provenance_log (user_id, action, entity_type, entity_id, context)
                  VALUES (?, 'user.merge_stub', 'user', ?, ?)"
             )->execute([
                 $realId, $stubId,
