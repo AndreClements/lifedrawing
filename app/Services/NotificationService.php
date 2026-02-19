@@ -20,7 +20,9 @@ final class NotificationService
         private readonly MailService $mail,
         private readonly Connection $db,
     ) {
-        $this->baseUrl = rtrim(config('app.url', ''), '/');
+        $parsed = parse_url(config('app.url', 'http://localhost'));
+        $this->baseUrl = ($parsed['scheme'] ?? 'http') . '://' . ($parsed['host'] ?? 'localhost')
+            . (isset($parsed['port']) ? ':' . $parsed['port'] : '');
     }
 
     /**
