@@ -35,11 +35,13 @@
                 <a href="<?= route('profiles.artists') ?>"<?= active_if('/artists') ?>>Artists</a>
                 <a href="<?= route('profiles.sitters') ?>"<?= active_if('/sitters') ?>>Sitters</a>
                 <a href="<?= route('pages.faq') ?>"<?= active_if('/faq') ?>>FAQ</a>
+                <a href="<?= route('pose.index') ?>"<?= active_if('/pose') ?>>Pose</a>
                 <?php if (app('auth')->isLoggedIn()): ?>
                     <span class="nav-sep">|</span>
                     <a href="<?= route('dashboard') ?>"<?= active_if('/dashboard') ?>>Dashboard</a>
                     <?php if (app('auth')->hasRole('admin') || app('auth')->hasRole('facilitator')): ?>
                         <a href="<?= route('claims.pending') ?>"<?= active_if('/claims') ?>>Claims</a>
+                        <a href="<?= route('pose.queue') ?>"<?= active_if('/pose/queue') ?>>Queue</a>
                     <?php endif; ?>
                     <a href="<?= route('profiles.edit') ?>"<?= active_if('/profile/edit') ?>><?= e($_SESSION['user_name'] ?? 'Account') ?></a>
                     <a href="<?= route('auth.logout') ?>">Logout</a>

@@ -40,6 +40,10 @@ final class DashboardController extends BaseController
 
         $data = $this->stats->getDashboardData($userId);
         $data['user'] = $this->auth->currentUser();
+        $data['poseQueueEntry'] = $this->table('ld_sitter_queue')
+            ->where('user_id', '=', $userId)
+            ->whereIn('status', ['waiting', 'scheduled'])
+            ->first();
 
         return $this->render('dashboard.index', $data, 'My Dashboard');
     }

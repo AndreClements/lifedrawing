@@ -258,7 +258,7 @@ final class AuthController extends BaseController
     private function captureIntent(Request $request): void
     {
         $intent = $request->input('intent', '');
-        $allowed = ['claim_artwork', 'join_session', 'comment_artwork'];
+        $allowed = ['claim_artwork', 'join_session', 'comment_artwork', 'join_pose_queue'];
         if ($intent !== '' && in_array($intent, $allowed, true)) {
             store_intent($intent, array_filter([
                 'artwork_id' => $request->input('artwork_id'),
@@ -332,6 +332,9 @@ final class AuthController extends BaseController
             case 'comment_artwork':
                 $artworkId = from_hex($params['artwork_id'] ?? '0');
                 return Response::redirect(route('artworks.show', ['id' => hex_id($artworkId)]) . '#comments');
+
+            case 'join_pose_queue':
+                return Response::redirect(route('pose.index'));
         }
 
         return Response::redirect(route('home'));

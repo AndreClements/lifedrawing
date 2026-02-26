@@ -131,6 +131,16 @@ document.addEventListener('htmx:responseError', function(e) {
     }
 });
 
+/* Sitter notes inline edit toggle — CSP-safe event delegation */
+document.addEventListener('click', function(e) {
+    var btn = e.target.closest('.sitter-notes-edit');
+    if (!btn) return;
+    var container = btn.closest('.queue-sitter-notes');
+    if (!container) return;
+    var form = container.querySelector('.sitter-notes-form');
+    if (form) form.classList.toggle('hidden');
+});
+
 /* Upload progress bar — intercepts upload form, shows real-time progress */
 document.addEventListener('submit', function(e) {
     var form = e.target;

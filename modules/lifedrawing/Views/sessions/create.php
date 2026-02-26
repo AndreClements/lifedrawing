@@ -79,4 +79,8 @@
             <a href="<?= route('sessions.index') ?>" class="btn btn-outline">Cancel</a>
         </div>
     </form>
+
+    <!-- Sitter queue reference panel -->
+    <div hx-get="<?= route('pose.queue.panel') ?>" hx-trigger="load" hx-swap="innerHTML">
+    </div>
 </section>

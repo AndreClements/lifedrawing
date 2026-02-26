@@ -32,6 +32,15 @@
                       placeholder="Tell us about your practice..."><?= e($user['bio'] ?? '') ?></textarea>
         </div>
 
+        <div class="form-group">
+            <label for="whatsapp_number">WhatsApp Number <small>(optional)</small></label>
+            <input type="tel" id="whatsapp_number" name="whatsapp_number"
+                   value="<?= e($user['whatsapp_number'] ?? '') ?>"
+                   placeholder="+27 82 123 4567"
+                   autocomplete="tel">
+            <small class="text-muted">Used for sitter queue communication. Visible only to facilitators.</small>
+        </div>
+
         <hr>
         <h3>Change Password</h3>
         <p class="text-muted">Leave blank to keep your current password.</p>

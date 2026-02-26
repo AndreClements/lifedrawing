@@ -18,6 +18,7 @@ use Modules\Lifedrawing\Controllers\ClaimController;
 use Modules\Lifedrawing\Controllers\ProfileController;
 use Modules\Lifedrawing\Controllers\DashboardController;
 use Modules\Lifedrawing\Controllers\PageController;
+use Modules\Lifedrawing\Controllers\PoseController;
 
 // --- Public routes (no auth required) ---
 $router->get('/',                   [LandingController::class, 'index'], 'home');
@@ -33,6 +34,9 @@ $router->get('/sitters',           [ProfileController::class, 'sitters'], 'profi
 $router->get('/profile/edit',      [ProfileController::class, 'edit'], 'profiles.edit');
 $router->get('/profile/{id}',      [ProfileController::class, 'show'], 'profiles.show');
 $router->get('/dashboard',         [DashboardController::class, 'index'], 'dashboard');
+$router->get('/pose',              [PoseController::class, 'index'], 'pose.index');
+$router->get('/pose/queue',        [PoseController::class, 'queue'], 'pose.queue');
+$router->get('/pose/queue/panel',  [PoseController::class, 'queuePanel'], 'pose.queue.panel');
 
 // --- Facilitator routes (auth + role enforced in controllers) ---
 $router->post('/sessions',                 [SessionController::class, 'store'], 'sessions.store');
@@ -45,6 +49,10 @@ $router->post('/sessions/{id}/cancel',     [SessionController::class, 'cancel'],
 $router->get('/schedule/whatsapp',         [SessionController::class, 'whatsappSchedule'], 'schedule.whatsapp');
 $router->post('/claims/{id}/resolve',      [ClaimController::class, 'resolve'], 'claims.resolve');
 $router->post('/artworks/{id}/delete',     [GalleryController::class, 'destroy'], 'artworks.destroy');
+$router->post('/pose/queue/{id}/schedule', [PoseController::class, 'schedule'], 'pose.schedule');
+$router->post('/pose/queue/{id}/complete', [PoseController::class, 'complete'], 'pose.complete');
+$router->post('/pose/queue/{id}/remove',   [PoseController::class, 'remove'], 'pose.remove');
+$router->post('/pose/queue/{id}/notes',    [PoseController::class, 'updateNotes'], 'pose.notes');
 
 // Rate-limited upload (10 per hour)
 $router->group('', [\App\Middleware\RateLimitUpload::class], function ($router) {
@@ -60,4 +68,6 @@ $router->group('', [\App\Middleware\AuthMiddleware::class, \App\Middleware\Conse
     $router->post('/artworks/{id}/comment', [GalleryController::class, 'comment'], 'artworks.comment');
     $router->post('/profile/edit',           [ProfileController::class, 'update'], 'profiles.update');
     $router->post('/dashboard/refresh',      [DashboardController::class, 'refresh'], 'dashboard.refresh');
+    $router->post('/pose/join',              [PoseController::class, 'join'], 'pose.join');
+    $router->post('/pose/withdraw',          [PoseController::class, 'withdraw'], 'pose.withdraw');
 });

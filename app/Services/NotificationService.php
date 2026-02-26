@@ -196,6 +196,80 @@ final class NotificationService
     }
 
     /**
+     * Operational: someone joined the sitter queue.
+     * Notifies facilitators so they can review and contact.
+     */
+    public function sitterQueueJoined(int $userId): void
+    {
+        $facilitators = $this->db->fetchAll(
+            "SELECT id, email, display_name FROM users
+             WHERE role IN ('admin', 'facilitator') AND id != ?
+               AND email NOT LIKE '%.stub@local'",
+            [$userId]
+        );
+
+        if (empty($facilitators)) return;
+
+        $user = $this->db->fetch(
+            "SELECT display_name, whatsapp_number, sitter_pref_friday, sitter_pref_saturday, sitter_pref_sunday
+             FROM users WHERE id = ?",
+            [$userId]
+        );
+
+        $userName = $user['display_name'] ?? 'Someone';
+        $whatsapp = $user['whatsapp_number'] ?? 'not provided';
+        $days = [];
+        if ($user['sitter_pref_friday'] ?? false) $days[] = 'Fri';
+        if ($user['sitter_pref_saturday'] ?? false) $days[] = 'Sat';
+        if ($user['sitter_pref_sunday'] ?? false) $days[] = 'Sun';
+        $dayStr = $days ? implode(', ', $days) : 'none specified';
+        $queueLink = $this->baseUrl . route('pose.queue');
+
+        foreach ($facilitators as $fac) {
+            $body = "Hi {$fac['display_name']},\n\n"
+                . "{$userName} has joined the sitter queue.\n\n"
+                . "WhatsApp: {$whatsapp}\n"
+                . "Available: {$dayStr}\n\n"
+                . "View the queue: {$queueLink}\n\n"
+                . "— Life Drawing Randburg";
+
+            $this->mail->send($fac['email'], "Sitter queue: {$userName} wants to pose", $body);
+        }
+    }
+
+    /**
+     * Targeted: sitter session completed, invite to rejoin queue.
+     */
+    public function sitterSessionCompleted(int $userId, bool $autoRejoined): void
+    {
+        $user = $this->db->fetch(
+            "SELECT id, email, display_name FROM users WHERE id = ?",
+            [$userId]
+        );
+
+        if (!$user) return;
+        if (str_ends_with($user['email'], '.stub@local')) return;
+
+        $poseLink = $this->baseUrl . route('pose.index');
+
+        if ($autoRejoined) {
+            $body = "Hi {$user['display_name']},\n\n"
+                . "Thank you for posing at Life Drawing Randburg!\n\n"
+                . "You've been automatically added back to the sitter queue (auto-rejoin is on).\n"
+                . "If you'd like to adjust your preferences or withdraw: {$poseLink}\n\n"
+                . "— Life Drawing Randburg";
+        } else {
+            $body = "Hi {$user['display_name']},\n\n"
+                . "Thank you for posing at Life Drawing Randburg!\n\n"
+                . "If you'd like to pose again, you're welcome to rejoin the queue:\n"
+                . "{$poseLink}\n\n"
+                . "— Life Drawing Randburg";
+        }
+
+        $this->mail->send($user['email'], "Thanks for posing — rejoin the queue?", $body);
+    }
+
+    /**
      * Targeted: new comment on artwork.
      * Notifies claimed artist/model (excluding the commenter) if they have notify_comment=1.
      */

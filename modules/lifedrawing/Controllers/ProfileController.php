@@ -176,6 +176,7 @@ final class ProfileController extends BaseController
                 'display_name' => $displayName,
                 'pseudonym' => $pseudonym ?: null,
                 'bio' => $bio ?: null,
+                'whatsapp_number' => trim($request->input('whatsapp_number', '')) ?: null,
                 'notify_new_session' => $request->input('notify_new_session') ? 1 : 0,
                 'notify_session_cancelled' => $request->input('notify_session_cancelled') ? 1 : 0,
                 'notify_claim_resolved' => $request->input('notify_claim_resolved') ? 1 : 0,

@@ -51,6 +51,23 @@ $memberSince = $stats['member_since'] ?? null;
         </div>
     </div>
 
+    <!-- Sitter Queue CTA -->
+    <?php if (!empty($poseQueueEntry)): ?>
+        <div class="dashboard-section pose-cta-card">
+            <?php if ($poseQueueEntry['status'] === 'scheduled'): ?>
+                <p>You're <strong>scheduled to pose</strong>. Andr&eacute; will be in touch with details.</p>
+            <?php else: ?>
+                <p>You're <strong>in the sitter queue</strong>. Andr&eacute; will contact you on WhatsApp when a session is available.</p>
+            <?php endif; ?>
+            <a href="<?= route('pose.index') ?>" class="btn btn-outline btn-sm">View Details</a>
+        </div>
+    <?php else: ?>
+        <div class="dashboard-section pose-cta-card">
+            <p><strong>Interested in posing?</strong> Join the queue and we'll be in touch.</p>
+            <a href="<?= route('pose.index') ?>" class="btn btn-sm">Join the Queue to Pose</a>
+        </div>
+    <?php endif; ?>
+
     <!-- Weekly Activity Heatmap -->
     <div class="dashboard-section">
         <h3>Weekly Activity</h3>
