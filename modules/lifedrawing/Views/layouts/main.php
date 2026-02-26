@@ -8,7 +8,11 @@ $ogSiteName = 'Life Drawing Randburg';
 $ogLocale = 'en_ZA';
 $canonicalUrl = $canonical_url ?? '';
 $ogUrl = $og_url ?? $canonicalUrl;
-$ogImageUrl = $og_image ?? asset('img/octagram.png');
+$parsedUrl = parse_url(config('app.url', ''));
+$ogOrigin = ($parsedUrl['scheme'] ?? 'https') . '://' . ($parsedUrl['host'] ?? 'localhost');
+if (!empty($parsedUrl['port'])) $ogOrigin .= ':' . $parsedUrl['port'];
+$ogImageDefault = $ogOrigin . asset('img/octagram.png');
+$ogImageUrl = $og_image ?? $ogImageDefault;
 $twitterCard = !empty($og_image) ? 'summary_large_image' : 'summary';
 ?>
 <!DOCTYPE html>
