@@ -76,6 +76,7 @@ final class SessionController extends BaseController
 
         return $this->render('sessions.index', $data, 'Sessions', [
             'meta_description' => 'Upcoming and past life drawing sessions in Randburg, Johannesburg. View dates, venues, and RSVP.',
+            'json_ld' => self::breadcrumbJsonLd([['Home', '/'], ['Sessions', '/sessions']]),
         ]);
     }
 
@@ -163,13 +164,19 @@ final class SessionController extends BaseController
             ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
             . '</script>';
 
+        $breadcrumbs = self::breadcrumbJsonLd([
+            ['Home', '/'],
+            ['Sessions', '/sessions'],
+            [session_title($session), '/sessions/' . hex_id($id, session_title($session))],
+        ]);
+
         return $this->render('sessions.show', [
             'session' => $session,
             'participants' => $participants,
             'artworks' => $artworks,
         ], session_title($session), [
             'meta_description' => $sessionDesc,
-            'json_ld' => $eventJsonLd,
+            'json_ld' => $eventJsonLd . $breadcrumbs,
         ]);
     }
 

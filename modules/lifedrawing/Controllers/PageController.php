@@ -41,9 +41,11 @@ final class PageController extends BaseController
             ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
             . '</script>';
 
+        $breadcrumbs = self::breadcrumbJsonLd([['Home', '/'], ['FAQ', '/faq']]);
+
         return $this->render('pages.faq', [], 'FAQ', [
             'meta_description' => 'Information and frequently asked questions about Life Drawing Randburg — what to bring, how sessions work, pricing, and how to become a model.',
-            'json_ld' => $faqJsonLd,
+            'json_ld' => $faqJsonLd . $breadcrumbs,
         ]);
     }
 }

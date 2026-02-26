@@ -34,6 +34,7 @@ final class ProfileController extends BaseController
             'artists' => $artists,
         ], 'Artists', [
             'meta_description' => 'Artists who participate in Life Drawing Randburg sessions in Johannesburg.',
+            'json_ld' => self::breadcrumbJsonLd([['Home', '/'], ['Artists', '/artists']]),
         ]);
     }
 
@@ -57,6 +58,7 @@ final class ProfileController extends BaseController
             'sitters' => $sitters,
         ], 'Sitters', [
             'meta_description' => 'Models who sit for Life Drawing Randburg sessions in Johannesburg.',
+            'json_ld' => self::breadcrumbJsonLd([['Home', '/'], ['Sitters', '/sitters']]),
         ]);
     }
 
@@ -117,12 +119,19 @@ final class ProfileController extends BaseController
             . ', ' . $user['total_artworks'] . ' artwork' . ($user['total_artworks'] != 1 ? 's' : '')
             . ' at Life Drawing Randburg.';
 
+        $breadcrumbs = self::breadcrumbJsonLd([
+            ['Home', '/'],
+            ['Artists', '/artists'],
+            [$user['display_name'], '/profile/' . hex_id($id, $user['display_name'])],
+        ]);
+
         return $this->render('profile.show', [
             'profile' => $user,
             'artworks' => $artworks,
             'sessions' => $sessions,
         ], $user['display_name'], [
             'meta_description' => $profileDesc,
+            'json_ld' => $breadcrumbs,
         ]);
     }
 

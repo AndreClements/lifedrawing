@@ -46,6 +46,7 @@ final class PoseController extends BaseController
 
         return $this->render('pose.index', $data, 'Pose for Us', [
             'meta_description' => 'Pose as a life drawing model in Randburg, Johannesburg. Join our sitter queue and get scheduled for upcoming sessions.',
+            'json_ld' => self::breadcrumbJsonLd([['Home', '/'], ['Pose', '/pose']]),
         ]);
     }
 

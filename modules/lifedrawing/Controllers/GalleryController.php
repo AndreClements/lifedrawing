@@ -90,6 +90,13 @@ final class GalleryController extends BaseController
         $ogDesc = 'Artwork from ' . session_title($artwork)
             . ' (' . format_date($artwork['session_date']) . ')';
 
+        $artworkLabel = $artwork['caption'] ?: 'Artwork #' . $id;
+        $breadcrumbs = self::breadcrumbJsonLd([
+            ['Home', '/'],
+            ['Gallery', '/gallery'],
+            [$artworkLabel, '/artworks/' . hex_id($id, $artwork['caption'] ?? '')],
+        ]);
+
         return $this->render('gallery.show', [
             'artwork' => $artwork,
             'claims' => $claims,
@@ -97,12 +104,13 @@ final class GalleryController extends BaseController
             'comments' => $comments,
             'duration' => $duration,
             'pageUrl' => $pageUrl,
-        ], $artwork['caption'] ?: 'Artwork #' . $id, [
+        ], $artworkLabel, [
             'meta_description' => $ogDesc,
             'og_image' => $imageUrl,
             'og_description' => $ogDesc,
             'og_url' => $pageUrl,
             'og_type' => 'article',
+            'json_ld' => $breadcrumbs,
         ]);
     }
 
@@ -137,6 +145,7 @@ final class GalleryController extends BaseController
             'currentSession' => $sessionId,
         ], 'Gallery', [
             'meta_description' => 'Gallery of artworks from Life Drawing Randburg sessions. Figure studies, gesture drawings, and more.',
+            'json_ld' => self::breadcrumbJsonLd([['Home', '/'], ['Gallery', '/gallery']]),
         ]);
     }
 

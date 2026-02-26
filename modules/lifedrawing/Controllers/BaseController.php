@@ -67,6 +67,27 @@ abstract class BaseController
         return $appUrl . '/' . ltrim($routePath, '/');
     }
 
+    /** Build BreadcrumbList JSON-LD script tag. Each crumb is [label, url]. */
+    protected static function breadcrumbJsonLd(array $crumbs): string
+    {
+        $appUrl = rtrim(config('app.url', ''), '/');
+        $items = [];
+        foreach ($crumbs as $i => [$label, $path]) {
+            $items[] = [
+                '@type' => 'ListItem',
+                'position' => $i + 1,
+                'name' => $label,
+                'item' => $appUrl . $path,
+            ];
+        }
+        $json = json_encode([
+            '@context' => 'https://schema.org',
+            '@type' => 'BreadcrumbList',
+            'itemListElement' => $items,
+        ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        return '<script type="application/ld+json">' . $json . '</script>';
+    }
+
     /** Get a query builder for a table. */
     protected function table(string $name): QueryBuilder
     {
