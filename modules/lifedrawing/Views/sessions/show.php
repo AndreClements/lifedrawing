@@ -3,7 +3,7 @@
 <section class="session-detail">
     <div class="section-header">
         <div>
-            <h2><em><?= e(session_title($session)) ?></em></h2>
+            <h1><em><?= e(session_title($session)) ?></em></h1>
             <?php if (!empty($session['subtitle'])): ?>
                 <div class="session-subtitle"><?= e($session['subtitle']) ?></div>
             <?php endif; ?>

@@ -1,5 +1,5 @@
 <section class="artists-list">
-    <h2>Sitters</h2>
+    <h1>Sitters</h1>
     <p class="lead"><?= e(axiom('sitters_lead')) ?></p>
 
     <?php if (empty($sitters ?? [])): ?>

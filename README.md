@@ -16,7 +16,8 @@ A digital home for LDR that enables:
 - **Consent system** — `pending → granted → withdrawn` state machine, enforced by middleware before identity-exposing operations. Non-consented users see contextual prompts instead of disabled buttons; HTMX errors redirect to consent page
 - **Strava-for-artistry** — personal dashboard with attendance streaks, weekly heatmap, session timeline, role distribution, milestone tracking
 - **Public profiles** — artists and models build visible portfolios through participation, with name privacy gating (real names only visible to fellow session participants)
-- **Notifications** — opt-in email alerts for new sessions, cancellations, claim resolution, and comments. Facilitators automatically receive operational emails for new claims and stub account registrations
+- **Sitter queue** — models join a waiting list with day preferences and WhatsApp contact; facilitators schedule, complete, and manage entries from `/pose/queue`. Auto-rejoin option. Consent-gated join, provenance-logged
+- **Notifications** — opt-in email alerts for new sessions, cancellations, claim resolution, comments, and sitter queue activity. Facilitators automatically receive operational emails for new claims, stub account registrations, and queue joins
 - **WhatsApp schedule** — facilitator-facing formatted session schedule for sharing to the community WhatsApp group
 - **FAQ** — community information page with CSS-only accordion layout (no inline JS, CSP-safe)
 - **Historical data** — 296 sessions backfilled from facilitator's Google Sheet (2017–2026), ~214 participant stub accounts awaiting real registration and claim
@@ -43,7 +44,7 @@ If you've worked with Laravel, you'll recognise some of the bones:
 - **No Blade** — PHP templates with `<?= ?>` and `<?php ?>`. Layouts work via `extend`/`section`/`yield` in the Template engine, but there's no compilation step, no directive syntax, no template caching.
 - **No Artisan** — a handful of CLI tools (`migrate.php`, `seed.php`, `refresh-stats.php`, `process_images.php`) that do exactly what they say. No code generation, no queue workers, no scheduler abstraction.
 - **No service providers** — services are wired directly in `Kernel::wireServices()`. Explicit, readable, ~30 lines.
-- **No event system** — stats refresh and provenance logging are called inline. When there are 9 controllers, an event bus is a premature abstraction.
+- **No event system** — stats refresh and provenance logging are called inline. When there are 10 controllers, an event bus is a premature abstraction.
 - **No package ecosystem** — two external dependencies: HTMX (loaded via CDN) and PHPMailer (via Composer for SMTP email delivery). The rest is vanilla PHP.
 
 ### What it does differently
@@ -84,17 +85,17 @@ lifedrawing/
 ├── modules/
 │   └── lifedrawing/            # First "table"
 │       ├── module.php          # Manifest (slug, routes, migrations, nav)
-│       ├── Controllers/        # Auth, Session, Gallery, Claim, Profile, Dashboard, Page, Landing
+│       ├── Controllers/        # Auth, Session, Gallery, Claim, Profile, Dashboard, Page, Landing, Pose
 │       ├── Models/             # Data models
 │       ├── Repositories/       # Data access layer
 │       ├── Views/              # PHP templates with layouts
-│       └── migrations/         # Module-specific SQL (15 migrations)
+│       └── migrations/         # Module-specific SQL (17 migrations)
 │
 ├── config/                     # app.php, database.php, auth.php, axioms.php, mail.php
 ├── database/                   # Core migrations (5) + seeds
 ├── deploy/                     # Deployment scripts + htaccess templates
 ├── storage/                    # Logs, cache, sessions, rate-limit state
-└── tools/                      # CLI: migrate, seed, refresh-stats, process-images, import-csv, reset-production, test-mail
+└── tools/                      # CLI: migrate, seed, refresh-stats, process-images, import-csv, reset-production, test-mail, check-users, merge-stubs
 ```
 
 ### Stack
@@ -152,6 +153,10 @@ php tools/process_images.php --reprocess   # Reset all and reprocess
 php tools/import-csv.php [path]        # Backfill sessions/participants from CSV
 php tools/reset-production.php         # Reset production state (dangerous)
 php tools/test-mail.php [email]        # Send test email via configured SMTP
+php tools/check-users.php                     # Inspect account state (stubs, consent, roles)
+php tools/check-users.php --stubs-only        # Show only unclaimed stub accounts
+php tools/merge-stubs.php                     # Merge hardcoded stub→real account pairs
+php tools/merge-stubs.php --dry-run           # Preview merges without executing
 php tools/svg-to-png.php              # Convert SVG assets to PNG
 php tools/thumbnails.php              # Generate missing thumbnails
 ```
@@ -171,6 +176,7 @@ php tools/thumbnails.php              # Generate missing thumbnails
 | GET | `/sitters` | Model/sitter directory |
 | GET | `/profile/{id}` | Artist/model profile (name privacy gated) |
 | GET | `/faq` | FAQ page |
+| GET | `/pose` | Sitter queue info + join form |
 | GET | `/_health` | Health check (JSON) |
 
 ### Auth (rate-limited: 5 attempts / 15 min)
@@ -203,6 +209,11 @@ php tools/thumbnails.php              # Generate missing thumbnails
 | POST | `/sessions/{id}/participants/remove` | Remove participant | Facilitator |
 | POST | `/sessions/{id}/participants/tentative` | Toggle tentative status | Facilitator |
 | GET | `/schedule/whatsapp` | WhatsApp-formatted schedule | Facilitator |
+| GET | `/pose/queue` | Sitter queue management | Facilitator |
+| POST | `/pose/queue/{id}/schedule` | Schedule sitter for session | Facilitator |
+| POST | `/pose/queue/{id}/complete` | Mark sitter entry complete | Facilitator |
+| POST | `/pose/queue/{id}/remove` | Remove queue entry | Facilitator |
+| POST | `/pose/queue/{id}/notes` | Update sitter notes | Facilitator |
 
 ### Consent-gated (auth + consent middleware)
 
@@ -213,6 +224,8 @@ php tools/thumbnails.php              # Generate missing thumbnails
 | POST | `/artworks/{id}/comment` | Comment on artwork |
 | POST | `/profile/edit` | Update profile |
 | POST | `/dashboard/refresh` | HTMX stats refresh |
+| POST | `/pose/join` | Join sitter queue |
+| POST | `/pose/withdraw` | Withdraw from sitter queue |
 
 ## Production
 

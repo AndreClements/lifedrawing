@@ -60,6 +60,8 @@ final class LandingController extends BaseController
             'recentSessions' => $recentSessions,
             'galleryHighlights' => $galleryHighlights,
             'communityStats' => $communityStats,
-        ], null);
+        ], null, [
+            'meta_description' => 'Weekly life drawing sessions in Randburg, Johannesburg. Join us to draw, model, and hold space for the human form.',
+        ]);
     }
 }

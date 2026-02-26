@@ -2,7 +2,7 @@
 
 <section class="profile-detail">
     <div class="profile-header">
-        <h2><?= profile_name($profile) ?></h2>
+        <h1><?= profile_name($profile) ?></h1>
         <?php if ($profile['bio']): ?>
             <p class="lead"><?= nl2br(e($profile['bio'])) ?></p>
         <?php endif; ?>

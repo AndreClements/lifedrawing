@@ -38,10 +38,33 @@ abstract class BaseController
     protected function render(string $view, array $data = [], ?string $title = null, array $meta = []): Response
     {
         $content = $this->view->render($view, $data);
+
+        // Auto-generate canonical URL if not explicitly set
+        if (!isset($meta['canonical_url'])) {
+            $meta['canonical_url'] = self::currentCanonicalUrl();
+        }
+
         return Response::html($this->view->render('layouts.main', array_merge([
             'title' => ($title ? $title . ' — ' : '') . 'Life Drawing Randburg',
             'content' => $content,
         ], $meta)));
+    }
+
+    /** Build canonical URL for the current request (path only, no query params). */
+    protected static function currentCanonicalUrl(): string
+    {
+        $appUrl = rtrim(config('app.url', ''), '/');
+        $basePath = config('app.base_path', '');
+        $path = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
+
+        // Strip base path to get the route path, then rebuild with the full app URL
+        if ($basePath && str_starts_with($path, $basePath)) {
+            $routePath = substr($path, strlen($basePath)) ?: '/';
+        } else {
+            $routePath = $path;
+        }
+
+        return $appUrl . '/' . ltrim($routePath, '/');
     }
 
     /** Get a query builder for a table. */

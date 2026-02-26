@@ -1,5 +1,5 @@
 <section class="faq-page">
-    <h2>Information &amp; FAQs</h2>
+    <h1>Information &amp; FAQs</h1>
     <p class="lead">Welcome to Life Drawing Randburg &mdash; a space conducive to going deep with your practice, that is safe but also brave, inclusive, diverse and authentically creative.</p>
 
     <!-- General Information -->

@@ -3,12 +3,12 @@
 <section class="artwork-detail">
     <div class="artwork-full">
         <img src="<?= e($uploadService->url($artwork['web_path'] ?? $artwork['file_path'])) ?>"
-             alt="<?= e($artwork['caption'] ?? 'Artwork') ?>">
+             alt="<?= e($artwork['caption'] ?: 'Life drawing from ' . format_date($artwork['session_date']) . ' at ' . $artwork['venue']) ?>">
     </div>
 
     <div class="artwork-info">
         <?php if ($artwork['caption']): ?>
-            <h2><?= e($artwork['caption']) ?></h2>
+            <h1><?= e($artwork['caption']) ?></h1>
         <?php endif; ?>
 
         <div class="artwork-meta">

@@ -1,5 +1,5 @@
 <section class="pose-page">
-    <h2>Pose for Life Drawing Randburg</h2>
+    <h1>Pose for Life Drawing Randburg</h1>
     <p class="lead">We welcome models of all body types, ages, and experience levels.
     Posing for life drawing is a collaborative, dignified practice.</p>
 

@@ -1,6 +1,6 @@
 <section class="sessions-list">
     <div class="section-header">
-        <h2>Sessions</h2>
+        <h1>Sessions</h1>
         <?php if (app('auth')->hasRole('admin', 'facilitator')): ?>
             <div class="header-actions">
                 <a href="<?= route('schedule.whatsapp') ?>" class="btn btn-outline">WhatsApp Schedule</a>

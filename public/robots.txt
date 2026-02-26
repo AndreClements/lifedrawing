@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+Disallow: /dashboard
+Disallow: /profile/edit
+Disallow: /claims
+Disallow: /pose/queue
+
+Sitemap: https://lifedrawing.andresclements.com/randburg/sitemap.xml

@@ -74,7 +74,9 @@ final class SessionController extends BaseController
             return $this->partial('sessions._tab_content', $data);
         }
 
-        return $this->render('sessions.index', $data, 'Sessions');
+        return $this->render('sessions.index', $data, 'Sessions', [
+            'meta_description' => 'Upcoming and past life drawing sessions in Randburg, Johannesburg. View dates, venues, and RSVP.',
+        ]);
     }
 
     /** Show a single session with its artworks (public). */
@@ -113,11 +115,62 @@ final class SessionController extends BaseController
             [$id, $userId ?? 0]
         );
 
+        $participantCount = count($participants);
+        $artworkCount = count($artworks);
+        $sessionDesc = 'Life drawing session on ' . format_date($session['session_date'])
+            . ' at ' . $session['venue'] . '. '
+            . $participantCount . ' participant' . ($participantCount !== 1 ? 's' : '')
+            . ', ' . $artworkCount . ' artwork' . ($artworkCount !== 1 ? 's' : '') . '.';
+
+        // Event JSON-LD
+        $startTime = $session['start_time'] ? 'T' . $session['start_time'] : 'T10:00:00';
+        $endMinutes = (int) ($session['duration_minutes'] ?? 180);
+        $startDt = $session['session_date'] . $startTime . '+02:00';
+        $endDt = date('Y-m-d\TH:i:s', strtotime($session['session_date'] . ' ' . ($session['start_time'] ?: '10:00:00')) + $endMinutes * 60) . '+02:00';
+        $eventJsonLd = '<script type="application/ld+json">'
+            . json_encode([
+                '@context' => 'https://schema.org',
+                '@type' => 'Event',
+                'name' => session_title($session),
+                'startDate' => $startDt,
+                'endDate' => $endDt,
+                'eventAttendanceMode' => 'https://schema.org/OfflineEventAttendanceMode',
+                'eventStatus' => 'https://schema.org/EventScheduled',
+                'location' => [
+                    '@type' => 'Place',
+                    'name' => $session['venue'],
+                    'address' => [
+                        '@type' => 'PostalAddress',
+                        'streetAddress' => '10 Victoria Street, Kensington-B',
+                        'addressLocality' => 'Randburg',
+                        'addressRegion' => 'Gauteng',
+                        'postalCode' => '2194',
+                        'addressCountry' => 'ZA',
+                    ],
+                ],
+                'description' => $sessionDesc,
+                'organizer' => [
+                    '@type' => 'Organization',
+                    'name' => 'Life Drawing Randburg',
+                    'url' => 'https://lifedrawing.andresclements.com/randburg',
+                ],
+                'offers' => [
+                    '@type' => 'Offer',
+                    'price' => '350',
+                    'priceCurrency' => 'ZAR',
+                    'availability' => 'https://schema.org/InStock',
+                ],
+            ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
+            . '</script>';
+
         return $this->render('sessions.show', [
             'session' => $session,
             'participants' => $participants,
             'artworks' => $artworks,
-        ], session_title($session));
+        ], session_title($session), [
+            'meta_description' => $sessionDesc,
+            'json_ld' => $eventJsonLd,
+        ]);
     }
 
     /** Show create session form (facilitator+). */

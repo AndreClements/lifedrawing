@@ -19,8 +19,10 @@ use Modules\Lifedrawing\Controllers\ProfileController;
 use Modules\Lifedrawing\Controllers\DashboardController;
 use Modules\Lifedrawing\Controllers\PageController;
 use Modules\Lifedrawing\Controllers\PoseController;
+use Modules\Lifedrawing\Controllers\SitemapController;
 
 // --- Public routes (no auth required) ---
+$router->get('/sitemap.xml',       [SitemapController::class, 'index'], 'sitemap');
 $router->get('/',                   [LandingController::class, 'index'], 'home');
 $router->get('/faq',               [PageController::class, 'faq'], 'pages.faq');
 $router->get('/sessions',          [SessionController::class, 'index'], 'sessions.index');

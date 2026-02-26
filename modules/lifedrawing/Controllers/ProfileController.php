@@ -32,7 +32,9 @@ final class ProfileController extends BaseController
 
         return $this->render('profile.artists', [
             'artists' => $artists,
-        ], 'Artists');
+        ], 'Artists', [
+            'meta_description' => 'Artists who participate in Life Drawing Randburg sessions in Johannesburg.',
+        ]);
     }
 
     /** List sitters (people who have modeled). */
@@ -53,7 +55,9 @@ final class ProfileController extends BaseController
 
         return $this->render('profile.sitters', [
             'sitters' => $sitters,
-        ], 'Sitters');
+        ], 'Sitters', [
+            'meta_description' => 'Models who sit for Life Drawing Randburg sessions in Johannesburg.',
+        ]);
     }
 
     /** Show a single profile (public). */
@@ -108,11 +112,18 @@ final class ProfileController extends BaseController
             [$id, $id]
         );
 
+        $profileDesc = $user['display_name'] . "'s profile — "
+            . $user['total_sessions'] . ' session' . ($user['total_sessions'] != 1 ? 's' : '')
+            . ', ' . $user['total_artworks'] . ' artwork' . ($user['total_artworks'] != 1 ? 's' : '')
+            . ' at Life Drawing Randburg.';
+
         return $this->render('profile.show', [
             'profile' => $user,
             'artworks' => $artworks,
             'sessions' => $sessions,
-        ], $user['display_name']);
+        ], $user['display_name'], [
+            'meta_description' => $profileDesc,
+        ]);
     }
 
     /** Edit own profile (authenticated). */

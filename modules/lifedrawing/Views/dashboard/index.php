@@ -7,7 +7,7 @@ $memberSince = $stats['member_since'] ?? null;
 <section class="dashboard">
     <div class="dashboard-header">
         <div>
-            <h2>Your Practice</h2>
+            <h1>Your Practice</h1>
             <p class="lead"><?= e(axiom('dashboard_lead')) ?></p>
         </div>
         <?php if ($memberSince): ?>

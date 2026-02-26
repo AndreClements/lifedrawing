@@ -98,6 +98,7 @@ final class GalleryController extends BaseController
             'duration' => $duration,
             'pageUrl' => $pageUrl,
         ], $artwork['caption'] ?: 'Artwork #' . $id, [
+            'meta_description' => $ogDesc,
             'og_image' => $imageUrl,
             'og_description' => $ogDesc,
             'og_url' => $pageUrl,
@@ -134,7 +135,9 @@ final class GalleryController extends BaseController
             'artworks' => $query,
             'sessions' => $sessions,
             'currentSession' => $sessionId,
-        ], 'Gallery');
+        ], 'Gallery', [
+            'meta_description' => 'Gallery of artworks from Life Drawing Randburg sessions. Figure studies, gesture drawings, and more.',
+        ]);
     }
 
     /** Show upload form for a session (facilitator+). */

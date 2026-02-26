@@ -62,7 +62,7 @@
             <?php foreach ($galleryHighlights as $artwork): ?>
                 <div class="artwork-thumb">
                     <img src="<?= e($uploadService->url($artwork['thumbnail_path'] ?? $artwork['web_path'] ?? $artwork['file_path'])) ?>"
-                         alt="<?= e($artwork['caption'] ?? 'Artwork') ?>"
+                         alt="<?= e($artwork['caption'] ?: 'Life drawing from ' . format_date($artwork['session_date'])) ?>"
                          loading="lazy">
                 </div>
             <?php endforeach; ?>

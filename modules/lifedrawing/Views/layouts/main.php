@@ -1,26 +1,67 @@
+<?php
+// Compute OG/meta values before the HEREDOC-hostile HTML
+$metaDesc = $meta_description ?? axiom('meta_description');
+$ogTitle = $title ?? 'Life Drawing Randburg';
+$ogDesc = $og_description ?? $metaDesc;
+$ogType = $og_type ?? 'website';
+$ogSiteName = 'Life Drawing Randburg';
+$ogLocale = 'en_ZA';
+$canonicalUrl = $canonical_url ?? '';
+$ogUrl = $og_url ?? $canonicalUrl;
+$ogImageUrl = $og_image ?? asset('img/octagram.png');
+$twitterCard = !empty($og_image) ? 'summary_large_image' : 'summary';
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="description" content="<?= e(axiom('meta_description')) ?>">
+    <meta name="description" content="<?= e($metaDesc) ?>">
     <meta name="theme-color" content="#fafaf8">
     <link rel="icon" href="<?= asset('favicon/favicon.svg') ?>" type="image/svg+xml">
-    <meta property="og:title" content="<?= e($title ?? 'Life Drawing Randburg') ?>">
-    <meta property="og:description" content="<?= e($og_description ?? axiom('meta_description')) ?>">
-    <meta property="og:type" content="<?= e($og_type ?? 'website') ?>">
-    <?php if (!empty($og_image)): ?>
-        <meta property="og:image" content="<?= e($og_image) ?>">
-        <meta name="twitter:card" content="summary_large_image">
+    <?php if ($canonicalUrl): ?>
+        <link rel="canonical" href="<?= e($canonicalUrl) ?>">
     <?php endif; ?>
-    <?php if (!empty($og_url)): ?>
-        <meta property="og:url" content="<?= e($og_url) ?>">
+    <meta property="og:title" content="<?= e($ogTitle) ?>">
+    <meta property="og:description" content="<?= e($ogDesc) ?>">
+    <meta property="og:type" content="<?= e($ogType) ?>">
+    <meta property="og:site_name" content="<?= e($ogSiteName) ?>">
+    <meta property="og:locale" content="<?= e($ogLocale) ?>">
+    <?php if ($ogUrl): ?>
+        <meta property="og:url" content="<?= e($ogUrl) ?>">
     <?php endif; ?>
+    <meta property="og:image" content="<?= e($ogImageUrl) ?>">
+    <meta name="twitter:card" content="<?= e($twitterCard) ?>">
+    <meta name="twitter:title" content="<?= e($ogTitle) ?>">
+    <meta name="twitter:description" content="<?= e($ogDesc) ?>">
+    <meta name="twitter:image" content="<?= e($ogImageUrl) ?>">
     <title><?= e($title ?? 'Life Drawing Randburg') ?></title>
     <link rel="stylesheet" href="<?= asset('css/app.css') ?>">
     <meta name="consent-url" content="<?= route('auth.consent') ?>">
     <meta name="login-url" content="<?= route('auth.login') ?>">
     <script src="https://unpkg.com/htmx.org@2.0.4" integrity="sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+" crossorigin="anonymous" defer></script>
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "Organization",
+        "name": "Life Drawing Randburg",
+        "url": "https://lifedrawing.andresclements.com/randburg",
+        "description": "Weekly life drawing sessions in Randburg, Johannesburg. A practice of witnessing the human form.",
+        "address": {
+            "@type": "PostalAddress",
+            "streetAddress": "10 Victoria Street, Kensington-B",
+            "addressLocality": "Randburg",
+            "addressRegion": "Gauteng",
+            "postalCode": "2194",
+            "addressCountry": "ZA"
+        },
+        "telephone": "+27828120549",
+        "sameAs": [
+            "https://www.google.com/maps/place/LifeDrawing+Randburg/"
+        ]
+    }
+    </script>
+    <?= $json_ld ?? '' ?>
 </head>
 <body>
     <header class="site-header<?php if (app('auth')->isLoggedIn() && ($_SESSION['consent_state'] ?? '') === 'granted'): ?> authenticated<?php endif; ?>">

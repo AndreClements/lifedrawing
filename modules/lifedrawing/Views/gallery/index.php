@@ -1,7 +1,7 @@
 <?php $uploadService = app('upload'); ?>
 
 <section class="gallery">
-    <h2>Gallery</h2>
+    <h1>Gallery</h1>
     <p class="lead"><?= e(axiom('gallery_lead')) ?></p>
 
     <?php if (!empty($sessions ?? [])): ?>
@@ -27,7 +27,7 @@
             <?php foreach ($artworks as $artwork): ?>
                 <a href="<?= route('artworks.show', ['id' => hex_id((int) $artwork['id'], $artwork['caption'] ?? '')]) ?>" class="artwork-thumb">
                     <img src="<?= e($uploadService->url($artwork['thumbnail_path'] ?? $artwork['web_path'] ?? $artwork['file_path'])) ?>"
-                         alt="<?= e($artwork['caption'] ?? 'Artwork') ?>"
+                         alt="<?= e($artwork['caption'] ?: 'Life drawing from ' . format_date($artwork['session_date'])) ?>"
                          loading="lazy">
                 </a>
             <?php endforeach; ?>
