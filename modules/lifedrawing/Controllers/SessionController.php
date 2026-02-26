@@ -496,7 +496,7 @@ final class SessionController extends BaseController
         ], 'WhatsApp Schedule');
     }
 
-    /** Cancel a session (facilitator). */
+    /** Cancel and delete a session (facilitator). */
     public function cancel(Request $request): Response
     {
         if ($redirect = $this->requireAuth()) return $redirect;
@@ -506,23 +506,37 @@ final class SessionController extends BaseController
         $session = $this->table('ld_sessions')->where('id', '=', $sessionId)->first();
         if (!$session) return Response::notFound('Session not found.');
 
-        $this->db->execute(
-            "UPDATE ld_sessions SET status = 'cancelled' WHERE id = ?",
-            [$sessionId]
-        );
+        // Notify opted-in participants BEFORE deleting (query needs participant rows)
+        app('notifications')->sessionCancelled($session);
+
+        // Remove any artwork files from disk before cascade-delete removes DB records
+        $artworks = $this->table('ld_artworks')->where('session_id', '=', $sessionId)->get();
+        if (!empty($artworks)) {
+            $uploadDir = app('upload')->uploadDir;
+            foreach ($artworks as $artwork) {
+                foreach (['file_path', 'web_path', 'thumbnail_path'] as $col) {
+                    if (!empty($artwork[$col])) {
+                        $fullPath = $uploadDir . '/' . $artwork[$col];
+                        if (is_file($fullPath)) {
+                            @unlink($fullPath);
+                        }
+                    }
+                }
+            }
+        }
 
         $this->provenance->log(
             $this->userId(),
             'session.cancel',
             'session',
             $sessionId,
-            ['previous_status' => $session['status']]
+            ['previous_status' => $session['status'], 'title' => session_title($session)]
         );
 
-        // Notify opted-in participants about the cancellation
-        app('notifications')->sessionCancelled($session);
+        // Delete session — cascades to participants, artworks, claims, comments
+        $this->db->execute("DELETE FROM ld_sessions WHERE id = ?", [$sessionId]);
 
-        return Response::redirect(route('sessions.show', ['id' => hex_id($sessionId, session_title($session))]));
+        return Response::redirect(route('sessions.index'));
     }
 
     /** Join a session as participant (authenticated). */
