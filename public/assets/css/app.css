@@ -1764,15 +1764,6 @@ textarea {
     max-width: 720px;
 }
 
-.whatsapp-controls {
-    display: flex;
-    align-items: center;
-    gap: var(--space-sm);
-    margin-bottom: var(--space-md);
-    font-family: var(--font-ui);
-    font-size: 0.9rem;
-}
-
 .input-sm {
     padding: 4px 8px;
     font-size: 0.9rem;

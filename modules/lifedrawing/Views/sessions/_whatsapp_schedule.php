@@ -3,7 +3,6 @@
  * WhatsApp schedule output partial — HTMX swappable.
  *
  * @var string $schedule  The formatted schedule text
- * @var int    $weeks     Current weeks-ahead setting
  */
 ?>
 <div id="schedule-output" class="schedule-output">

@@ -466,16 +466,12 @@ final class SessionController extends BaseController
         if ($redirect = $this->requireAuth()) return $redirect;
         if ($redirect = $this->requireRole('admin', 'facilitator')) return $redirect;
 
-        $weeks = max(1, min(8, (int) ($request->input('weeks', 3))));
-        $endDate = date('Y-m-d', strtotime("+{$weeks} weeks"));
-
         $sessions = $this->db->fetchAll(
             "SELECT s.* FROM ld_sessions s
              WHERE s.status IN ('scheduled', 'active')
                AND s.session_date >= CURDATE()
-               AND s.session_date <= ?
-             ORDER BY s.session_date ASC",
-            [$endDate]
+             ORDER BY s.session_date ASC
+             LIMIT 6"
         );
 
         // Fetch participants for all sessions in one query
@@ -543,16 +539,8 @@ final class SessionController extends BaseController
         $schedule .= "\nSaturdays & Sundays: 10 am for 10:30 to 2 pm. ";
         $schedule .= "\nContribution: R 350 or as near as is affordable.";
 
-        if ($request->isHtmx()) {
-            return $this->partial('sessions._whatsapp_schedule', [
-                'schedule' => $schedule,
-                'weeks' => $weeks,
-            ]);
-        }
-
         return $this->render('sessions.whatsapp', [
             'schedule' => $schedule,
-            'weeks' => $weeks,
         ], 'WhatsApp Schedule');
     }
 
