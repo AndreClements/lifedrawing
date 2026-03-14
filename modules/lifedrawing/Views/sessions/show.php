@@ -138,6 +138,9 @@
                             <?php if ($artwork['claims_summary']): ?>
                                 <p class="artwork-claims"><?= e($artwork['claims_summary']) ?></p>
                             <?php endif; ?>
+                            <?php if (($artwork['comment_count'] ?? 0) > 0): ?>
+                                <p class="artwork-comments"><?= (int) $artwork['comment_count'] ?> comment<?= (int) $artwork['comment_count'] !== 1 ? 's' : '' ?></p>
+                            <?php endif; ?>
 
                             <?php if (app('auth')->isLoggedIn()): ?>
                                 <?php $canClaimAsModel = ($isSessionModel ?? false) || !($sessionHasKnownModel ?? false); ?>

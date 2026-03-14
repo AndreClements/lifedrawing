@@ -29,6 +29,9 @@
                     <img src="<?= e($uploadService->url($artwork['thumbnail_path'] ?? $artwork['web_path'] ?? $artwork['file_path'])) ?>"
                          alt="<?= e($artwork['caption'] ?: 'Life drawing from ' . format_date($artwork['session_date'])) ?>"
                          loading="lazy">
+                    <?php if (($artwork['comment_count'] ?? 0) > 0): ?>
+                        <span class="comment-count"><?= (int) $artwork['comment_count'] ?></span>
+                    <?php endif; ?>
                 </a>
             <?php endforeach; ?>
         </div>

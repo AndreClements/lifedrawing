@@ -107,7 +107,11 @@ final class SessionController extends BaseController
                      JOIN users cu ON c.claimant_id = cu.id
                      WHERE c.artwork_id = a.id AND c.status = 'approved'
                        AND cu.consent_state = 'granted'
-                    ) as claims_summary
+                    ) as claims_summary,
+                    (SELECT COUNT(*) FROM ld_comments ldc
+                     JOIN users ldu ON ldc.user_id = ldu.id
+                     WHERE ldc.artwork_id = a.id AND ldu.consent_state = 'granted'
+                    ) as comment_count
              FROM ld_artworks a
              JOIN users u ON a.uploaded_by = u.id
              WHERE a.session_id = ?

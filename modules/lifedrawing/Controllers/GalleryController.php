@@ -125,7 +125,11 @@ final class GalleryController extends BaseController
 
         $query = $this->db->fetchAll(
             "SELECT a.*, s.title as session_title, s.session_date,
-                    u.display_name as uploader_name
+                    u.display_name as uploader_name,
+                    (SELECT COUNT(*) FROM ld_comments ldc
+                     JOIN users ldu ON ldc.user_id = ldu.id
+                     WHERE ldc.artwork_id = a.id AND ldu.consent_state = 'granted'
+                    ) as comment_count
              FROM ld_artworks a
              JOIN ld_sessions s ON a.session_id = s.id
              JOIN users u ON a.uploaded_by = u.id

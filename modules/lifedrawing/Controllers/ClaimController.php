@@ -197,9 +197,13 @@ final class ClaimController extends BaseController
 
             $claimantId = (int) $claim['claimant_id'];
             if (!in_array($claimantId, $refreshed, true)) {
-                app('stats')->refreshUser($claimantId);
                 $refreshed[] = $claimantId;
             }
+        }
+
+        // Refresh stats AFTER all claims are approved (not mid-loop)
+        foreach ($refreshed as $claimantId) {
+            app('stats')->refreshUser($claimantId);
         }
 
         return Response::redirect(route('claims.pending'));

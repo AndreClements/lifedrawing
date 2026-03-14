@@ -726,6 +726,7 @@ textarea {
 .artwork-card img { width: 100%; height: auto; display: block; }
 .artwork-caption { padding: var(--space-sm); font-size: 0.85rem; color: var(--color-text-muted); margin: 0; }
 .artwork-claims { padding: 0 var(--space-sm) var(--space-sm); font-size: 0.8rem; color: var(--color-text-muted); margin: 0; }
+.artwork-comments { padding: 0 var(--space-sm) var(--space-sm); font-size: 0.75rem; color: var(--color-text-muted); margin: 0; }
 
 .artwork-actions {
     padding: var(--space-sm);
@@ -761,6 +762,19 @@ textarea {
 }
 
 .artwork-thumb img { width: 100%; height: auto; display: block; }
+
+.artwork-thumb .comment-count {
+    position: absolute;
+    bottom: 4px;
+    right: 4px;
+    background: rgba(0,0,0,0.55);
+    color: #fff;
+    font-family: var(--font-ui);
+    font-size: 0.7rem;
+    padding: 1px 6px;
+    border-radius: 8px;
+    line-height: 1.4;
+}
 
 .artwork-overlay {
     position: absolute;

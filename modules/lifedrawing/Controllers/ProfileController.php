@@ -85,7 +85,11 @@ final class ProfileController extends BaseController
 
         // Get claimed artworks
         $artworks = $this->db->fetchAll(
-            "SELECT a.*, s.title as session_title, s.session_date, c.claim_type
+            "SELECT a.*, s.title as session_title, s.session_date, c.claim_type,
+                    (SELECT COUNT(*) FROM ld_comments ldc
+                     JOIN users ldu ON ldc.user_id = ldu.id
+                     WHERE ldc.artwork_id = a.id AND ldu.consent_state = 'granted'
+                    ) as comment_count
              FROM ld_artworks a
              JOIN ld_claims c ON c.artwork_id = a.id
              JOIN ld_sessions s ON a.session_id = s.id
