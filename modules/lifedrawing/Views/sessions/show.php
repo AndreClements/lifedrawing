@@ -143,8 +143,10 @@
                             <?php endif; ?>
 
                             <?php if (app('auth')->isLoggedIn()): ?>
+                                <?php $artistAlreadyClaimed = $artwork['claims_summary'] && str_contains($artwork['claims_summary'], 'artist:'); ?>
                                 <?php $canClaimAsModel = ($isSessionModel ?? false) || !($sessionHasKnownModel ?? false); ?>
                                 <div class="artwork-actions">
+                                    <?php if (!$artistAlreadyClaimed): ?>
                                     <form method="POST" action="<?= route('claims.claim', ['id' => hex_id((int) $artwork['id'], $artwork['caption'] ?? '')]) ?>"
                                           hx-post="<?= route('claims.claim', ['id' => hex_id((int) $artwork['id'], $artwork['caption'] ?? '')]) ?>"
                                           hx-swap="outerHTML"
@@ -153,6 +155,7 @@
                                         <input type="hidden" name="claim_type" value="artist">
                                         <button type="submit" class="btn-sm">That's mine</button>
                                     </form>
+                                    <?php endif; ?>
                                     <?php if ($canClaimAsModel): ?>
                                         <form method="POST" action="<?= route('claims.claim', ['id' => hex_id((int) $artwork['id'], $artwork['caption'] ?? '')]) ?>"
                                               hx-post="<?= route('claims.claim', ['id' => hex_id((int) $artwork['id'], $artwork['caption'] ?? '')]) ?>"

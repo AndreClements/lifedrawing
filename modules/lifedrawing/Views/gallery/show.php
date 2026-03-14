@@ -52,10 +52,11 @@
             <?php $uc = $userClaims ?? []; ?>
             <?php $hasArtistClaim = isset($uc['artist']); ?>
             <?php $hasModelClaim = isset($uc['model']); ?>
+            <?php $artistAlreadyClaimed = !empty(array_filter($claims, fn($c) => $c['claim_type'] === 'artist')); ?>
             <?php $canClaimAsModel = ($isSessionModel ?? false) || !($sessionHasKnownModel ?? false); ?>
             <?php if (!$hasArtistClaim || !$hasModelClaim): ?>
                 <div class="artwork-actions">
-                    <?php if (!$hasArtistClaim): ?>
+                    <?php if (!$hasArtistClaim && !$artistAlreadyClaimed): ?>
                         <form method="POST" action="<?= route('claims.claim', ['id' => hex_id((int) $artwork['id'])]) ?>"
                               hx-post="<?= route('claims.claim', ['id' => hex_id((int) $artwork['id'])]) ?>"
                               hx-swap="outerHTML"
@@ -96,10 +97,13 @@
           <?php endif; ?>
         <?php else: ?>
             <?php $hexId = hex_id((int) $artwork['id']); ?>
+            <?php $artistAlreadyClaimed = !empty(array_filter($claims, fn($c) => $c['claim_type'] === 'artist')); ?>
+            <?php if (!$artistAlreadyClaimed): ?>
             <div class="artwork-actions artwork-actions-guest">
                 <a href="<?= route('auth.register') ?>?intent=claim_artwork&artwork_id=<?= $hexId ?>&claim_type=artist" class="btn-sm">That's mine</a>
                 <p class="text-muted text-sm">Already registered? <a href="<?= route('auth.login') ?>?intent=claim_artwork&artwork_id=<?= $hexId ?>&claim_type=artist">Sign in</a></p>
             </div>
+            <?php endif; ?>
         <?php endif; ?>
     </div>
 
