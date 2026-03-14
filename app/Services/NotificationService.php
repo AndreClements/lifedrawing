@@ -10,7 +10,9 @@ use App\Database\Connection;
  * Email notification service.
  *
  * Checks user preferences before sending. All prefs default to off (opt-in).
- * Failures are logged by MailService — this service never throws.
+ * Buffered notifications are queued to ld_notification_queue and sent by
+ * tools/flush_notifications.php. Immediate notifications send synchronously.
+ * This service never throws — enqueue failures are logged.
  */
 final class NotificationService
 {
@@ -44,23 +46,27 @@ final class NotificationService
         $venue = $session['venue'] ?? 'TBA';
         $hexId = hex_id((int) $session['id'], $title);
         $link = $this->baseUrl . route('sessions.show', ['id' => $hexId]);
+        $sessionId = (int) $session['id'];
+        $footer = "You're receiving this because you opted in to new session notifications.\n"
+            . "Update your preferences: {$this->baseUrl}" . route('profiles.edit');
 
         foreach ($recipients as $user) {
-            $body = "Hi {$user['display_name']},\n\n"
-                . "A new drawing session has been scheduled:\n\n"
-                . "{$title}\n"
-                . "{$date} at {$venue}\n\n"
-                . "View details and join: {$link}\n\n"
-                . "— Life Drawing Randburg\n\n"
-                . "You're receiving this because you opted in to new session notifications.\n"
-                . "Update your preferences: {$this->baseUrl}" . route('profiles.edit');
-
-            $this->mail->send($user['email'], "New Session: {$title} — {$date}", $body);
+            $this->enqueue(
+                (int) $user['id'],
+                $user['display_name'],
+                $user['email'],
+                'sessionCreated',
+                "New Session: {$title} — {$date}",
+                "A new drawing session has been scheduled:\n\n{$title}\n{$date} at {$venue}",
+                $sessionId,
+                "View details and join: {$link}",
+                $footer
+            );
         }
     }
 
     /**
-     * Targeted: session cancelled.
+     * Targeted: session cancelled. IMMEDIATE — not buffered.
      * Notifies participants of this session who have notify_session_cancelled=1.
      */
     public function sessionCancelled(array $session): void
@@ -110,7 +116,7 @@ final class NotificationService
         if (str_ends_with($claimant['email'], '.stub@local')) return;
 
         $artwork = $this->db->fetch(
-            "SELECT a.id, a.session_id, s.title, s.session_date
+            "SELECT s.id, s.title, s.session_date, a.session_id
              FROM ld_artworks a JOIN ld_sessions s ON a.session_id = s.id
              WHERE a.id = ?",
             [$artworkId]
@@ -120,16 +126,21 @@ final class NotificationService
         $artworkLink = $this->baseUrl . route('artworks.show', ['id' => hex_id($artworkId)]);
         $action = $status === 'approved' ? 'approved' : 'rejected';
         $emoji = $status === 'approved' ? 'Great news!' : 'Unfortunately,';
-
-        $body = "Hi {$claimant['display_name']},\n\n"
-            . "{$emoji} Your {$claim['claim_type']} claim on an artwork from \"{$sessionTitle}\" has been {$action}.\n\n"
-            . "View the artwork: {$artworkLink}\n\n"
-            . "— Life Drawing Randburg\n\n"
-            . "You're receiving this because you opted in to claim notifications.\n"
+        $subject = "Claim " . ucfirst($action) . ": {$sessionTitle}";
+        $footer = "You're receiving this because you opted in to claim notifications.\n"
             . "Update your preferences: {$this->baseUrl}" . route('profiles.edit');
 
-        $subject = "Claim " . ucfirst($action) . ": {$sessionTitle}";
-        $this->mail->send($claimant['email'], $subject, $body);
+        $this->enqueue(
+            (int) $claimant['id'],
+            $claimant['display_name'],
+            $claimant['email'],
+            'claimResolved',
+            $subject,
+            "{$emoji} Your {$claim['claim_type']} claim on an artwork from \"{$sessionTitle}\" has been {$action}.",
+            $artwork ? (int) $artwork['session_id'] : null,
+            "View the artwork: {$artworkLink}",
+            $footer
+        );
     }
 
     /**
@@ -151,7 +162,7 @@ final class NotificationService
         $claimantName = $claimant['display_name'] ?? 'Someone';
 
         $artwork = $this->db->fetch(
-            "SELECT a.id, s.title, s.session_date
+            "SELECT s.id, s.title, s.session_date, a.session_id
              FROM ld_artworks a JOIN ld_sessions s ON a.session_id = s.id
              WHERE a.id = ?",
             [$artworkId]
@@ -160,12 +171,16 @@ final class NotificationService
         $claimsLink = $this->baseUrl . route('claims.pending');
 
         foreach ($facilitators as $user) {
-            $body = "Hi {$user['display_name']},\n\n"
-                . "{$claimantName} has submitted a {$claimType} claim on an artwork from \"{$sessionTitle}\".\n\n"
-                . "Review pending claims: {$claimsLink}\n\n"
-                . "— Life Drawing Randburg";
-
-            $this->mail->send($user['email'], "New {$claimType} claim from {$claimantName}", $body);
+            $this->enqueue(
+                (int) $user['id'],
+                $user['display_name'],
+                $user['email'],
+                'claimSubmitted',
+                "New {$claimType} claim from {$claimantName}",
+                "{$claimantName} has submitted a {$claimType} claim on an artwork from \"{$sessionTitle}\".",
+                $artwork ? (int) $artwork['session_id'] : null,
+                "Review pending claims: {$claimsLink}"
+            );
         }
     }
 
@@ -186,12 +201,16 @@ final class NotificationService
         $profileLink = $this->baseUrl . route('profiles.show', ['id' => hex_id($stubId)]);
 
         foreach ($facilitators as $user) {
-            $body = "Hi {$user['display_name']},\n\n"
-                . "{$newName} ({$newEmail}) has registered and claimed the stub account \"{$previousName}\" ({$sessionCount} sessions of history).\n\n"
-                . "View their profile: {$profileLink}\n\n"
-                . "— Life Drawing Randburg";
-
-            $this->mail->send($user['email'], "Stub claimed: {$previousName} → {$newName}", $body);
+            $this->enqueue(
+                (int) $user['id'],
+                $user['display_name'],
+                $user['email'],
+                'stubClaimed',
+                "Stub claimed: {$previousName} → {$newName}",
+                "{$newName} ({$newEmail}) has registered and claimed the stub account \"{$previousName}\" ({$sessionCount} sessions of history).",
+                null,
+                "View their profile: {$profileLink}"
+            );
         }
     }
 
@@ -226,19 +245,21 @@ final class NotificationService
         $queueLink = $this->baseUrl . route('pose.queue');
 
         foreach ($facilitators as $fac) {
-            $body = "Hi {$fac['display_name']},\n\n"
-                . "{$userName} has joined the sitter queue.\n\n"
-                . "WhatsApp: {$whatsapp}\n"
-                . "Available: {$dayStr}\n\n"
-                . "View the queue: {$queueLink}\n\n"
-                . "— Life Drawing Randburg";
-
-            $this->mail->send($fac['email'], "Sitter queue: {$userName} wants to pose", $body);
+            $this->enqueue(
+                (int) $fac['id'],
+                $fac['display_name'],
+                $fac['email'],
+                'sitterQueueJoined',
+                "Sitter queue: {$userName} wants to pose",
+                "{$userName} has joined the sitter queue.\n\nWhatsApp: {$whatsapp}\nAvailable: {$dayStr}",
+                null,
+                "View the queue: {$queueLink}"
+            );
         }
     }
 
     /**
-     * Targeted: sitter session completed, invite to rejoin queue.
+     * Targeted: sitter session completed, invite to rejoin queue. IMMEDIATE — not buffered.
      */
     public function sitterSessionCompleted(int $userId, bool $autoRejoined): void
     {
@@ -292,17 +313,54 @@ final class NotificationService
         $commenterName = $commenter['display_name'] ?? 'Someone';
         $snippet = mb_strlen($commentBody) > 100 ? mb_substr($commentBody, 0, 100) . '...' : $commentBody;
         $artworkLink = $this->baseUrl . route('artworks.show', ['id' => hex_id($artworkId)]) . '#comments';
+        $footer = "You're receiving this because you opted in to comment notifications.\n"
+            . "Update your preferences: {$this->baseUrl}" . route('profiles.edit');
+
+        // Get session_id for cohort grouping
+        $artwork = $this->db->fetch(
+            "SELECT session_id FROM ld_artworks WHERE id = ?",
+            [$artworkId]
+        );
 
         foreach ($claimants as $user) {
-            $body = "Hi {$user['display_name']},\n\n"
-                . "{$commenterName} commented on artwork you've claimed:\n\n"
-                . "\"{$snippet}\"\n\n"
-                . "View the conversation: {$artworkLink}\n\n"
-                . "— Life Drawing Randburg\n\n"
-                . "You're receiving this because you opted in to comment notifications.\n"
-                . "Update your preferences: {$this->baseUrl}" . route('profiles.edit');
+            $this->enqueue(
+                (int) $user['id'],
+                $user['display_name'],
+                $user['email'],
+                'artworkCommented',
+                "New Comment on Your Artwork",
+                "{$commenterName} commented on artwork you've claimed:\n\n\"{$snippet}\"",
+                $artwork ? (int) $artwork['session_id'] : null,
+                "View the conversation: {$artworkLink}",
+                $footer
+            );
+        }
+    }
 
-            $this->mail->send($user['email'], "New Comment on Your Artwork", $body);
+    /**
+     * Queue a notification for batched delivery.
+     * Never throws — failures are logged.
+     */
+    private function enqueue(
+        int $recipientId,
+        string $recipientName,
+        string $recipientEmail,
+        string $type,
+        string $subject,
+        string $summary,
+        ?int $sessionId = null,
+        ?string $detail = null,
+        ?string $footer = null
+    ): void {
+        try {
+            $this->db->execute(
+                "INSERT INTO ld_notification_queue
+                 (recipient_id, recipient_name, recipient_email, notification_type, session_id, subject, summary, detail, footer)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                [$recipientId, $recipientName, $recipientEmail, $type, $sessionId, $subject, $summary, $detail, $footer]
+            );
+        } catch (\Throwable $e) {
+            error_log("Notification enqueue failed ({$type} to {$recipientEmail}): " . $e->getMessage());
         }
     }
 }
