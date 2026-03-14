@@ -65,10 +65,12 @@
     <!-- Participants -->
     <?php if (app('auth')->hasRole('admin', 'facilitator')): ?>
         <?php include __DIR__ . '/_participant_manager.php'; ?>
-        <!-- Sitter queue reference panel -->
-        <?php $sessionDayName = date('l', strtotime($session['session_date'])); ?>
-        <div hx-get="<?= route('pose.queue.panel') ?>?day=<?= e($sessionDayName) ?>" hx-trigger="load" hx-swap="innerHTML">
-        </div>
+        <?php if ($session['session_date'] >= date('Y-m-d')): ?>
+            <!-- Sitter queue reference panel -->
+            <?php $sessionDayName = date('l', strtotime($session['session_date'])); ?>
+            <div hx-get="<?= route('pose.queue.panel') ?>?day=<?= e($sessionDayName) ?>" hx-trigger="load" hx-swap="innerHTML">
+            </div>
+        <?php endif; ?>
     <?php elseif (!empty($participants)): ?>
         <div class="participants-section">
             <h3>Participants</h3>
