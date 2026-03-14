@@ -113,11 +113,21 @@ abstract class BaseController
         $row = $this->db->fetch(
             "SELECT
                 COUNT(*) AS known_count,
-                SUM(user_id = ?) AS current_user_count
-             FROM ld_sitter_queue
-             WHERE scheduled_session_id = ?
-               AND status IN ('scheduled', 'completed')",
-            [$userId, $sessionId]
+                SUM(model_user_id = ?) AS current_user_count
+             FROM (
+                 SELECT DISTINCT sp.user_id AS model_user_id
+                 FROM ld_session_participants sp
+                 WHERE sp.session_id = ?
+                   AND sp.role = 'model'
+
+                 UNION
+
+                 SELECT DISTINCT q.user_id AS model_user_id
+                 FROM ld_sitter_queue q
+                 WHERE q.scheduled_session_id = ?
+                   AND q.status IN ('scheduled', 'completed')
+             ) session_models",
+            [$userId, $sessionId, $sessionId]
         ) ?? ['known_count' => 0, 'current_user_count' => 0];
 
         $sessionHasKnownModel = (int) ($row['known_count'] ?? 0) > 0;
