@@ -118,6 +118,7 @@ final class SessionController extends BaseController
 
         $participantCount = count($participants);
         $artworkCount = count($artworks);
+        $modelClaimContext = $this->sessionModelClaimContext($id);
         $sessionDesc = 'Life drawing session on ' . format_date($session['session_date'])
             . ' at ' . $session['venue'] . '. '
             . $participantCount . ' participant' . ($participantCount !== 1 ? 's' : '')
@@ -174,6 +175,8 @@ final class SessionController extends BaseController
             'session' => $session,
             'participants' => $participants,
             'artworks' => $artworks,
+            'sessionHasKnownModel' => $modelClaimContext['sessionHasKnownModel'],
+            'isSessionModel' => $modelClaimContext['isSessionModel'],
         ], session_title($session), [
             'meta_description' => $sessionDesc,
             'json_ld' => $eventJsonLd . $breadcrumbs,

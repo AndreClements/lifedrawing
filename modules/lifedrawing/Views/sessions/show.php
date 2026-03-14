@@ -138,6 +138,7 @@
                             <?php endif; ?>
 
                             <?php if (app('auth')->isLoggedIn()): ?>
+                                <?php $canClaimAsModel = ($isSessionModel ?? false) || !($sessionHasKnownModel ?? false); ?>
                                 <div class="artwork-actions">
                                     <form method="POST" action="<?= route('claims.claim', ['id' => hex_id((int) $artwork['id'], $artwork['caption'] ?? '')]) ?>"
                                           hx-post="<?= route('claims.claim', ['id' => hex_id((int) $artwork['id'], $artwork['caption'] ?? '')]) ?>"
@@ -145,16 +146,18 @@
                                           class="form-inline">
                                         <?= csrf_field() ?>
                                         <input type="hidden" name="claim_type" value="artist">
-                                        <button type="submit" class="btn-sm">Claim as Artist</button>
+                                        <button type="submit" class="btn-sm">That's mine</button>
                                     </form>
-                                    <form method="POST" action="<?= route('claims.claim', ['id' => hex_id((int) $artwork['id'], $artwork['caption'] ?? '')]) ?>"
-                                          hx-post="<?= route('claims.claim', ['id' => hex_id((int) $artwork['id'], $artwork['caption'] ?? '')]) ?>"
-                                          hx-swap="outerHTML"
-                                          class="form-inline">
-                                        <?= csrf_field() ?>
-                                        <input type="hidden" name="claim_type" value="model">
-                                        <button type="submit" class="btn-sm btn-outline">Claim as Model</button>
-                                    </form>
+                                    <?php if ($canClaimAsModel): ?>
+                                        <form method="POST" action="<?= route('claims.claim', ['id' => hex_id((int) $artwork['id'], $artwork['caption'] ?? '')]) ?>"
+                                              hx-post="<?= route('claims.claim', ['id' => hex_id((int) $artwork['id'], $artwork['caption'] ?? '')]) ?>"
+                                              hx-swap="outerHTML"
+                                              class="form-inline">
+                                            <?= csrf_field() ?>
+                                            <input type="hidden" name="claim_type" value="model">
+                                            <button type="submit" class="btn-sm btn-outline">That's me</button>
+                                        </form>
+                                    <?php endif; ?>
                                 </div>
                             <?php endif; ?>
                         </div>

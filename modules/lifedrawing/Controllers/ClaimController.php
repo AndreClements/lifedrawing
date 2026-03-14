@@ -34,6 +34,13 @@ final class ClaimController extends BaseController
             return Response::notFound('Artwork not found.');
         }
 
+        if ($claimType === 'model') {
+            $modelClaimContext = $this->sessionModelClaimContext((int) $artwork['session_id']);
+            if ($modelClaimContext['sessionHasKnownModel'] && !$modelClaimContext['isSessionModel']) {
+                return $this->denyModelClaim($request);
+            }
+        }
+
         // Check not already claimed by this user in this type
         $existing = $this->table('ld_claims')
             ->where('artwork_id', '=', $artworkId)
@@ -136,6 +143,17 @@ final class ClaimController extends BaseController
         // Redirect back to the session
         $artwork = $this->table('ld_artworks')->where('id', '=', $claim['artwork_id'])->first();
         return Response::redirect(route('sessions.show', ['id' => $artwork['session_id'] ?? 0]));
+    }
+
+    private function denyModelClaim(Request $request): Response
+    {
+        $message = 'Only the scheduled model for this session can claim this artwork.';
+
+        if ($request->wantsJson() || $request->isHtmx()) {
+            return Response::json(['error' => $message], 403);
+        }
+
+        return Response::forbidden($message);
     }
 
     /** List pending claims (facilitator view). */

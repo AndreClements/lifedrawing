@@ -57,6 +57,8 @@ final class GalleryController extends BaseController
             }
         }
 
+        $modelClaimContext = $this->sessionModelClaimContext((int) $artwork['session_id']);
+
         // Pose metadata
         $duration = $artwork['pose_duration'] ?: null;
 
@@ -101,6 +103,8 @@ final class GalleryController extends BaseController
             'artwork' => $artwork,
             'claims' => $claims,
             'userClaims' => $userClaims,
+            'sessionHasKnownModel' => $modelClaimContext['sessionHasKnownModel'],
+            'isSessionModel' => $modelClaimContext['isSessionModel'],
             'comments' => $comments,
             'duration' => $duration,
             'pageUrl' => $pageUrl,

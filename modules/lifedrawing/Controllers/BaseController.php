@@ -100,6 +100,36 @@ abstract class BaseController
         return $this->auth->currentUserId();
     }
 
+    /**
+     * Determine whether a session has a known model and whether the current user is one.
+     *
+     * Old sessions may have no sitter queue data; in that case model claims stay open.
+     *
+     * @return array{sessionHasKnownModel: bool, isSessionModel: bool}
+     */
+    protected function sessionModelClaimContext(int $sessionId): array
+    {
+        $userId = $this->userId() ?? 0;
+        $row = $this->db->fetch(
+            "SELECT
+                COUNT(*) AS known_count,
+                SUM(user_id = ?) AS current_user_count
+             FROM ld_sitter_queue
+             WHERE scheduled_session_id = ?
+               AND status IN ('scheduled', 'completed')",
+            [$userId, $sessionId]
+        ) ?? ['known_count' => 0, 'current_user_count' => 0];
+
+        $sessionHasKnownModel = (int) ($row['known_count'] ?? 0) > 0;
+        $isSessionModel = $this->auth->isLoggedIn()
+            && (int) ($row['current_user_count'] ?? 0) > 0;
+
+        return [
+            'sessionHasKnownModel' => $sessionHasKnownModel,
+            'isSessionModel' => $isSessionModel,
+        ];
+    }
+
     /** Require authentication — redirect to login if not logged in or session is stale. */
     protected function requireAuth(): ?Response
     {

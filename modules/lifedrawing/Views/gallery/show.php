@@ -52,6 +52,7 @@
             <?php $uc = $userClaims ?? []; ?>
             <?php $hasArtistClaim = isset($uc['artist']); ?>
             <?php $hasModelClaim = isset($uc['model']); ?>
+            <?php $canClaimAsModel = ($isSessionModel ?? false) || !($sessionHasKnownModel ?? false); ?>
             <?php if (!$hasArtistClaim || !$hasModelClaim): ?>
                 <div class="artwork-actions">
                     <?php if (!$hasArtistClaim): ?>
@@ -61,22 +62,24 @@
                               class="form-inline">
                             <?= csrf_field() ?>
                             <input type="hidden" name="claim_type" value="artist">
-                            <button type="submit" class="btn-sm">Claim as Artist</button>
+                            <button type="submit" class="btn-sm">That's mine</button>
                         </form>
                     <?php else: ?>
                         <span class="badge badge-<?= $uc['artist'] === 'approved' ? 'success' : 'pending' ?>">Artist <?= e($uc['artist']) ?></span>
                     <?php endif; ?>
-                    <?php if (!$hasModelClaim): ?>
+                    <?php if (!$hasModelClaim && $canClaimAsModel): ?>
                         <form method="POST" action="<?= route('claims.claim', ['id' => hex_id((int) $artwork['id'])]) ?>"
                               hx-post="<?= route('claims.claim', ['id' => hex_id((int) $artwork['id'])]) ?>"
                               hx-swap="outerHTML"
                               class="form-inline">
                             <?= csrf_field() ?>
                             <input type="hidden" name="claim_type" value="model">
-                            <button type="submit" class="btn-sm btn-outline">Claim as Model</button>
+                            <button type="submit" class="btn-sm btn-outline">That's me</button>
                         </form>
                     <?php else: ?>
-                        <span class="badge badge-<?= $uc['model'] === 'approved' ? 'success' : 'pending' ?>">Model <?= e($uc['model']) ?></span>
+                        <?php if ($hasModelClaim): ?>
+                            <span class="badge badge-<?= $uc['model'] === 'approved' ? 'success' : 'pending' ?>">Model <?= e($uc['model']) ?></span>
+                        <?php endif; ?>
                     <?php endif; ?>
                 </div>
             <?php else: ?>
@@ -94,8 +97,7 @@
         <?php else: ?>
             <?php $hexId = hex_id((int) $artwork['id']); ?>
             <div class="artwork-actions artwork-actions-guest">
-                <a href="<?= route('auth.register') ?>?intent=claim_artwork&artwork_id=<?= $hexId ?>&claim_type=artist" class="btn-sm">Claim as Artist</a>
-                <a href="<?= route('auth.register') ?>?intent=claim_artwork&artwork_id=<?= $hexId ?>&claim_type=model" class="btn-sm btn-outline">Claim as Model</a>
+                <a href="<?= route('auth.register') ?>?intent=claim_artwork&artwork_id=<?= $hexId ?>&claim_type=artist" class="btn-sm">That's mine</a>
                 <p class="text-muted text-sm">Already registered? <a href="<?= route('auth.login') ?>?intent=claim_artwork&artwork_id=<?= $hexId ?>&claim_type=artist">Sign in</a></p>
             </div>
         <?php endif; ?>
