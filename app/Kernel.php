@@ -76,10 +76,12 @@ final class Kernel
         // Session
         if (session_status() === PHP_SESSION_NONE && php_sapi_name() !== 'cli') {
             $sessionName = config('auth.session_name', 'ldr_session');
+            $sessionLifetime = (int) config('auth.session_lifetime', 7200);
             $isProduction = config('app.env') === 'production';
             session_name($sessionName);
+            ini_set('session.gc_maxlifetime', (string) $sessionLifetime);
             session_set_cookie_params([
-                'lifetime' => 0,
+                'lifetime' => $sessionLifetime,
                 'path'     => '/',
                 'secure'   => $isProduction,
                 'httponly'  => true,

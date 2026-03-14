@@ -6,6 +6,7 @@ return [
     // Session configuration
     'session_name'     => 'ldr_session',
     'session_lifetime' => 7200, // 2 hours
+    'remember_lifetime' => 90 * 24 * 60 * 60, // 90 days
 
     // Password hashing
     'hash_algo'  => PASSWORD_BCRYPT,

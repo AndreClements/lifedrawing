@@ -130,7 +130,16 @@ final class AuthService
     {
         $userId = $this->currentUserId();
         if ($userId) {
-            $this->clearRememberToken($userId);
+            // Clear only current device's remember token
+            if (!empty($_COOKIE['ldr_remember'])) {
+                $hashed = hash('sha256', $_COOKIE['ldr_remember']);
+                $this->clearRememberToken($hashed);
+                // Also clear legacy column if it matches (transition period)
+                $this->db->execute(
+                    "UPDATE users SET remember_token = NULL WHERE id = ? AND remember_token = ?",
+                    [$userId, $hashed]
+                );
+            }
             $this->logProvenance($userId, 'user.logout', 'user', $userId);
         }
 
@@ -148,7 +157,8 @@ final class AuthService
             );
         }
         // Clear remember-me cookie
-        setcookie('ldr_remember', '', time() - 42000, '/', '', false, true);
+        $isProduction = config('app.env') === 'production';
+        setcookie('ldr_remember', '', time() - 42000, '/', '', $isProduction, true);
         session_destroy();
     }
 
@@ -188,23 +198,68 @@ final class AuthService
         return in_array($userRole, $roles, true);
     }
 
-    // --- Remember me ---
+    // --- Remember me (per-device tokens) ---
 
-    /** Create a remember token, store its hash, return the raw token. */
-    public function createRememberToken(int $userId): string
+    /** Create a remember token for this device, return the raw token. */
+    public function createRememberToken(int $userId, string $userAgent = ''): string
     {
         $token = bin2hex(random_bytes(32));
+        $lifetime = (int) config('auth.remember_lifetime', 90 * 24 * 60 * 60);
+        $expiresAt = date('Y-m-d H:i:s', time() + $lifetime);
+
         $this->db->execute(
-            "UPDATE users SET remember_token = ? WHERE id = ?",
-            [hash('sha256', $token), $userId]
+            "INSERT INTO remember_tokens (user_id, token_hash, user_agent, expires_at) VALUES (?, ?, ?, ?)",
+            [$userId, hash('sha256', $token), mb_substr($userAgent, 0, 255), $expiresAt]
         );
+
         return $token;
     }
 
-    /** Attempt login from a remember-me cookie. Returns the user or null. */
+    /** Attempt login from a remember-me cookie. Clears stale cookie on failure. */
     public function attemptRememberLogin(string $token): ?array
     {
         $hashed = hash('sha256', $token);
+        $row = $this->db->fetch(
+            "SELECT rt.id AS token_id, u.*
+             FROM remember_tokens rt
+             JOIN users u ON rt.user_id = u.id
+             WHERE rt.token_hash = ? AND rt.expires_at > NOW()",
+            [$hashed]
+        );
+
+        if (!$row) {
+            // Fallback: check old users.remember_token column for pre-migration tokens.
+            // Remove this fallback once the old column is dropped.
+            $row = $this->attemptLegacyRememberLogin($hashed);
+            if (!$row) {
+                // Clear stale cookie to prevent repeated DB queries
+                $isProduction = config('app.env') === 'production';
+                setcookie('ldr_remember', '', time() - 42000, '/', '', $isProduction, true);
+                return null;
+            }
+        } else {
+            // Rotate token on use (prevents replay)
+            $newToken = bin2hex(random_bytes(32));
+            $lifetime = (int) config('auth.remember_lifetime', 90 * 24 * 60 * 60);
+            $this->db->execute(
+                "UPDATE remember_tokens SET token_hash = ?, expires_at = ?, last_used_at = NOW() WHERE id = ?",
+                [hash('sha256', $newToken), date('Y-m-d H:i:s', time() + $lifetime), $row['token_id']]
+            );
+            $this->setRememberCookie($newToken);
+        }
+
+        $this->setSession($row);
+        $this->logProvenance((int) $row['id'], 'user.login.remember', 'user', (int) $row['id']);
+
+        return $row;
+    }
+
+    /**
+     * Fallback for pre-migration tokens stored in users.remember_token.
+     * Migrates the user to the new table on success. Remove when old column is dropped.
+     */
+    private function attemptLegacyRememberLogin(string $hashed): ?array
+    {
         $user = $this->db->fetch(
             "SELECT * FROM users WHERE remember_token = ?",
             [$hashed]
@@ -213,35 +268,47 @@ final class AuthService
             return null;
         }
 
-        $this->setSession($user);
-        $this->logProvenance((int) $user['id'], 'user.login.remember', 'user', (int) $user['id']);
-
-        // Rotate token on use (prevents replay)
+        // Migrate to new table: create a fresh token and clear the old column
         $newToken = bin2hex(random_bytes(32));
+        $lifetime = (int) config('auth.remember_lifetime', 90 * 24 * 60 * 60);
         $this->db->execute(
-            "UPDATE users SET remember_token = ? WHERE id = ?",
-            [hash('sha256', $newToken), $user['id']]
+            "INSERT INTO remember_tokens (user_id, token_hash, expires_at) VALUES (?, ?, ?)",
+            [$user['id'], hash('sha256', $newToken), date('Y-m-d H:i:s', time() + $lifetime)]
+        );
+        $this->db->execute(
+            "UPDATE users SET remember_token = NULL WHERE id = ?",
+            [$user['id']]
         );
         $this->setRememberCookie($newToken);
 
         return $user;
     }
 
-    /** Clear the remember token from DB. */
-    public function clearRememberToken(int $userId): void
+    /** Clear a single remember token by its hash (current device). */
+    public function clearRememberToken(string $tokenHash): void
     {
         $this->db->execute(
-            "UPDATE users SET remember_token = NULL WHERE id = ?",
+            "DELETE FROM remember_tokens WHERE token_hash = ?",
+            [$tokenHash]
+        );
+    }
+
+    /** Clear all remember tokens for a user (log out everywhere). */
+    public function clearAllRememberTokens(int $userId): void
+    {
+        $this->db->execute(
+            "DELETE FROM remember_tokens WHERE user_id = ?",
             [$userId]
         );
     }
 
-    /** Set the remember-me cookie (30 days). */
+    /** Set the remember-me cookie (90 days). */
     public function setRememberCookie(string $token): void
     {
         $isProduction = config('app.env') === 'production';
+        $lifetime = (int) config('auth.remember_lifetime', 90 * 24 * 60 * 60);
         setcookie('ldr_remember', $token, [
-            'expires'  => time() + (30 * 24 * 60 * 60),
+            'expires'  => time() + $lifetime,
             'path'     => '/',
             'secure'   => $isProduction,
             'httponly'  => true,

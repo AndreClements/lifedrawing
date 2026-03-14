@@ -41,7 +41,7 @@ final class AuthController extends BaseController
         }
 
         if ($request->input('remember', '') === '1') {
-            $token = $this->auth->createRememberToken((int) $user['id']);
+            $token = $this->auth->createRememberToken((int) $user['id'], $request->server['HTTP_USER_AGENT'] ?? '');
             $this->auth->setRememberCookie($token);
         }
 
@@ -113,6 +113,14 @@ final class AuthController extends BaseController
                 $this->auth->register($name, $email, $password);
             }
             $this->auth->attempt($email, $password);
+
+            // Auto-remember on registration
+            $currentUserId = $this->auth->currentUserId();
+            if ($currentUserId) {
+                $token = $this->auth->createRememberToken($currentUserId, $_SERVER['HTTP_USER_AGENT'] ?? '');
+                $this->auth->setRememberCookie($token);
+            }
+
             return Response::redirect(route('auth.consent'));
         } catch (\App\Exceptions\AppException $e) {
             return $this->render('auth.register', [
