@@ -114,7 +114,9 @@
                     <div class="comment<?= !empty($roles) ? ' comment-credited' : '' ?>">
                         <div class="comment-header">
                             <strong>
-                                <?php if (can_see_names()): ?>
+                                <?php if ($comment['display_name'] === 'LDRBot'): ?>
+                                    <?= e($comment['display_name']) ?>
+                                <?php elseif (can_see_names()): ?>
                                     <a href="<?= route('profiles.show', ['id' => hex_id((int) $comment['user_id'], $comment['display_name'])]) ?>">
                                         <?= e($comment['display_name']) ?>
                                     </a>
