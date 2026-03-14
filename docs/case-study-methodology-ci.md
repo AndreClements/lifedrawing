@@ -1,4 +1,4 @@
-# Case Study: Life Drawing Randburg — methodology_CI in Practice
+# Case Study: Life Drawing Randburg — CII in Practice
 
 ## The Prompt
 
@@ -6,12 +6,12 @@
 
 ## What Was Built
 
-A complete web application across eight build sessions — from empty directory to working site with real historical data spanning 2017–2026.
+A complete web application across fourteen build sessions — from empty directory to working site with real historical data spanning 2017–2026.
 
 ### The Stack
 
 - Custom PHP 8.2+ micro-kernel (~15 core files, no framework)
-- MySQL with 20 migration files (5 core + 15 module)
+- MySQL with 24 migration files (6 core + 18 module)
 - HTMX for interactivity (single `<script>` tag, no build pipeline)
 - Vanilla CSS with custom properties (IBM Plex family: Serif for body, Sans for interface, Mono for code)
 - PSR-4 autoloading via Composer + PHPMailer for SMTP email delivery
@@ -25,11 +25,15 @@ A complete web application across eight build sessions — from empty directory 
 - **Profiles**: Claimed works build an artist's public portfolio. Pseudonym support. Sitters page alongside artists.
 - **Dashboard**: Attendance streaks, session history, milestone tracking.
 - **Comments**: On individual artworks. Artist/model comments float to top with role badges. Consent-gated.
-- **Auth**: Registration, login with remember-me (30-day rotating token), password reset (SHA-256 hashed, 1-hour expiry, anti-enumeration), consent gate.
+- **Auth**: Registration, login with per-device remember-me (90-day rotating tokens), password reset (SHA-256 hashed, 1-hour expiry, anti-enumeration), consent gate.
 - **Name privacy**: Real names visible only to logged-in users who've participated in at least one session. Non-participants see pseudonyms or "Participant".
-- **Historical data**: 296 sessions backfilled from facilitator's Google Sheet (2017–2026), ~217 participant stub accounts awaiting real registration.
+- **Sitter queue**: Models join a waiting list with day preferences; facilitators schedule and manage entries. Auto-rejoin, WhatsApp contact, provenance-logged.
+- **Notifications**: Opt-in email alerts buffered via notification queue with 5-minute digest batching. Six notification types, two sent immediately (cancellation, sitter completion).
+- **LDRBot feedback**: AI-generated artwork feedback posted as comments after each session. Two CLI tools handle data gathering and posting; feedback is written by Claude viewing each image, guided by `VOICE.md`. The voice attends — it describes what is present in the drawing without evaluating, ranking, or prescribing.
+- **SEO**: Canonical URLs, OG/Twitter Card tags, JSON-LD (Organization, Event, FAQPage, BreadcrumbList), dynamic sitemap, `robots.txt`.
+- **Historical data**: 296 sessions backfilled from facilitator's Google Sheet (2017–2026), ~196 participant stub accounts awaiting real registration.
 
-## How Methodology_CI Manifested
+## How CII Manifested
 
 ### CARDS in Code
 
@@ -81,7 +85,7 @@ During the build, a key conversation with Je'anna (CARDS collaborator) surfaced 
 
 This led to a simplification: default artwork visibility changed from `'session'` (requiring claim-approval to become visible) to `'public'` (visible immediately, claiming is for profile-building). The original design over-engineered consent by making software enforce what should be a human interaction.
 
-This is methodology_CI in practice: the methodology doesn't just produce code — it produces *decisions about what not to code*.
+This is CII in practice: the methodology doesn't just produce code — it produces *decisions about what not to code*.
 
 ### Name Privacy as Disclosed Default
 
@@ -131,9 +135,11 @@ At the end of the first build session:
 
 4. **AI collaboration benefits from axiological framing** — giving the AI an ethical framework to work within produced more coherent architecture than a purely technical brief would have. The framework provided constraints that focused rather than limited.
 
-5. **And-Yet scales** — from a single field on an exception class to a design posture across eight build sessions. The consent withdrawal carries an And-Yet. The name privacy gate carries an implicit one (URL slugs can still leak names). The system gets more honest as it grows, not less.
+5. **And-Yet scales** — from a single field on an exception class to a design posture across fourteen build sessions. The consent withdrawal carries an And-Yet. The name privacy gate carries an implicit one (URL slugs can still leak names). The LDRBot feedback carries one too: "it can describe what it sees but cannot feel the room." The system gets more honest as it grows, not less.
 
 6. **Historical data validates the model** — 296 real sessions across 8 years of practice, imported without schema changes. The session-centric ontology held because it was designed around how the room actually works, not around a hypothetical.
+
+7. **Machine-generated feedback embodies CARDS** — LDRBot feedback is the And-Yet pattern applied to AI-generated content. The feedback attends (Relatedness), never prescribes (Autonomy), never ranks (Dignity), names its own limits as a machine (Competence). The `VOICE.md` guide formalises the stance: witnessing, not evaluating. Duration is context, not a performance metric. The model is a co-participant, not an object. These constraints emerge directly from the axiological architecture, not from prompt engineering.
 
 ## Reviews
 
@@ -157,5 +163,5 @@ From the post announcing the project:
 
 ---
 
-*Life Drawing Randburg. v0.2.0. February 2026.*
-*Built with [methodology_CI](https://github.com/andreclements/README/blob/main/docs/methods/METHODOLOGY_CI.md).*
+*Life Drawing Randburg. v0.3.0. March 2026.*
+*Built with [CII](https://github.com/andreclements/README/blob/main/docs/methods/METHODOLOGY_CII.md) (Computational Intelligence Integrity).*

@@ -50,6 +50,9 @@ Configure via Dreamhost panel (Goodies > Cron Jobs) or `crontab -e`:
 # Process uploaded images (EXIF rotation, WebP conversion, thumbnails) — every 2 min with flock
 */2 * * * * flock -n /tmp/ldr-images.lock php ~/lifedrawing.andresclements.com/randburg/tools/process_images.php >> ~/lifedrawing.andresclements.com/randburg/storage/logs/cron.log 2>&1
 
+# Flush notification queue (digest batching, 5-min window) — every 2 min with flock
+*/2 * * * * flock -n ~/lifedrawing.andresclements.com/randburg/storage/flush_notifications.lock php ~/lifedrawing.andresclements.com/randburg/tools/flush_notifications.php >> ~/lifedrawing.andresclements.com/randburg/storage/logs/cron.log 2>&1
+
 # Refresh artist stats daily at 2am
 0 2 * * * php ~/lifedrawing.andresclements.com/randburg/tools/refresh-stats.php >> ~/lifedrawing.andresclements.com/randburg/storage/logs/cron.log 2>&1
 ```

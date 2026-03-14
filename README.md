@@ -17,7 +17,8 @@ A digital home for LDR that enables:
 - **Strava-for-artistry** — personal dashboard with attendance streaks, weekly heatmap, session timeline, role distribution, milestone tracking
 - **Public profiles** — artists and models build visible portfolios through participation, with name privacy gating (real names only visible to fellow session participants)
 - **Sitter queue** — models join a waiting list with day preferences and WhatsApp contact; facilitators schedule, complete, and manage entries from `/pose/queue`. Auto-rejoin option. Consent-gated join, provenance-logged
-- **Notifications** — opt-in email alerts for new sessions, cancellations, claim resolution, comments, and sitter queue activity. Facilitators automatically receive operational emails for new claims, stub account registrations, and queue joins
+- **Notifications** — opt-in email alerts for new sessions, cancellations, claim resolution, comments, and sitter queue activity. Facilitators automatically receive operational emails for new claims, stub account registrations, and queue joins. Buffered via `ld_notification_queue` with 5-minute digest batching
+- **LDRBot feedback** — AI-generated artwork feedback posted as comments after each session. Two CLI tools (`ldrbot-query.php`, `ldrbot-post.php`) handle data gathering and posting; feedback is written by Claude viewing each image, guided by `VOICE.md`. LDRBot name always visible, notifications target artist claimant only
 - **WhatsApp schedule** — facilitator-facing formatted session schedule for sharing to the community WhatsApp group
 - **FAQ** — community information page with CSS-only accordion layout (no inline JS, CSP-safe)
 - **Historical data** — 296 sessions backfilled from facilitator's Google Sheet (2017–2026), ~214 participant stub accounts awaiting real registration and claim
@@ -49,7 +50,7 @@ If you've worked with Laravel, you'll recognise some of the bones:
 
 ### What it does differently
 
-**Axiological architecture.** The [README methodology](https://github.com/andreclements/README) embeds ethical commitments directly into code structures:
+**Axiological architecture.** The [CII methodology](https://github.com/andreclements/README/blob/main/docs/methods/METHODOLOGY_CII.md) embeds ethical commitments directly into code structures:
 
 | Concept | Implementation |
 |---|---|
@@ -89,13 +90,13 @@ lifedrawing/
 │       ├── Models/             # Data models
 │       ├── Repositories/       # Data access layer
 │       ├── Views/              # PHP templates with layouts
-│       └── migrations/         # Module-specific SQL (17 migrations)
+│       └── migrations/         # Module-specific SQL (18 migrations)
 │
 ├── config/                     # app.php, database.php, auth.php, axioms.php, mail.php
-├── database/                   # Core migrations (5) + seeds
+├── database/                   # Core migrations (6) + seeds
 ├── deploy/                     # Deployment scripts + htaccess templates
 ├── storage/                    # Logs, cache, sessions, rate-limit state
-└── tools/                      # CLI: migrate, seed, refresh-stats, process-images, import-csv, reset-production, test-mail, check-users, merge-stubs
+└── tools/                      # CLI: migrate, seed, refresh-stats, process-images, flush-notifications, ldrbot-query, ldrbot-post, import-csv, reset-production, test-mail, check-users, merge-stubs
 ```
 
 ### Stack
@@ -134,7 +135,7 @@ Copy `.env.example` to `.env` and edit for your environment. Default assumes XAM
 
 ### Accounts
 
-In production, the facilitator (Andre Clements) has a real account. Eleven users have registered so far — when registering, users can claim their stub account to inherit their session history. Approximately 207 stub accounts remain from the CSV backfill — these have `.stub@local` email addresses and dead password hashes, and can't log in until the real person registers. Facilitators can also manually merge stubs that weren't claimed during registration.
+In production, the facilitator (Andre Clements) has a real account. Twenty users have registered so far — when registering, users can claim their stub account to inherit their session history. Approximately 196 stub accounts remain from the CSV backfill — these have `.stub@local` email addresses and dead password hashes, and can't log in until the real person registers. Facilitators can also manually merge stubs that weren't claimed during registration. LDRBot (id 256) is a system account with a dead password hash, used for AI-generated feedback comments.
 
 For local development, `php tools/seed.php` creates demo accounts with password `password123`.
 
@@ -150,6 +151,11 @@ php tools/refresh-stats.php            # Recalculate all artist stats
 php tools/process_images.php           # Process unprocessed artworks (EXIF, WebP, thumbnails)
 php tools/process_images.php --limit=20    # Process at most 20 images
 php tools/process_images.php --reprocess   # Reset all and reprocess
+php tools/flush_notifications.php      # Flush queued notification digests (cron)
+php tools/ldrbot-query.php             # Query claimed artworks for feedback generation (JSON)
+php tools/ldrbot-query.php --date=2026-03-13   # Specific date
+php tools/ldrbot-post.php --file=feedback.json # Post AI-generated feedback comments
+php tools/ldrbot-post.php --file=feedback.json --dry-run  # Preview without posting
 php tools/import-csv.php [path]        # Backfill sessions/participants from CSV
 php tools/reset-production.php         # Reset production state (dangerous)
 php tools/test-mail.php [email]        # Send test email via configured SMTP
@@ -237,6 +243,9 @@ Live at: `https://lifedrawing.andresclements.com/randburg`
 # Process uploaded images (EXIF rotation, WebP conversion, thumbnails) — every 2 min with flock
 */2 * * * * flock -n /tmp/ldr-images.lock php ~/lifedrawing.andresclements.com/randburg/tools/process_images.php >> ~/lifedrawing.andresclements.com/randburg/storage/logs/cron.log 2>&1
 
+# Flush notification queue (digest batching, 5-min window) — every 2 min with flock
+*/2 * * * * flock -n ~/lifedrawing.andresclements.com/randburg/storage/flush_notifications.lock php ~/lifedrawing.andresclements.com/randburg/tools/flush_notifications.php >> ~/lifedrawing.andresclements.com/randburg/storage/logs/cron.log 2>&1
+
 # Refresh artist stats daily at 2am
 0 2 * * * php ~/lifedrawing.andresclements.com/randburg/tools/refresh-stats.php >> ~/lifedrawing.andresclements.com/randburg/storage/logs/cron.log 2>&1
 ```
@@ -267,7 +276,7 @@ The consent simplification was the project's defining architectural decision. In
 
 ## Session continuity
 
-This project follows the [methodology_CI](https://github.com/andreclements/README/blob/main/docs/methods/METHODOLOGY_CI.md) session continuity protocol. The plan file at `.claude/plans/` serves as the staging artifact. Memory files in `.claude/projects/` capture patterns and decisions across sessions.
+This project follows the [CII methodology](https://github.com/andreclements/README/blob/main/docs/methods/METHODOLOGY_CII.md) (Computational Intelligence Integrity) session continuity protocol. The plan file at `.claude/plans/` serves as the staging artifact. Memory files in `.claude/projects/` capture patterns and decisions across sessions.
 
 ## License
 
