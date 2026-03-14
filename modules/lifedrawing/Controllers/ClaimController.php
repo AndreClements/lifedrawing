@@ -156,6 +156,55 @@ final class ClaimController extends BaseController
         return Response::forbidden($message);
     }
 
+    /** Approve all pending claims at once (facilitator+). */
+    public function resolveAll(Request $request): Response
+    {
+        if ($redirect = $this->requireAuth()) return $redirect;
+        if ($redirect = $this->requireRole('admin', 'facilitator')) return $redirect;
+
+        $isAdmin = $this->auth->hasRole('admin');
+        $claims = $this->db->fetchAll(
+            "SELECT c.*, a.session_id
+             FROM ld_claims c
+             JOIN ld_artworks a ON c.artwork_id = a.id
+             JOIN ld_sessions s ON a.session_id = s.id
+             WHERE c.status = 'pending'
+               AND (s.facilitator_id = ? OR ? = 1)",
+            [$this->userId(), $isAdmin ? 1 : 0]
+        );
+
+        $now = date('Y-m-d H:i:s');
+        $refreshed = [];
+
+        foreach ($claims as $claim) {
+            $this->table('ld_claims')
+                ->where('id', '=', (int) $claim['id'])
+                ->update([
+                    'status' => 'approved',
+                    'approved_by' => $this->userId(),
+                    'resolved_at' => $now,
+                ]);
+
+            $this->provenance->log(
+                $this->userId(),
+                'claim.approve',
+                'artwork',
+                (int) $claim['artwork_id'],
+                ['claim_id' => (int) $claim['id'], 'claimant_id' => $claim['claimant_id']]
+            );
+
+            app('notifications')->claimResolved($claim, 'approved', (int) $claim['artwork_id']);
+
+            $claimantId = (int) $claim['claimant_id'];
+            if (!in_array($claimantId, $refreshed, true)) {
+                app('stats')->refreshUser($claimantId);
+                $refreshed[] = $claimantId;
+            }
+        }
+
+        return Response::redirect(route('claims.pending'));
+    }
+
     /** List pending claims (facilitator view). */
     public function pending(Request $request): Response
     {

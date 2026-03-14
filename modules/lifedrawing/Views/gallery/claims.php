@@ -8,6 +8,12 @@
             <p>No pending claims. All caught up.</p>
         </div>
     <?php else: ?>
+        <form method="POST" action="<?= route('claims.resolveAll') ?>" class="form-inline" style="margin-bottom: var(--space-md);"
+              onsubmit="return confirm('Approve all <?= count($claims) ?> pending claim<?= count($claims) !== 1 ? 's' : '' ?>?')">
+            <?= csrf_field() ?>
+            <button type="submit" class="btn">Approve All (<?= count($claims) ?>)</button>
+        </form>
+
         <div class="card-grid">
             <?php foreach ($claims as $claim): ?>
                 <div class="card claim-card">

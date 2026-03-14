@@ -49,6 +49,7 @@ $router->post('/sessions/{id}/participants/remove', [SessionController::class, '
 $router->post('/sessions/{id}/participants/tentative', [SessionController::class, 'toggleTentative'], 'sessions.participants.tentative');
 $router->post('/sessions/{id}/cancel',     [SessionController::class, 'cancel'], 'sessions.cancel');
 $router->get('/schedule/whatsapp',         [SessionController::class, 'whatsappSchedule'], 'schedule.whatsapp');
+$router->post('/claims/resolve-all',        [ClaimController::class, 'resolveAll'], 'claims.resolveAll');
 $router->post('/claims/{id}/resolve',      [ClaimController::class, 'resolve'], 'claims.resolve');
 $router->post('/artworks/{id}/delete',     [GalleryController::class, 'destroy'], 'artworks.destroy');
 $router->post('/pose/queue/{id}/schedule', [PoseController::class, 'schedule'], 'pose.schedule');
