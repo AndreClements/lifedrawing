@@ -30,6 +30,9 @@
                         <span><?= $session['artwork_count'] ?> artwork<?= $session['artwork_count'] != 1 ? 's' : '' ?></span>
                     <?php endif; ?>
                 </div>
+                <?php if (!empty($session['participants'])): ?>
+                    <div class="card-participants"><?= e(implode(', ', $session['participants'])) ?></div>
+                <?php endif; ?>
                 <?php if ($activeView === 'upcoming'): ?>
                     <div class="card-badge badge-<?= $session['status'] ?>"><?= e(ucfirst($session['status'])) ?></div>
                 <?php endif; ?>

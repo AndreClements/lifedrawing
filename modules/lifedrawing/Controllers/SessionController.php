@@ -63,6 +63,28 @@ final class SessionController extends BaseController
             );
         }
 
+        // Batch-load participant first names for logged-in users
+        if ($sessions && can_see_names()) {
+            $ids = array_column($sessions, 'id');
+            $placeholders = implode(',', array_fill(0, count($ids), '?'));
+            $rows = $this->db->fetchAll(
+                "SELECT sp.session_id, u.display_name
+                 FROM ld_session_participants sp
+                 JOIN users u ON sp.user_id = u.id
+                 WHERE sp.session_id IN ($placeholders)
+                 ORDER BY FIELD(sp.role, 'facilitator', 'model', 'artist', 'observer'), u.display_name",
+                $ids
+            );
+            $bySession = [];
+            foreach ($rows as $row) {
+                $bySession[$row['session_id']][] = explode(' ', $row['display_name'])[0];
+            }
+            foreach ($sessions as &$s) {
+                $s['participants'] = $bySession[$s['id']] ?? [];
+            }
+            unset($s);
+        }
+
         $data = [
             'sessions' => $sessions,
             'activeView' => $activeView,

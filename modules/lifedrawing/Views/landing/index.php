@@ -93,6 +93,9 @@
                         &middot;
                         <span><?= $session['artwork_count'] ?> artwork<?= $session['artwork_count'] != 1 ? 's' : '' ?></span>
                     </div>
+                    <?php if (!empty($session['participants'])): ?>
+                        <div class="card-participants"><?= e(implode(', ', $session['participants'])) ?></div>
+                    <?php endif; ?>
                 </a>
             <?php endforeach; ?>
         </div>

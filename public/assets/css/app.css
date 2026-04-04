@@ -582,6 +582,7 @@ textarea {
 }
 
 .card-stats { margin-top: var(--space-sm); }
+.card-participants { font-family: var(--font-ui); font-size: 0.8rem; color: var(--color-text-muted); margin-top: var(--space-xs); }
 .card-bio { font-size: 0.9rem; color: var(--color-text-muted); }
 
 .pseudonym {
