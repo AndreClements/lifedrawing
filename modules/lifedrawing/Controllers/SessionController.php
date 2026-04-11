@@ -553,7 +553,9 @@ final class SessionController extends BaseController
             $artistStr = implode(', ', $artists);
             $capacity = $s['max_capacity'] ?? 7;
 
-            $line = "{$day} {$date} ({$sexModel})";
+            $title = session_title($s);
+
+            $line = "{$day} {$date} _{$title}_ ({$sexModel})";
             if ($artistStr) {
                 $line .= " {$artistStr}";
             }
@@ -561,7 +563,7 @@ final class SessionController extends BaseController
             $lines[] = $line;
         }
 
-        $schedule = "Schedule\n" . implode("\n", $lines);
+        $schedule = "*Schedule*\n" . implode("\n", $lines);
         $schedule .= "\n\nA session needs 3 bookings to proceed.";
         $schedule .= "\n\xF0\x9F\x91\x86Date (Model) Bookings";
         $schedule .= "\nFridays: 3 pm for 3:30 to 7pm,  ";
