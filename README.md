@@ -8,8 +8,8 @@ The model is not an object but a co-participant. What emerges is not just skill,
 
 A digital home for LDR that enables:
 
-- **Session management** — schedule sessions, track participants and roles (artist, model, facilitator, observer), capacity tracking (X/7), cancellation, tentative bookings
-- **Participant management** — facilitator can add/remove participants, toggle tentative status, search users by name
+- **Session management** — schedule sessions, track participants and roles (artist, model, facilitator, observer), capacity tracking (X/7), cancellation, tentative bookings. One-click Join buttons on listing cards (logged-in: HTMX artist join; logged-out: intent-preserving artist/model sign-up)
+- **Participant management** — facilitator can add/remove participants, toggle tentative status, search users by name. Inline "Create stub" action in typeahead when no match — one click creates a new stub user and adds them to the session
 - **Artwork archive** — facilitator uploads batches of drawings per session with pose duration and labels, automatic image processing (EXIF rotation, 10MP cap, WebP conversion, three-tier thumbnails)
 - **Claim system** — artists and models claim their work/likeness after sessions, building personal portfolios. Intent-preserving registration: unauthenticated users are redirected through register/login and returned to their claim
 - **Comments** — conversation on individual artworks, with artist/model comments surfaced first and role badges
@@ -19,7 +19,7 @@ A digital home for LDR that enables:
 - **Sitter queue** — models join a waiting list with day preferences and WhatsApp contact; facilitators schedule, complete, and manage entries from `/pose/queue`. Auto-rejoin option. Consent-gated join, provenance-logged
 - **Notifications** — opt-in email alerts for new sessions, cancellations, claim resolution, comments, and sitter queue activity. Facilitators automatically receive operational emails for new claims, stub account registrations, and queue joins. Buffered via `ld_notification_queue` with 5-minute digest batching
 - **LDRBot feedback** — AI-generated artwork feedback posted as comments after each session. Two CLI tools (`ldrbot-query.php`, `ldrbot-post.php`) handle data gathering and posting; feedback is written by Claude viewing each image, guided by `VOICE.md`. LDRBot name always visible, notifications target artist claimant only
-- **WhatsApp schedule** — facilitator-facing formatted session schedule for sharing to the community WhatsApp group
+- **WhatsApp schedule** — facilitator-facing formatted session schedule for sharing to the community WhatsApp group. Italic session titles, bold header, and a trailing sign-up URL so recipients can tap through
 - **FAQ** — community information page with CSS-only accordion layout (no inline JS, CSP-safe)
 - **Historical data** — 296 sessions backfilled from facilitator's Google Sheet (2017–2026), ~214 participant stub accounts awaiting real registration and claim
 
@@ -212,6 +212,7 @@ php tools/thumbnails.php              # Generate missing thumbnails
 | POST | `/claims/{id}/resolve` | Approve/reject claim | Facilitator |
 | GET | `/sessions/{id}/participants/search` | Search users (HTMX) | Facilitator |
 | POST | `/sessions/{id}/participants/add` | Add participant | Facilitator |
+| POST | `/sessions/{id}/participants/quick-add-stub` | Create stub user + add to session | Facilitator |
 | POST | `/sessions/{id}/participants/remove` | Remove participant | Facilitator |
 | POST | `/sessions/{id}/participants/tentative` | Toggle tentative status | Facilitator |
 | GET | `/schedule/whatsapp` | WhatsApp-formatted schedule | Facilitator |
@@ -262,7 +263,7 @@ APP_BASE_PATH=/randburg
 
 `APP_BASE_PATH` tells `Request::capture()` how to strip the URL prefix — needed when the app lives in a subdirectory and `.htaccess` hides `/public` from URLs.
 
-Ensure `storage/` directories are writable by the web server and HTTPS is enforced.
+Ensure `storage/` directories are writable by the web server and HTTPS is enforced.in 
 
 ## Lessons Learned
 
