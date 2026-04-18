@@ -63,6 +63,24 @@ final class SessionController extends BaseController
             );
         }
 
+        // Pre-compute "joined as artist" flag per session for the current user
+        $auth = app('auth');
+        if ($sessions && $activeView === 'upcoming' && $auth->isLoggedIn()) {
+            $userId = $auth->currentUserId();
+            $ids = array_column($sessions, 'id');
+            $placeholders = implode(',', array_fill(0, count($ids), '?'));
+            $joined = $this->db->fetchAll(
+                "SELECT session_id FROM ld_session_participants
+                 WHERE user_id = ? AND role = 'artist' AND session_id IN ($placeholders)",
+                array_merge([$userId], $ids)
+            );
+            $joinedSet = array_column($joined, 'session_id');
+            foreach ($sessions as &$s) {
+                $s['joined_as_artist'] = in_array((int) $s['id'], array_map('intval', $joinedSet), true);
+            }
+            unset($s);
+        }
+
         // Batch-load participant first names for logged-in users
         if ($sessions && can_see_names()) {
             $ids = array_column($sessions, 'id');
@@ -347,6 +365,69 @@ final class SessionController extends BaseController
         return $this->partial('sessions._search_results', [
             'results' => $results,
             'sessionId' => $sessionId,
+            'query' => $q,
+            'role' => $role,
+        ]);
+    }
+
+    /** Create a new stub user and add them to the session as a participant (facilitator). */
+    public function quickAddStub(Request $request): Response
+    {
+        if ($redirect = $this->requireAuth()) return $redirect;
+        if ($redirect = $this->requireRole('admin', 'facilitator')) return $redirect;
+
+        $sessionId = from_hex($request->param('id'));
+        $session = $this->table('ld_sessions')->where('id', '=', $sessionId)->first();
+        if (!$session) return Response::notFound('Session not found.');
+        if ($redirect = $this->requireFacilitatorOf($session)) return $redirect;
+
+        $displayName = trim((string) $request->input('display_name', ''));
+        $role = $request->input('role', 'artist');
+        $tentative = (bool) $request->input('tentative', false);
+
+        if ($displayName === '' || mb_strlen($displayName) > 120) {
+            return Response::html('<div class="search-result-empty">Name required (max 120 chars).</div>', 400);
+        }
+        if (!in_array($role, ['artist', 'model', 'observer'], true)) {
+            $role = 'artist';
+        }
+
+        $existing = $this->db->fetchColumn(
+            "SELECT id FROM users WHERE display_name = ? LIMIT 1",
+            [$displayName]
+        );
+        $userId = $existing ? (int) $existing : $this->auth->createStub($displayName);
+
+        $already = $this->table('ld_session_participants')
+            ->where('session_id', '=', $sessionId)
+            ->where('user_id', '=', $userId)
+            ->where('role', '=', $role)
+            ->first();
+
+        if (!$already) {
+            $this->table('ld_session_participants')->insert([
+                'session_id' => $sessionId,
+                'user_id' => $userId,
+                'role' => $role,
+                'tentative' => $tentative ? 1 : 0,
+            ]);
+
+            $this->provenance->log(
+                $this->userId(),
+                'participant.quick_add_stub',
+                'session',
+                $sessionId,
+                ['added_user' => $userId, 'role' => $role, 'tentative' => $tentative, 'created_stub' => !$existing]
+            );
+
+            app('stats')->refreshUser($userId);
+        }
+
+        $participants = $this->getParticipants($sessionId);
+
+        return $this->partial('sessions._participant_manager', [
+            'session' => $session,
+            'participants' => $participants,
         ]);
     }
 
@@ -569,6 +650,8 @@ final class SessionController extends BaseController
         $schedule .= "\nFridays: 3 pm for 3:30 to 7pm,  ";
         $schedule .= "\nSaturdays & Sundays: 10 am for 10:30 to 2 pm. ";
         $schedule .= "\nContribution: R 350 or as near as is affordable.";
+        $sessionsUrl = rtrim(config('app.url'), '/') . '/sessions';
+        $schedule .= "\n\nJoin at {$sessionsUrl}";
 
         return $this->render('sessions.whatsapp', [
             'schedule' => $schedule,

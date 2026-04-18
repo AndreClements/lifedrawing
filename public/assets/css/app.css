@@ -553,6 +553,21 @@ textarea {
     display: block;
 }
 
+.card-link-area {
+    text-decoration: none;
+    color: inherit;
+    display: block;
+}
+
+.card-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-xs);
+    margin-top: var(--space-sm);
+    padding-top: var(--space-sm);
+    border-top: 1px solid var(--color-border);
+}
+
 .card-date {
     font-family: var(--font-ui);
     font-size: 0.8rem;
@@ -1769,6 +1784,30 @@ textarea {
     font-family: var(--font-ui);
     font-size: 0.85rem;
     color: var(--color-text-muted);
+}
+
+form.search-result-create {
+    border-top: 1px solid var(--color-border);
+    margin: 0;
+    padding: 0;
+}
+
+form.search-result-create button.btn-link-inline {
+    all: unset;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+    padding: var(--space-sm) var(--space-md);
+    cursor: pointer;
+    font-family: var(--font-ui);
+    font-size: 0.9rem;
+    color: var(--color-text);
+    box-sizing: border-box;
+}
+
+form.search-result-create button.btn-link-inline:hover {
+    background: var(--color-border);
 }
 
 /* =============================================

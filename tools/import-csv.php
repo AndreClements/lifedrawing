@@ -56,8 +56,7 @@ if (!file_exists($csvPath)) {
     exit(1);
 }
 
-// Dead password hash — stub accounts can't log in
-$stubHash = '$2y$12$STUB.ACCOUNT.CANNOT.LOGIN.xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx';
+$authService = $db ? new App\Services\Auth\AuthService($db) : null;
 
 // Parse CSV
 $rows = [];
@@ -202,7 +201,7 @@ $andreId = null;
 
 function getOrCreateUser(string $name): int
 {
-    global $db, $stubHash, $userCache, $andreId;
+    global $db, $userCache, $andreId, $authService;
 
     if ($name === 'André Clements') {
         if ($andreId === null) {
@@ -226,25 +225,7 @@ function getOrCreateUser(string $name): int
         return (int) $existing;
     }
 
-    // Create stub account
-    $slug = preg_replace('/[^a-z0-9]+/', '.', strtolower(trim($name)));
-    $email = $slug . '.stub@local';
-
-    // Ensure unique email
-    $counter = 0;
-    $tryEmail = $email;
-    while ($db->fetchColumn("SELECT 1 FROM users WHERE email = ?", [$tryEmail])) {
-        $counter++;
-        $tryEmail = $slug . $counter . '.stub@local';
-    }
-
-    $db->execute(
-        "INSERT INTO users (display_name, email, password_hash, role, consent_state, consent_granted_at)
-         VALUES (?, ?, ?, 'participant', 'granted', NOW())",
-        [$name, $tryEmail, $stubHash]
-    );
-
-    $id = (int) $db->lastInsertId();
+    $id = $authService->createStub($name);
     $userCache[$name] = $id;
     return $id;
 }

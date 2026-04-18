@@ -16,11 +16,49 @@ use App\Exceptions\ConsentException;
  */
 final class AuthService
 {
+    public const STUB_HASH = '$2y$12$STUB.ACCOUNT.CANNOT.LOGIN.xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx';
+
     public function __construct(
         private readonly Connection $db,
     ) {}
 
     // --- Registration ---
+
+    /**
+     * Create a stub account for an unregistered participant.
+     * Email is derived from a slug of the display name; password hash is dead.
+     * Used by CSV import and facilitator quick-add.
+     */
+    public function createStub(string $displayName): int
+    {
+        $displayName = trim($displayName);
+        if ($displayName === '') {
+            throw new \App\Exceptions\AppException("Display name required to create stub.");
+        }
+
+        $slug = preg_replace('/[^a-z0-9]+/', '.', strtolower($displayName));
+        $slug = trim((string) $slug, '.');
+        if ($slug === '') {
+            $slug = 'user';
+        }
+
+        $email = $slug . '.stub@local';
+        $counter = 0;
+        while ($this->db->fetchColumn("SELECT 1 FROM users WHERE email = ?", [$email])) {
+            $counter++;
+            $email = $slug . $counter . '.stub@local';
+        }
+
+        $this->db->execute(
+            "INSERT INTO users (display_name, email, password_hash, role, consent_state, consent_granted_at)
+             VALUES (?, ?, ?, 'participant', 'granted', NOW())",
+            [$displayName, $email, self::STUB_HASH]
+        );
+
+        $userId = (int) $this->db->lastInsertId();
+        $this->logProvenance($userId, 'user.stub.create', 'user', $userId);
+        return $userId;
+    }
 
     /**
      * Register a new user with consent pending.
