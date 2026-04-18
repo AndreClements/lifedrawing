@@ -55,7 +55,7 @@ final class LandingController extends BaseController
                  FROM ld_session_participants sp
                  JOIN users u ON sp.user_id = u.id
                  WHERE sp.session_id IN ($placeholders)
-                 ORDER BY FIELD(sp.role, 'facilitator', 'model', 'artist', 'observer'), u.display_name",
+                 ORDER BY FIELD(sp.role, 'facilitator', 'model', 'artist', 'observer'), sp.id ASC",
                 $ids
             );
             $bySession = [];

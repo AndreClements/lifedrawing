@@ -324,7 +324,7 @@ final class SessionController extends BaseController
             "SELECT sp.*, u.display_name FROM ld_session_participants sp
              JOIN users u ON sp.user_id = u.id
              WHERE sp.session_id = ?
-             ORDER BY FIELD(sp.role, 'facilitator', 'model', 'artist', 'observer'), u.display_name",
+             ORDER BY FIELD(sp.role, 'facilitator', 'model', 'artist', 'observer'), sp.id ASC",
             [$sessionId]
         );
     }
@@ -594,7 +594,7 @@ final class SessionController extends BaseController
                  FROM ld_session_participants sp
                  JOIN users u ON sp.user_id = u.id
                  WHERE sp.session_id IN ({$placeholders})
-                 ORDER BY sp.role, u.display_name",
+                 ORDER BY FIELD(sp.role, 'facilitator', 'model', 'artist', 'observer'), sp.id ASC",
                 $sessionIds
             );
             foreach ($rows as $row) {
