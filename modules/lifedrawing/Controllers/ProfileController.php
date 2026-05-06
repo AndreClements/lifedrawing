@@ -43,6 +43,7 @@ final class ProfileController extends BaseController
     {
         $sitters = $this->db->fetchAll(
             "SELECT u.id, u.display_name, u.pseudonym, u.bio, u.avatar_path,
+                    u.email, u.whatsapp_number,
                     COUNT(DISTINCT sp.session_id) as sessions_sat,
                     COALESCE(s.total_sessions, 0) as total_sessions,
                     COALESCE(s.current_streak, 0) as current_streak

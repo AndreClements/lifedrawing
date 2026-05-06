@@ -23,6 +23,16 @@
                             <span><?= $sitter['current_streak'] ?>w streak</span>
                         <?php endif; ?>
                     </div>
+                    <?php if (app('auth')->hasRole('admin', 'facilitator')): ?>
+                        <div class="card-contact">
+                            <?php if (!empty($sitter['email'])): ?>
+                                <div><span class="label">Email:</span> <?= e($sitter['email']) ?></div>
+                            <?php endif; ?>
+                            <?php if (!empty($sitter['whatsapp_number'])): ?>
+                                <div><span class="label">WhatsApp:</span> <?= e($sitter['whatsapp_number']) ?></div>
+                            <?php endif; ?>
+                        </div>
+                    <?php endif; ?>
                 </a>
             <?php endforeach; ?>
         </div>
