@@ -18,12 +18,15 @@ declare(strict_types=1);
  * Orphan-safe: copies the file first, then inserts; if the insert throws, the
  * copied file is removed so we never leave a file without a row (or vice versa).
  *
- * No captions, durations, or pose labels (left NULL) — bulk import only.
+ * Captions stay NULL. Pose duration/label are NULL unless passed via
+ * --pose-duration / --pose-label (applied to every file in --dir, so stage
+ * one pose per directory).
  *
  * Usage (run ON production):
  *   php tools/import-session-photos.php --session=267 --dir=~/photo-import/267 --dry-run
  *   php tools/import-session-photos.php --session=267 --dir=~/photo-import/267
  *   php tools/import-session-photos.php --session=267 --dir=~/photo-import/267 --uploader=1
+ *   php tools/import-session-photos.php --session=272 --dir=~/photo-import/272/2 --pose-duration="20 min"
  */
 
 define('LDR_ROOT', getcwd());
@@ -42,11 +45,14 @@ require LDR_ROOT . '/vendor/autoload.php';
 
 // --- Parse args ---
 $sessionId = null; $dir = null; $dryRun = false; $uploader = null;
+$poseLabel = null; $poseDuration = null;
 foreach ($argv as $arg) {
-    if (str_starts_with($arg, '--session='))      $sessionId = (int) substr($arg, 10);
-    elseif (str_starts_with($arg, '--dir='))      $dir = substr($arg, 6);
-    elseif ($arg === '--dry-run')                 $dryRun = true;
-    elseif (str_starts_with($arg, '--uploader=')) $uploader = (int) substr($arg, 11);
+    if (str_starts_with($arg, '--session='))           $sessionId = (int) substr($arg, 10);
+    elseif (str_starts_with($arg, '--dir='))           $dir = substr($arg, 6);
+    elseif ($arg === '--dry-run')                      $dryRun = true;
+    elseif (str_starts_with($arg, '--uploader='))      $uploader = (int) substr($arg, 11);
+    elseif (str_starts_with($arg, '--pose-label='))    $poseLabel = (substr($arg, 13) ?: null);
+    elseif (str_starts_with($arg, '--pose-duration=')) $poseDuration = (substr($arg, 16) ?: null);
 }
 
 if (!$sessionId || !$dir) {
@@ -150,8 +156,12 @@ foreach ($files as $src) {
     $dest  = $uploadDir . '/' . $name;
     $nextIndex = $poseIndex + 1;
 
+    $poseInfo = ($poseDuration !== null || $poseLabel !== null)
+        ? '  [' . trim(($poseLabel ?? '') . ' ' . ($poseDuration !== null ? "($poseDuration)" : '')) . ']'
+        : '';
+
     if ($dryRun) {
-        echo "DRY would import: $bn  ->  $rel  (pose_index=$nextIndex)\n";
+        echo "DRY would import: $bn  ->  $rel  (pose_index=$nextIndex)$poseInfo\n";
         $poseIndex = $nextIndex; $seenHash[$h] = $bn; $imported++;
         continue;
     }
@@ -161,10 +171,10 @@ foreach ($files as $src) {
 
     try {
         $ins = $pdo->prepare(
-            "INSERT INTO ld_artworks (session_id, uploaded_by, file_path, visibility, media_type, pose_index, created_at)
-             VALUES (?, ?, ?, 'public', 'photograph', ?, NOW())"
+            "INSERT INTO ld_artworks (session_id, uploaded_by, file_path, visibility, media_type, pose_index, pose_duration, pose_label, created_at)
+             VALUES (?, ?, ?, 'public', 'photograph', ?, ?, ?, NOW())"
         );
-        $ins->execute([$sessionId, $uploader, $rel, $nextIndex]);
+        $ins->execute([$sessionId, $uploader, $rel, $nextIndex, $poseDuration, $poseLabel]);
         $artworkId = (int) $pdo->lastInsertId();
 
         // Provenance — mirror GalleryController's 'artwork.upload', plus orig name for rerun-safety
@@ -183,7 +193,7 @@ foreach ($files as $src) {
         $existingHash[$h] = $name;
         $importedOrig[$bn] = true;
         $imported++;
-        echo "OK  $bn  ->  $rel  (artwork_id=$artworkId, pose_index=$nextIndex)\n";
+        echo "OK  $bn  ->  $rel  (artwork_id=$artworkId, pose_index=$nextIndex)$poseInfo\n";
     } catch (\Throwable $e) {
         @unlink($dest); // roll back the copied file so no orphan remains
         $failed++;
