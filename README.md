@@ -10,7 +10,7 @@ A digital home for LDR that enables:
 
 - **Session management** — schedule sessions, track participants and roles (artist, model, facilitator, observer), capacity tracking (X/7), cancellation, tentative bookings. One-click Join buttons on listing cards (logged-in: HTMX artist join; logged-out: intent-preserving artist/model sign-up)
 - **Participant management** — facilitator can add/remove participants, toggle tentative status, search users by name. Inline "Create stub" action in typeahead when no match — one click creates a new stub user and adds them to the session
-- **Artwork archive** — facilitator uploads batches of drawings per session with pose duration and labels, automatic image processing (EXIF rotation, 10MP cap, WebP conversion, three-tier thumbnails)
+- **Artwork archive** — facilitator uploads batches of drawings per session with pose duration and labels, automatic image processing (EXIF rotation, 10MP cap, WebP conversion, three-tier thumbnails). Bulk backfill from phone photos via CLI (`stage-phone-photos.ps1` + `import-session-photos.php`) for whole-session imports
 - **Claim system** — artists and models claim their work/likeness after sessions, building personal portfolios. Intent-preserving registration: unauthenticated users are redirected through register/login and returned to their claim
 - **Comments** — conversation on individual artworks, with artist/model comments surfaced first and role badges
 - **Consent system** — `pending → granted → withdrawn` state machine, enforced by middleware before identity-exposing operations. Non-consented users see contextual prompts instead of disabled buttons; HTMX errors redirect to consent page
@@ -96,7 +96,7 @@ lifedrawing/
 ├── database/                   # Core migrations (6) + seeds
 ├── deploy/                     # Deployment scripts + htaccess templates
 ├── storage/                    # Logs, cache, sessions, rate-limit state
-└── tools/                      # CLI: migrate, seed, refresh-stats, process-images, flush-notifications, ldrbot-query, ldrbot-post, import-csv, reset-production, test-mail, check-users, merge-stubs
+└── tools/                      # CLI: migrate, seed, refresh-stats, process-images, flush-notifications, ldrbot-query, ldrbot-post, import-csv, import-session-photos, stage-phone-photos.ps1, reset-production, test-mail, check-users, merge-stubs
 ```
 
 ### Stack
@@ -157,6 +157,9 @@ php tools/ldrbot-query.php --date=2026-03-13   # Specific date
 php tools/ldrbot-post.php --file=feedback.json # Post AI-generated feedback comments
 php tools/ldrbot-post.php --file=feedback.json --dry-run  # Preview without posting
 php tools/import-csv.php [path]        # Backfill sessions/participants from CSV
+php tools/import-session-photos.php --session=ID --dir=PATH   # Bulk-import staged photos into a session (run on prod)
+php tools/import-session-photos.php --session=ID --dir=PATH --dry-run   # Preview without writing
+php tools/import-session-photos.php --session=ID --dir=PATH --pose-duration="20 min" --pose-label="Sustained"   # Tag pose (per --dir)
 php tools/reset-production.php         # Reset production state (dangerous)
 php tools/test-mail.php [email]        # Send test email via configured SMTP
 php tools/check-users.php                     # Inspect account state (stubs, consent, roles)
@@ -166,6 +169,15 @@ php tools/merge-stubs.php --dry-run           # Preview merges without executing
 php tools/svg-to-png.php              # Convert SVG assets to PNG
 php tools/thumbnails.php              # Generate missing thumbnails
 ```
+
+### Bulk photo import from phone
+
+For backfilling a whole session's drawings photographed on the facilitator's phone:
+
+1. **Stage locally** (Windows) — `tools/stage-phone-photos.ps1` copies Camera photos off the MTP-connected phone by date into `storage/photo-import/{sessionId}/`, verifying byte sizes (not just file count, since MTP copy is async). Stage one pose per subdirectory to tag durations.
+2. **Review** — prune any non-artwork shots from the staged folders.
+3. **Transfer + import** — `scp` the staged folders to the server, then run `import-session-photos.php` per directory. The importer validates real MIME type + image integrity, leaves WebP derivatives NULL for `process_images.php` to generate, writes `artwork.upload` provenance, and is rerun-safe (dedup by original filename + content hash) and orphan-safe (copy-then-insert, rollback on failure).
+4. **Process** — `process_images.php` generates the three-tier WebP set on its next run.
 
 ## Routes
 
@@ -263,7 +275,7 @@ APP_BASE_PATH=/randburg
 
 `APP_BASE_PATH` tells `Request::capture()` how to strip the URL prefix — needed when the app lives in a subdirectory and `.htaccess` hides `/public` from URLs.
 
-Ensure `storage/` directories are writable by the web server and HTTPS is enforced.in 
+Ensure `storage/` directories are writable by the web server and HTTPS is enforced.
 
 ## Lessons Learned
 
