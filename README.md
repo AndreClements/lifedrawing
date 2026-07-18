@@ -8,7 +8,7 @@ The model is not an object but a co-participant. What emerges is not just skill,
 
 A digital home for LDR that enables:
 
-- **Session management** — schedule sessions, track participants and roles (artist, model, facilitator, observer), capacity tracking (X/7), cancellation, tentative bookings. One-click Join buttons on listing cards (logged-in: HTMX artist join; logged-out: intent-preserving artist/model sign-up)
+- **Session management** — schedule sessions, track participants and roles (artist, model, facilitator, observer), capacity tracking (X/7 — counts artists only, excluding the facilitator and model, so listing cards match the WhatsApp schedule numbering), cancellation, tentative bookings. One-click Join buttons on listing cards (logged-in: HTMX artist join; logged-out: intent-preserving artist/model sign-up)
 - **Participant management** — facilitator can add/remove participants, toggle tentative status, search users by name. Inline "Create stub" action in typeahead when no match — one click creates a new stub user and adds them to the session
 - **Artwork archive** — facilitator uploads batches of drawings per session with pose duration and labels, automatic image processing (EXIF rotation, 10MP cap, WebP conversion, three-tier thumbnails). Bulk backfill from phone photos via CLI (`stage-phone-photos.ps1` + `import-session-photos.php`) for whole-session imports
 - **Claim system** — artists and models claim their work/likeness after sessions, building personal portfolios. Intent-preserving registration: unauthenticated users are redirected through register/login and returned to their claim

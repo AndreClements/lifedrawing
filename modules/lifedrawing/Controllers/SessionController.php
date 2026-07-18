@@ -21,7 +21,8 @@ final class SessionController extends BaseController
         $enrichSessions = function (array $sessions): array {
             foreach ($sessions as &$s) {
                 $s['participant_count'] = $this->table('ld_session_participants')
-                    ->where('session_id', '=', $s['id'])->count();
+                    ->where('session_id', '=', $s['id'])
+                    ->where('role', '=', 'artist')->count();
                 $s['artwork_count'] = $this->table('ld_artworks')
                     ->where('session_id', '=', $s['id'])->count();
             }

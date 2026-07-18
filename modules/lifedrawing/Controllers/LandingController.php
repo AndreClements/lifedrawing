@@ -28,7 +28,7 @@ final class LandingController extends BaseController
         // Recent completed sessions (last 3)
         $recentSessions = $this->db->fetchAll(
             "SELECT s.*, u.display_name as facilitator_name,
-                    (SELECT COUNT(*) FROM ld_session_participants sp WHERE sp.session_id = s.id) as participant_count,
+                    (SELECT COUNT(*) FROM ld_session_participants sp WHERE sp.session_id = s.id AND sp.role = 'artist') as participant_count,
                     (SELECT COUNT(*) FROM ld_artworks a WHERE a.session_id = s.id) as artwork_count
              FROM ld_sessions s
              LEFT JOIN users u ON s.facilitator_id = u.id

@@ -33,7 +33,7 @@
                         <?php if ($activeView === 'upcoming'): ?>
                             <span><?= $session['participant_count'] ?>/<?= $session['max_capacity'] ?></span>
                         <?php else: ?>
-                            <span><?= $session['participant_count'] ?> participant<?= $session['participant_count'] != 1 ? 's' : '' ?></span>
+                            <span><?= $session['participant_count'] ?> artist<?= $session['participant_count'] != 1 ? 's' : '' ?></span>
                             <span>&middot;</span>
                             <span><?= $session['artwork_count'] ?> artwork<?= $session['artwork_count'] != 1 ? 's' : '' ?></span>
                         <?php endif; ?>
