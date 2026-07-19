@@ -577,12 +577,16 @@ final class SessionController extends BaseController
         if ($redirect = $this->requireAuth()) return $redirect;
         if ($redirect = $this->requireRole('admin', 'facilitator')) return $redirect;
 
+        // Use the app timezone (Africa/Johannesburg) for "today", not the
+        // MySQL server's timezone — DreamHost is US-based, so CURDATE() can
+        // still read as yesterday and leak a past session into the schedule.
         $sessions = $this->db->fetchAll(
             "SELECT s.* FROM ld_sessions s
              WHERE s.status IN ('scheduled', 'active')
-               AND s.session_date >= CURDATE()
+               AND s.session_date >= ?
              ORDER BY s.session_date ASC
-             LIMIT 6"
+             LIMIT 6",
+            [date('Y-m-d')]
         );
 
         // Fetch participants for all sessions in one query
