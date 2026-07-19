@@ -96,7 +96,7 @@ lifedrawing/
 ├── database/                   # Core migrations (6) + seeds
 ├── deploy/                     # Deployment scripts + htaccess templates
 ├── storage/                    # Logs, cache, sessions, rate-limit state
-└── tools/                      # CLI: migrate, seed, refresh-stats, process-images, flush-notifications, ldrbot-query, ldrbot-post, import-csv, import-session-photos, stage-phone-photos.ps1, reset-production, test-mail, check-users, merge-stubs
+└── tools/                      # CLI: migrate, seed, refresh-stats, process-images, flush-notifications, ldrbot-query, ldrbot-post, ldrbot-setup, import-csv, import-session-photos, stage-phone-photos.ps1, unstage-phone-photos.ps1, instagram-prep, reset-production, test-mail, check-users, merge-stubs
 ```
 
 ### Stack
@@ -160,6 +160,9 @@ php tools/import-csv.php [path]        # Backfill sessions/participants from CSV
 php tools/import-session-photos.php --session=ID --dir=PATH   # Bulk-import staged photos into a session (run on prod)
 php tools/import-session-photos.php --session=ID --dir=PATH --dry-run   # Preview without writing
 php tools/import-session-photos.php --session=ID --dir=PATH --pose-duration="20 min" --pose-label="Sustained"   # Tag pose (per --dir)
+php tools/instagram-prep.php --session=ID --scaffold   # Contact sheet + manifest + curation worksheet (see INSTAGRAM.md)
+php tools/instagram-prep.php --session=ID              # Render carousel slides + caption/hashtags/alt-text (--dry-run to preview)
+php tools/instagram-prep.php --session=ID --mark-posted=URL   # Record posted images in the repost-safety ledger
 php tools/reset-production.php         # Reset production state (dangerous)
 php tools/test-mail.php [email]        # Send test email via configured SMTP
 php tools/check-users.php                     # Inspect account state (stubs, consent, roles)
@@ -178,6 +181,9 @@ For backfilling a whole session's drawings photographed on the facilitator's pho
 2. **Review** — prune any non-artwork shots from the staged folders.
 3. **Transfer + import** — `scp` the staged folders to the server, then run `import-session-photos.php` per directory. The importer validates real MIME type + image integrity, leaves WebP derivatives NULL for `process_images.php` to generate, writes `artwork.upload` provenance, and is rerun-safe (dedup by original filename + content hash) and orphan-safe (copy-then-insert, rollback on failure).
 4. **Process** — `process_images.php` generates the three-tier WebP set on its next run.
+5. **Clear the phone** (optional, after verifying the import) — `tools/unstage-phone-photos.ps1` deletes Camera photos whose exact filenames appear in `storage/photo-import/phone-delete-list.txt`, built from production `artwork.upload` provenance so only confirmed-backed-up files are ever deleted. Dry-run by default; `-Execute` to delete. MTP deletion is permanent (no recycle bin) and Windows prompts a confirm dialog per file.
+
+The same staged originals also feed the Instagram pipeline (`tools/instagram-prep.php`) — selection, rendering, captions, and the repost-safety ledger are documented in [INSTAGRAM.md](INSTAGRAM.md).
 
 ## Routes
 

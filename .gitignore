@@ -13,6 +13,17 @@
 # Uploads (user content)
 /public/assets/uploads/
 
+# Session photo staging + Instagram assets (room/model likeness — never commit)
+/storage/photo-import/
+/storage/instagram/
+/storage/ldrbot-images/
+
+# LDRBot working files + SSH/scratch output (transient, may hold participant data)
+/feedback.json
+/ssh_out.txt
+/prod_orig.txt
+/sess*.html
+
 # IDE / OS
 *.swp
 .idea/
