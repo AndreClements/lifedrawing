@@ -584,7 +584,7 @@ final class SessionController extends BaseController
             "SELECT s.* FROM ld_sessions s
              WHERE s.status IN ('scheduled', 'active')
                AND s.session_date >= ?
-             ORDER BY s.session_date ASC
+             ORDER BY s.session_date ASC, s.start_time ASC, s.id ASC
              LIMIT 6",
             [date('Y-m-d')]
         );
@@ -607,59 +607,8 @@ final class SessionController extends BaseController
             }
         }
 
-        // Build schedule lines
-        $lines = [];
-        foreach ($sessions as $s) {
-            $participants = $allParticipants[(int) $s['id']] ?? [];
-
-            // Model name(s) — from role='model' participants
-            $models = [];
-            $artists = [];
-            $artistCount = 0;
-
-            foreach ($participants as $p) {
-                $name = $p['display_name'];
-                // Use first name only for brevity
-                $firstName = explode(' ', $name)[0];
-                $suffix = $p['tentative'] ? '?' : '';
-
-                if ($p['role'] === 'model') {
-                    $models[] = $firstName . $suffix;
-                } elseif ($p['role'] === 'artist') {
-                    $artists[] = $firstName . $suffix;
-                    $artistCount++;
-                }
-            }
-
-            $day = date('D', strtotime($s['session_date']));
-            $date = date('d M', strtotime($s['session_date']));
-            $sex = $s['model_sex'] ?? '';
-            $modelStr = implode(', ', $models);
-            $sexModel = $sex . ($modelStr ? ' ' . $modelStr : '');
-            $artistStr = implode(', ', $artists);
-            $capacity = $s['max_capacity'] ?? 7;
-
-            $title = session_title($s);
-
-            $line = "{$day} {$date} _{$title}_ ({$sexModel})";
-            if ($artistStr) {
-                $line .= " {$artistStr}";
-            }
-            $line .= " {$artistCount}/{$capacity}";
-            $lines[] = $line;
-        }
-
-        $schedule = "*Schedule*\n" . implode("\n", $lines);
-        $schedule .= "\n\nA session needs 3 bookings to proceed.";
-        $schedule .= "\n\xF0\x9F\x91\x86Date (Model) Bookings";
-        $schedule .= "\nFridays: 3 pm for 3:30 to 7pm,  ";
-        $schedule .= "\nSaturdays & Sundays: 10 am for 10:30 to 2 pm. ";
-        $schedule .= "\nContribution: R 350 or as near as is affordable.";
-        $sessionsUrl = rtrim(config('app.url'), '/') . '/sessions';
-        $schedule .= "\n\nJoin at {$sessionsUrl}";
-
         return $this->render('sessions.whatsapp', [
-            'schedule' => $schedule,
+            'schedule' => whatsapp_schedule($sessions, $allParticipants),
         ], 'WhatsApp Schedule');
     }
 
@@ -722,6 +671,16 @@ final class SessionController extends BaseController
         $session = $this->table('ld_sessions')->where('id', '=', $sessionId)->first();
         if (!$session) {
             return Response::notFound('Session not found.');
+        }
+
+        // Some sessions book their sitters elsewhere — the card hides the model
+        // link, and this closes the endpoint behind it.
+        if ($role === 'model' && !model_join_open($session)) {
+            $message = 'Model bookings for this session are handled separately.';
+            if ($request->isHtmx()) {
+                return Response::html('<span class="card-badge">' . e($message) . '</span>');
+            }
+            return Response::redirect(route('sessions.show', ['id' => $sessionId]));
         }
 
         // Check not already joined in this role

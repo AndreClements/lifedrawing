@@ -31,7 +31,7 @@
                     </div>
                     <div class="card-stats">
                         <?php if ($activeView === 'upcoming'): ?>
-                            <span><?= $session['participant_count'] ?>/<?= $session['max_capacity'] ?></span>
+                            <span><?= $session['participant_count'] ?>/<?= capacity_display($session) ?></span>
                         <?php else: ?>
                             <span><?= $session['participant_count'] ?> artist<?= $session['participant_count'] != 1 ? 's' : '' ?></span>
                             <span>&middot;</span>
@@ -61,7 +61,9 @@
                             <?php endif; ?>
                         <?php else: ?>
                             <a href="<?= route('auth.register') ?>?intent=join_session&session_id=<?= $sessionHexId ?>&role=artist" class="btn btn-outline btn-sm">Join as Artist</a>
-                            <a href="<?= route('auth.register') ?>?intent=join_session&session_id=<?= $sessionHexId ?>&role=model" class="btn btn-outline btn-sm">Join as Model</a>
+                            <?php if (model_join_open($session)): ?>
+                                <a href="<?= route('auth.register') ?>?intent=join_session&session_id=<?= $sessionHexId ?>&role=model" class="btn btn-outline btn-sm">Join as Model</a>
+                            <?php endif; ?>
                         <?php endif; ?>
                     </div>
                 <?php endif; ?>

@@ -205,3 +205,84 @@ function session_title(array $row): string
     $id = (int) ($row['id'] ?? $row['session_id'] ?? 0);
     return axiom_at($id);
 }
+
+/** Capacity as shown publicly: the number, or "?" when the session withholds it.
+ *  max_capacity remains the internal planning value — nothing enforces it. */
+function capacity_display(array $session): string
+{
+    if (isset($session['capacity_published']) && !$session['capacity_published']) return '?';
+    return (string) (int) ($session['max_capacity'] ?? 7);
+}
+
+/** Whether the public "Join as Model" route is open for this session.
+ *  Off for sessions whose sitters are booked elsewhere. Defaults open. */
+function model_join_open(array $session): bool
+{
+    return !isset($session['model_join_enabled']) || (bool) $session['model_join_enabled'];
+}
+
+/** Format the facilitator's WhatsApp schedule for pasting into the group.
+ *  Pure: sessions in display order, participants keyed by session id.
+ *  Asterisks bold, underscores italicise — hence [1] for the footnote marker,
+ *  which would otherwise pair with the header's asterisks. */
+function whatsapp_schedule(array $sessions, array $participantsBySession): string
+{
+    $lines = [];
+    $hasBookingNote = false;
+
+    foreach ($sessions as $s) {
+        $models = [];
+        $artists = [];
+        $artistCount = 0;
+
+        foreach ($participantsBySession[(int) $s['id']] ?? [] as $p) {
+            // First name only, for brevity
+            $firstName = explode(' ', $p['display_name'])[0];
+            $suffix = $p['tentative'] ? '?' : '';
+
+            if ($p['role'] === 'model') {
+                $models[] = $firstName . $suffix;
+            } elseif ($p['role'] === 'artist') {
+                $artists[] = $firstName . $suffix;
+                $artistCount++;
+            }
+        }
+
+        $day = date('D', strtotime($s['session_date']));
+        $date = date('d M', strtotime($s['session_date']));
+        // trim(): sessions with named sitters but no single model_sex would
+        // otherwise open with a stray space.
+        $sexModel = trim(($s['model_sex'] ?? '') . ' ' . implode(', ', $models));
+        $artistStr = implode(', ', $artists);
+
+        $line = "{$day} {$date} _" . session_title($s) . "_ ({$sexModel})";
+        if ($artistStr) {
+            $line .= " {$artistStr}";
+        }
+        $line .= " {$artistCount}/" . capacity_display($s);
+
+        // Off-pattern sessions carry their own note (price, venue quirk).
+        if (!empty($s['booking_note'])) {
+            $line .= " — {$s['booking_note']} [1]";
+            $hasBookingNote = true;
+        }
+
+        $lines[] = $line;
+    }
+
+    $schedule = "*Schedule*\n" . implode("\n", $lines);
+    $schedule .= "\n\nA session needs 3 bookings to proceed.";
+    $schedule .= "\n\xF0\x9F\x91\x86Date (Model) Bookings";
+    $schedule .= "\nFridays: 3 pm for 3:30 to 7pm,  ";
+    $schedule .= "\nSaturdays & Sundays: 10 am for 10:30 to 2 pm. ";
+    $schedule .= "\nContribution: R 350 or as near as is affordable.";
+    $schedule .= "\n\nJoin at " . rtrim(config('app.url'), '/') . '/sessions';
+
+    // Self-expiring: driven by the marked lines in the current window, so it
+    // goes once those sessions fall past.
+    if ($hasBookingNote) {
+        $schedule .= "\n\n[1] Bookings via other channels also.";
+    }
+
+    return $schedule;
+}
