@@ -8,7 +8,7 @@ The model is not an object but a co-participant. What emerges is not just skill,
 
 A digital home for LDR that enables:
 
-- **Session management** — schedule sessions, track participants and roles (artist, model, facilitator, observer), capacity tracking (X/7 — counts artists only, excluding the facilitator and model, so listing cards match the WhatsApp schedule numbering), cancellation, tentative bookings. One-click Join buttons on listing cards (logged-in: HTMX artist join; logged-out: intent-preserving artist/model sign-up)
+- **Session management** — schedule sessions, track participants and roles (artist, model, facilitator, observer), capacity tracking (X/7 — counts artists only, excluding the facilitator and model, so listing cards match the WhatsApp schedule numbering), cancellation, tentative bookings. Off-pattern sessions (external venue, ticketed, sitters booked elsewhere) carry three flags: `capacity_published=0` shows `X/?` instead of a number, `booking_note` appends session-specific text to the WhatsApp line (marked `[1]`, with a self-expiring footnote), and `model_join_enabled=0` closes the public "Join as Model" route in both the card and the endpoint. Set via `tools/create-session.php` — the web form doesn't expose them. One-click Join buttons on listing cards (logged-in: HTMX artist join; logged-out: intent-preserving artist/model sign-up)
 - **Participant management** — facilitator can add/remove participants, toggle tentative status, search users by name. Inline "Create stub" action in typeahead when no match — one click creates a new stub user and adds them to the session
 - **Artwork archive** — facilitator uploads batches of drawings per session with pose duration and labels, automatic image processing (EXIF rotation, 10MP cap, WebP conversion, three-tier thumbnails). Bulk backfill from phone photos via CLI (`stage-phone-photos.ps1` + `import-session-photos.php`) for whole-session imports
 - **Claim system** — artists and models claim their work/likeness after sessions, building personal portfolios. Intent-preserving registration: unauthenticated users are redirected through register/login and returned to their claim
@@ -96,7 +96,7 @@ lifedrawing/
 ├── database/                   # Core migrations (6) + seeds
 ├── deploy/                     # Deployment scripts + htaccess templates
 ├── storage/                    # Logs, cache, sessions, rate-limit state
-└── tools/                      # CLI: migrate, seed, refresh-stats, process-images, flush-notifications, ldrbot-query, ldrbot-post, ldrbot-setup, import-csv, import-session-photos, stage-phone-photos.ps1, unstage-phone-photos.ps1, instagram-prep, reset-production, test-mail, check-users, merge-stubs
+└── tools/                      # CLI: migrate, seed, refresh-stats, process-images, flush-notifications, ldrbot-query, ldrbot-post, ldrbot-setup, import-csv, import-session-photos, stage-phone-photos.ps1, unstage-phone-photos.ps1, instagram-prep, create-session, reset-production, test-mail, check-users, merge-stubs
 ```
 
 ### Stack
@@ -156,6 +156,10 @@ php tools/ldrbot-query.php             # Query claimed artworks for feedback gen
 php tools/ldrbot-query.php --date=2026-03-13   # Specific date
 php tools/ldrbot-post.php --file=feedback.json # Post AI-generated feedback comments
 php tools/ldrbot-post.php --file=feedback.json --dry-run  # Preview without posting
+php tools/create-session.php --date=YYYY-MM-DD --venue="..." [options]   # Create a session (see --help)
+php tools/create-session.php ... --dry-run     # Preview the row + emails, write nothing
+php tools/create-session.php ... --notify --yes   # Create and queue new-session emails
+php tools/test-create-session.php      # Test create-session + listing flags (local DB only)
 php tools/import-csv.php [path]        # Backfill sessions/participants from CSV
 php tools/import-session-photos.php --session=ID --dir=PATH   # Bulk-import staged photos into a session (run on prod)
 php tools/import-session-photos.php --session=ID --dir=PATH --dry-run   # Preview without writing
