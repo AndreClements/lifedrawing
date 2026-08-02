@@ -62,6 +62,16 @@ If you've worked with Laravel, you'll recognise some of the bones:
 
 **Module system.** Each "table" (community space) is a self-contained module with its own controllers, views, migrations, and routes, registered via a `module.php` manifest. The life drawing module mounts at root `/` because it IS the site for now. Future modules (pottery circle, music jam) get their own URL prefix and follow the same contract.
 
+**Off-pattern session flags.** Most sessions follow the regular weekly format, but some (an external-venue ticketed workshop, sitters booked off-platform) need to present differently on the public listing and WhatsApp schedule. Migration `019_add_session_listing_flags.sql` adds three columns to `ld_sessions` — set them with `tools/create-session.php` (the web form doesn't expose them):
+
+| Column | Default | Effect |
+|---|---|---|
+| `capacity_published` | `1` | `0` → card shows `X/?` instead of `X/7` (`max_capacity` stays the internal planning value) |
+| `booking_note` | `NULL` | appends session-specific text to the session's WhatsApp line, marked `[1]` with a shared, self-expiring footnote |
+| `model_join_enabled` | `1` | `0` → closes the public "Join as Model" route (both the card button and the endpoint) for sessions whose sitters are booked elsewhere |
+
+Three view helpers in `app/View/helpers.php` read these: `capacity_display($session)` (returns `"?"` or the numeric capacity), `model_join_open($session)` (bool gate), and `whatsapp_schedule($sessions, $participantsBySession)` (the pure schedule formatter that emits the `[1]` footnote).
+
 ### Directory structure
 
 ```
@@ -90,13 +100,13 @@ lifedrawing/
 │       ├── Models/             # Data models
 │       ├── Repositories/       # Data access layer
 │       ├── Views/              # PHP templates with layouts
-│       └── migrations/         # Module-specific SQL (18 migrations)
+│       └── migrations/         # Module-specific SQL (19 migrations)
 │
 ├── config/                     # app.php, database.php, auth.php, axioms.php, mail.php
 ├── database/                   # Core migrations (6) + seeds
 ├── deploy/                     # Deployment scripts + htaccess templates
 ├── storage/                    # Logs, cache, sessions, rate-limit state
-└── tools/                      # CLI: migrate, seed, refresh-stats, process-images, flush-notifications, ldrbot-query, ldrbot-post, ldrbot-setup, import-csv, import-session-photos, stage-phone-photos.ps1, unstage-phone-photos.ps1, instagram-prep, create-session, reset-production, test-mail, check-users, merge-stubs
+└── tools/                      # CLI: migrate, seed, refresh-stats, process-images, flush-notifications, ldrbot-query, ldrbot-post, ldrbot-setup, import-csv, import-session-photos, stage-phone-photos.ps1, unstage-phone-photos.ps1, instagram-prep, create-session, test-create-session, reset-production, test-mail, check-users, merge-stubs
 ```
 
 ### Stack
@@ -182,10 +192,12 @@ php tools/thumbnails.php              # Generate missing thumbnails
 For backfilling a whole session's drawings photographed on the facilitator's phone:
 
 1. **Stage locally** (Windows) — `tools/stage-phone-photos.ps1` copies Camera photos off the MTP-connected phone by date into `storage/photo-import/{sessionId}/`, verifying byte sizes (not just file count, since MTP copy is async). Stage one pose per subdirectory to tag durations.
-2. **Review** — prune any non-artwork shots from the staged folders.
-3. **Transfer + import** — `scp` the staged folders to the server, then run `import-session-photos.php` per directory. The importer validates real MIME type + image integrity, leaves WebP derivatives NULL for `process_images.php` to generate, writes `artwork.upload` provenance, and is rerun-safe (dedup by original filename + content hash) and orphan-safe (copy-then-insert, rollback on failure).
+2. **Review** — prune any non-artwork shots from the staged folders. Poses separate cleanly by timestamp: consecutive shots within a pose are seconds apart, and a gap of more than ~5 minutes marks a pose boundary, which is how the per-pose subdirectories get split. Judge orientation from contact sheets rendered **with EXIF applied** rather than from raw thumbnails — the camera writes a correct `Orientation` tag on most shots and `ImageProcessor` honours it, so far fewer photos genuinely need rotating than they first appear to. Rotating a stray one in Windows File Explorer rewrites the EXIF tag only (byte size unchanged, no re-encode), which the pipeline picks up correctly.
+3. **Transfer + import** — `scp` the staged folders to the server, then run `import-session-photos.php` per directory, in pose order so `pose_index` stays chronological. The importer validates real MIME type + image integrity, leaves WebP derivatives NULL for `process_images.php` to generate, writes `artwork.upload` provenance, and is rerun-safe (dedup by original filename + content hash) and orphan-safe (copy-then-insert, rollback on failure). Compare a SHA1 rollup of both sides after the transfer; byte totals alone differ harmlessly because `du` counts directory entries.
 4. **Process** — `process_images.php` generates the three-tier WebP set on its next run.
 5. **Clear the phone** (optional, after verifying the import) — `tools/unstage-phone-photos.ps1` deletes Camera photos whose exact filenames appear in `storage/photo-import/phone-delete-list.txt`, built from production `artwork.upload` provenance so only confirmed-backed-up files are ever deleted. Dry-run by default; `-Execute` to delete. MTP deletion is permanent (no recycle bin) and Windows prompts a confirm dialog per file.
+
+**Clearing the phone early.** In practice the facilitator often wants to unplug long before the import reaches production. That inverts the safety basis above — the delete list can no longer be built from prod provenance — so make a second copy at `storage/photo-import/_backup/{sessionId}/` and verify it file-by-file with `sha1_file()` first, then build the list from the staged filenames. The phone should never be the only copy of a session, but nor should a single local folder. One consequence worth remembering: once photos are staged, the working set can still change under you (a rotation in Explorer, a prune), so diff the working files against the backup by hash before importing rather than assuming the staged set is frozen.
 
 The same staged originals also feed the Instagram pipeline (`tools/instagram-prep.php`) — selection, rendering, captions, and the repost-safety ledger are documented in [INSTAGRAM.md](INSTAGRAM.md).
 
