@@ -25,6 +25,19 @@ the staged originals.
 3. **Scaffold:** `php tools/instagram-prep.php --session={id} --scaffold` →
    `storage/instagram/{id}/contact-sheet.jpg`, a starter `manifest.json` (every photo listed),
    and a blank `curation.md` worksheet.
+
+   **Source directory must be flat.** `source_files()` globs one level and skips
+   subdirectories, so if the session was staged one-pose-per-subdirectory for the website
+   importer, the scaffold finds **zero** photos — silently, since an empty session reads as
+   nothing to post. Point it at a flat copy instead, and use the same `--src` on the render:
+   ```bash
+   php tools/instagram-prep.php --session=282 --src=storage/photo-import/_backup/282 \
+       --date=2026-08-02 --scaffold
+   ```
+   The `_backup/{id}/` copy made before clearing the phone (see the README's bulk-import
+   section) is already flat and already verified. If anything was rotated after that copy was
+   taken, sync it across first and confirm every hash matches the imported set — the carousel
+   should show what the site shows.
 4. **Curate** (see below) — fill `curation.md`, then edit `manifest.json` to the chosen set,
    order, and per-image treatment.
 5. **Render:** `php tools/instagram-prep.php --session={id}` (use `--dry-run` first) →
@@ -78,7 +91,11 @@ eight considered images than a dump of twenty.
 - **Clean enough** — in focus; glare fixable with levels, tilt with a small rotate, framing with a
   crop. **Keystone/perspective is not fixable** — badly keystoned shots are out.
 - **Dignity** — holds the model with dignity; no crop or emphasis that objectifies the figure.
-  When in doubt, cut. (Hard rule.)
+  When in doubt, cut. (Hard rule.) The recurring case is the close anatomical study — a sheet
+  cropped tight on the pelvis or hips. In the room it is ordinary and legitimate work; pulled
+  out as a standalone slide with no surrounding session, the framing emphasises rather than
+  witnesses. Cut it from the carousel without cutting it from the archive, and say in
+  `curation.md` that you did — it's a judgement the facilitator may reverse with room knowledge.
 - **Not a near-duplicate** — drop the weaker of two near-identical shots unless they're a
   deliberate contrast pair.
 - **A drawing** — room/candid snapshots are not the carousel (keep them aside, or use at most one
@@ -114,6 +131,15 @@ red across two poses) is a good confirmation the order held. The mapping is a **
 facilitator confirms** with room knowledge — authoritative, because walk-order can break if someone
 arrives late, leaves, or skips a pose (unequal cluster sizes are the tell). Record the artist→image
 map alongside the selection in `curation.md`.
+
+**When a cluster doesn't line up.** Warm-ups are the usual offender — several quick sheets get
+photographed together, so pose 1 comes back with more frames than there were boards while the
+sustained poses all match the artist count exactly. Walk-order simply doesn't resolve that
+cluster. The fallback is to identify the hand by **medium and support** instead: a sketchbook of
+opaque paint, a distinctive hatching habit, someone working on toned paper all session. Those
+recur reliably enough to place an image, but they are an inference from the drawing rather than
+from the shooting order — so mark which selections rest on them and say so when proposing the
+set. The facilitator can confirm in a moment what the walk-order can't.
 
 **Order as a small narrative:**
 - **Image 1 is the feed thumbnail** — the most legible, inviting piece (the hook).

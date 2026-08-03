@@ -199,7 +199,7 @@ For backfilling a whole session's drawings photographed on the facilitator's pho
 
 **Clearing the phone early.** In practice the facilitator often wants to unplug long before the import reaches production. That inverts the safety basis above — the delete list can no longer be built from prod provenance — so make a second copy at `storage/photo-import/_backup/{sessionId}/` and verify it file-by-file with `sha1_file()` first, then build the list from the staged filenames. The phone should never be the only copy of a session, but nor should a single local folder. One consequence worth remembering: once photos are staged, the working set can still change under you (a rotation in Explorer, a prune), so diff the working files against the backup by hash before importing rather than assuming the staged set is frozen.
 
-The same staged originals also feed the Instagram pipeline (`tools/instagram-prep.php`) — selection, rendering, captions, and the repost-safety ledger are documented in [INSTAGRAM.md](INSTAGRAM.md).
+The same staged originals also feed the Instagram pipeline (`tools/instagram-prep.php`) — selection, rendering, captions, and the repost-safety ledger are documented in [INSTAGRAM.md](INSTAGRAM.md). Note that the two consumers want opposite directory shapes: the importer wants **one pose per subdirectory**, while `instagram-prep.php` globs a single level and sees nothing inside them. Point it at a flat directory with `--src=` — the `_backup/{sessionId}/` copy made before clearing the phone serves, provided any post-staging rotation has been synced into it.
 
 ## Routes
 
