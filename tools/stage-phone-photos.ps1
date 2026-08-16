@@ -14,7 +14,9 @@ $map = @(
   @{ id = 276; date = '20260705' },
   @{ id = 278; date = '20260718' },
   @{ id = 279; date = '20260719' },
-  @{ id = 282; date = '20260802' }
+  @{ id = 282; date = '20260802' },
+  @{ id = 284; date = '20260815' },
+  @{ id = 285; date = '20260816' }
 )
 
 $base = 'c:\xampp\htdocs\lifedrawing\storage\photo-import'

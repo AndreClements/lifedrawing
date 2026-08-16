@@ -90,12 +90,21 @@ eight considered images than a dump of twenty.
 - **Legible** — the figure reads at Instagram thumbnail size.
 - **Clean enough** — in focus; glare fixable with levels, tilt with a small rotate, framing with a
   crop. **Keystone/perspective is not fixable** — badly keystoned shots are out.
-- **Dignity** — holds the model with dignity; no crop or emphasis that objectifies the figure.
-  When in doubt, cut. (Hard rule.) The recurring case is the close anatomical study — a sheet
-  cropped tight on the pelvis or hips. In the room it is ordinary and legitimate work; pulled
-  out as a standalone slide with no surrounding session, the framing emphasises rather than
-  witnesses. Cut it from the carousel without cutting it from the archive, and say in
-  `curation.md` that you did — it's a judgement the facilitator may reverse with room knowledge.
+- **Dignity — flag it, never cut it.** *(Changed 2026-08-16, on André's instruction: "stop making
+  dignity cuts".)* If an image gives you pause — a crop or emphasis you think might read as
+  objectifying once separated from the session — **leave it in the proposed set**, say so plainly,
+  and name exactly what triggered it. The facilitator decides. He was in the room, knows the model
+  and knows what she has agreed to; a reading of a single frame from outside that room is not a
+  better guide than that, and cutting unilaterally quietly removes work the artists made and the
+  model sat for. Record the flag in `curation.md` so the reasoning stays on file either way.
+
+  The case still worth flagging is the close anatomical study — a sheet cropped tight on the
+  pelvis or hips. In the room it is ordinary, legitimate, often the most accomplished work of the
+  day; the question is only how it behaves alone in a feed. Ask the question; don't answer it.
+
+  **Likeness is a separate question, and also his.** Where the model's face is a recognisable
+  portrait, that is a *consent* matter, not a dignity one. Surface it as such and let him answer —
+  once for the whole set rather than image by image.
 - **Not a near-duplicate** — drop the weaker of two near-identical shots unless they're a
   deliberate contrast pair.
 - **A drawing** — room/candid snapshots are not the carousel (keep them aside, or use at most one
@@ -162,8 +171,11 @@ perform.
 - **Name the session** by day and format; gesture at the pose arc (warm-ups → sustained). Never a
   blow-by-blow, never a ranking.
 - **Never describe or evaluate the model's body, or the model at all.** "With thanks to our model"
-  is the ceiling, and only if it's natural. No artist names (a deliberate choice — the post is
-  about the work and the room).
+  is the ceiling, and only if it's natural.
+- **No artist names in the caption or alt text** — a deliberate choice: the post is about the work
+  and the room, not credit or ranking. This governs what *we* write, and stops there. It does
+  **not** extend to marks inside the drawing: a signature or a date is part of the work, put there
+  by the artist on their own sheet, and it stays. Don't propose cropping one out.
 - **No hype words** — never "best", "stunning", "beautiful", "masterful". No exclamation marks
   (the one allowed elsewhere is "Great news!"), no emojis.
 - **The caption body ends with the site link:** `lifedrawing.andresclements.com/randburg`.
