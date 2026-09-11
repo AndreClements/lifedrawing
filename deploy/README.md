@@ -141,6 +141,34 @@ curl -s 'https://lifedrawing.andresclements.com/randburg/_health?maint=YOUR_TOKE
 ssh -i ~/.ssh/dreamhost_ldr ldrusr@69.163.140.7 'rm ~/lifedrawing.andresclements.com/maintenance.flag'
 ```
 
+### What actually deploys as one unit
+
+**Deploy the branch tip, not an individual commit.** The three commits on
+`bookings-release-2` are a reading order, not a release boundary.
+
+The consent commit (`bd47428`) looks self-contained and its own test suite passes
+at that commit, which is misleading: the tests that would catch its flaws were
+written afterwards. Review found five defects in it, and all five were fixed in
+the later commits — withdrawal continuing when the image lock could not be taken,
+verification happening after the lock was released, derivative files the database
+never recorded being left public, deletion and restoration reading their
+candidates before locking, and a health-check bypass keyed on `REQUEST_URI` that
+the routing rewrite defeats.
+
+So there are two maintenance windows, not three:
+
+1. Install and test the maintenance gate. No migration.
+2. Deploy the branch tip, running both migrations (020 and 021) inside one
+   window, then follow both sets of extra steps below.
+
+Splitting this into a privacy-only release first is possible but is not a cherry
+pick: the fixes are interleaved with the bookings work across `AuthService`,
+`NotificationService`, `StatsService`, `GalleryController`, `Kernel` and
+`flush_notifications.php`. It would mean rebuilding the commits hunk by hunk,
+with a real risk of silently dropping one of the five fixes — the exact class of
+error this review chain kept catching. Ask for it explicitly if the smaller blast
+radius is worth that.
+
 ### Consent and access release — extra steps
 
 - Confirm `storage/withdrawn/` exists, is writable, and sits **outside** the document root.
