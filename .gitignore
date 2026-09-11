@@ -42,3 +42,7 @@ Thumbs.db
 
 # Windows artifacts
 nul
+
+# Never commit deploy scratch
+.deploy-token.tmp
+ssh_out.txt

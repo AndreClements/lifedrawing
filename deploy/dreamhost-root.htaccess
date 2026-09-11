@@ -2,57 +2,20 @@ RewriteEngine On
 
 # Life Drawing Randburg — route /randburg/* to the app
 # Place this at ~/lifedrawing.andresclements.com/.htaccess
-
-# --- Maintenance gate -------------------------------------------------------
 #
-# Deploys that run a migration need web traffic stopped, not just cron paused.
-# A request arriving between the code landing and the migration running hits new
-# code against a missing column, and re-running a backfill repairs data, never
-# the requests that already failed.
+# IMPORTANT: the rewrite rules in this file DO NOT apply to /randburg/*.
 #
-# This stops traffic BEFORE PHP: Apache answers from the static page, so no
-# front controller and no database connection.
+# randburg/.htaccess turns RewriteEngine on, and Apache does not inherit
+# mod_rewrite rules from a parent directory's .htaccess. The live routing chain
+# is randburg/.htaccess -> public/ -> public/.htaccess -> front controller, so
+# everything below is effectively dead code for the app. It is kept because it
+# is harmless and would matter if that file ever went away.
 #
-# The flag lives at the DOCUMENT ROOT — ~/lifedrawing.andresclements.com/ — not
-# under randburg/public/. The app sits one level below the document root, so
-# %{DOCUMENT_ROOT} is the site directory.
-#
-#   touch ~/lifedrawing.andresclements.com/maintenance.flag     # gate up
-#   rm    ~/lifedrawing.andresclements.com/maintenance.flag     # gate down
-#
-# R=503 alone would NOT serve the page: Apache discards the substitution URL for
-# non-redirect status codes. The page has to come from ErrorDocument, and the
-# error document itself has to be excluded or its subrequest re-enters the rule.
-#
-# The health-check bypass is matched against THE_REQUEST rather than
-# REQUEST_URI, for two reasons.
-#
-# THE_REQUEST is the verbatim original request line — "GET /randburg/_health?
-# maint=TOKEN HTTP/1.1" — and rewriting never touches it. REQUEST_URI does get
-# touched: the routing rules below rewrite /randburg/_health to
-# randburg/public/index.php with [L], mod_rewrite re-runs the ruleset against
-# the new URI, and a REQUEST_URI test for the health path would fail that second
-# pass and 503 the very check meant to prove the deploy worked.
-#
-# It also folds method, path and token into a single condition, so the bypass is
-# narrow by construction: a GET, to _health, carrying the token. A bare token
-# check would exempt every route and every method, writes included, which during
-# a migration is exactly what this gate exists to prevent.
-#
-# REDIRECT_STATUS is empty only on the initial external request, so the whole
-# block is skipped during internal re-processing in any case.
-#
-# Replace CHANGE_ME with a real secret. Keep it in this file on the server only,
-# never in git.
-ErrorDocument 503 /maintenance.html
-
-RewriteCond %{ENV:REDIRECT_STATUS} ^$
-RewriteCond %{DOCUMENT_ROOT}/maintenance.flag -f
-RewriteCond %{REQUEST_URI} !^/maintenance\.html$
-RewriteCond %{THE_REQUEST} !^GET\s/randburg/_health\?maint=CHANGE_ME\s
-RewriteRule ^ - [R=503,L]
-
-# --- Normal routing ---------------------------------------------------------
+# This matters most for the maintenance gate. A gate placed here parses fine, and
+# a syntax error in it breaks every request to the site — so it looks active —
+# but not one of its rules ever fires. The gate therefore lives in the
+# repository's own root .htaccess, which is the file that actually governs the
+# app. See deploy/README.md.
 
 # Static files: serve directly from public/
 RewriteCond %{DOCUMENT_ROOT}/randburg/public/$1 -f

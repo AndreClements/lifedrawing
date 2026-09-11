@@ -92,58 +92,98 @@ Reversing the order does not help either: the migration file only arrives *with*
 
 So a migration deploy needs the web gate, not just a cron pause.
 
-**Install the maintenance gate first.** It cannot ship in the deploy it is meant to protect.
-Copy `deploy/maintenance.html` to the document root and merge the gate block from
-`deploy/dreamhost-root.htaccess` into `~/lifedrawing.andresclements.com/.htaccess`. The block
-must go **above** the two routing rules — both carry `[L]`, so a gate pasted below them never
-fires and the window is silently open.
+**The gate lives in the app's own `.htaccess`, not the document root's.**
 
-Replace `CHANGE_ME` with a token from `openssl rand -hex 16`. Hex specifically: the token is
-interpolated into a regex, and the `+` and `/` that base64 produces would be read as regex
-syntax and silently widen the bypass. Keep the token on the server only, never in git.
+This is the part that cost a live outage to learn. Apache does not inherit
+mod_rewrite rules from a parent directory's `.htaccess`, and `randburg/.htaccess`
+turns `RewriteEngine` on — so every rewrite rule in
+`~/lifedrawing.andresclements.com/.htaccess` is silently ignored for requests to
+the app. That file's own routing rules are dead code for the same reason; the
+live chain is `randburg/.htaccess` → `public/` → `public/.htaccess` → front
+controller.
 
-Note the three things that are easy to get wrong, all handled in the template:
+A gate installed at the document root looks convincing: the file parses, and a
+syntax error in it breaks every request to the site. But not one of its rules
+ever fires. The gate therefore ships in the repository's root `.htaccess` and
+arrives with a normal `git pull`.
 
-- The flag lives at the **document root** (`~/lifedrawing.andresclements.com/maintenance.flag`),
-  not under `randburg/public/`. The app sits one level below the document root.
-- `R=503` alone does **not** serve the page — Apache discards the substitution for non-redirect
-  status codes, so the page comes from `ErrorDocument`.
-- The bypass is a GET, to `_health`, with the token. A bare token check would exempt every
-  route and method including writes, which is what the gate exists to prevent.
+One-time setup: copy `deploy/maintenance.html` to the document root. It is inert
+with the flag down, so it can sit there permanently.
 
-Test it on its own before relying on it. An unchanged `storage/logs/` proves nothing, since a
-successful request logs nothing anyway — add a temporary marker line at the top of
-`public/index.php`, confirm the table below, then remove it.
+Raise and lower the gate from the **document root**, one level above the app:
+
+```bash
+touch ~/lifedrawing.andresclements.com/maintenance.flag   # gate up
+rm    ~/lifedrawing.andresclements.com/maintenance.flag   # gate down
+```
+
+Two more things that are easy to get wrong, both now handled:
+
+- `R=503` with a `-` substitution returns the status without rewriting, but
+  Apache discards the substitution URL for non-redirect codes, so the page has to
+  come from `ErrorDocument`. The maintenance page itself must be excluded, or its
+  subrequest re-enters the rule.
+- `%{ENV:REDIRECT_STATUS}` is **not** empty on the initial request under PHP-FPM
+  here — it reads `200`. A condition testing it for emptiness disables the whole
+  block, which is exactly what happened on the first attempt.
+
+**There is no bypass token.** An earlier design had one so `_health` could be
+checked through the gate. It meant a secret in a tracked file, interpolated into
+a regex, and it bought very little: verify over SSH with
+`php tools/migrate.php status`, then lower the flag and check `_health`
+immediately. If that fails, raise the flag again.
+
+**Testing it needs a positive signal, not an absent one.** An unchanged
+`storage/logs/` proves nothing, because a successful request logs nothing either.
+Add a temporary marker that appends a line on every request — and put it **after**
+`declare(strict_types=1)`, which must be the first statement in the file.
+Inserting above it is a fatal error on every request:
+
+```bash
+sed -i '3a file_put_contents("/tmp/ldr-marker.log", date("c")." ".($_SERVER["REQUEST_URI"] ?? "?").PHP_EOL, FILE_APPEND);' public/index.php
+php -l public/index.php      # always, before any request reaches it
+```
 
 | With the flag up | Expect |
 |---|---|
-| Public GET | 503, maintenance page, no marker line |
-| Public POST | 503, no marker line |
-| GET `_health` without the token | 503, no marker line |
-| GET `_health` with the token | 200 JSON, marker line written |
-| POST with the token | 503 — the bypass must not extend to writes |
-| Flag removed | Normal routing on every route |
+| Public GET | 503, maintenance page, no new marker line |
+| Public POST | 503, no new marker line |
+| GET `/randburg/_health` | 503, no new marker line |
+| A static asset | 503, no new marker line |
+| Flag removed | 200 on all of the above |
+
+Remove the marker with `git checkout -- public/index.php`.
 
 **Then deploy:**
 
 ```bash
-# 1. Gate up
-ssh -i ~/.ssh/dreamhost_ldr ldrusr@69.163.140.7 'touch ~/lifedrawing.andresclements.com/maintenance.flag'
+SSH="ssh -i ~/.ssh/dreamhost_ldr ldrusr@69.163.140.7"
+APP=~/lifedrawing.andresclements.com/randburg
 
-# 2. Pause both crons and WAIT for in-flight workers. Commenting out a cron line
+# 1. Pause both crons and WAIT for in-flight workers. Commenting out a cron line
 #    does not stop a process already running mid-batch — storage/process_images.lock
 #    and the notification lock are the signals.
 
-# 3. Pull, install, migrate
-ssh -i ~/.ssh/dreamhost_ldr ldrusr@69.163.140.7 'cd ~/lifedrawing.andresclements.com/randburg && git pull && ~/bin/composer install --no-dev --optimize-autoloader && php tools/migrate.php run'
+# 2. Pull and raise the gate in one breath. The gate is a tracked file, so it
+#    arrives WITH this pull; chaining the touch keeps the exposed window to the
+#    length of the pull itself.
+$SSH "cd $APP && git pull && touch ~/lifedrawing.andresclements.com/maintenance.flag"
 
-# 4. Verify, through the bypass token. Without it the check just returns the
-#    maintenance page and proves nothing.
-ssh -i ~/.ssh/dreamhost_ldr ldrusr@69.163.140.7 'cd ~/lifedrawing.andresclements.com/randburg && php tools/migrate.php status'
-curl -s 'https://lifedrawing.andresclements.com/randburg/_health?maint=YOUR_TOKEN'
+# 3. Now behind the gate: install and migrate.
+$SSH "cd $APP && ~/bin/composer install --no-dev --optimize-autoloader && php tools/migrate.php run"
 
-# 5. Gate down, restore the crons
-ssh -i ~/.ssh/dreamhost_ldr ldrusr@69.163.140.7 'rm ~/lifedrawing.andresclements.com/maintenance.flag'
+# 4. Verify over SSH — there is no way through the gate over HTTP.
+$SSH "cd $APP && php tools/migrate.php status | tail -5"
+
+# 5. Cutover purge of source-less queued notifications, while the cron is still paused.
+$SSH "cd $APP && php tools/purge-legacy-notifications.php"
+$SSH "cd $APP && php tools/purge-legacy-notifications.php --execute"
+
+# 6. Gate down, then check health immediately.
+$SSH "rm ~/lifedrawing.andresclements.com/maintenance.flag"
+curl -s https://lifedrawing.andresclements.com/randburg/_health
+
+# 7. Restore the crons.
 ```
 
 ### What actually deploys as one unit
