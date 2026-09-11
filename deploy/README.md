@@ -94,8 +94,13 @@ So a migration deploy needs the web gate, not just a cron pause.
 
 **Install the maintenance gate first.** It cannot ship in the deploy it is meant to protect.
 Copy `deploy/maintenance.html` to the document root and merge the gate block from
-`deploy/dreamhost-root.htaccess` into `~/lifedrawing.andresclements.com/.htaccess`, replacing
-`CHANGE_ME` with a real token. Keep that token on the server only, never in git.
+`deploy/dreamhost-root.htaccess` into `~/lifedrawing.andresclements.com/.htaccess`. The block
+must go **above** the two routing rules — both carry `[L]`, so a gate pasted below them never
+fires and the window is silently open.
+
+Replace `CHANGE_ME` with a token from `openssl rand -hex 16`. Hex specifically: the token is
+interpolated into a regex, and the `+` and `/` that base64 produces would be read as regex
+syntax and silently widen the bypass. Keep the token on the server only, never in git.
 
 Note the three things that are easy to get wrong, all handled in the template:
 

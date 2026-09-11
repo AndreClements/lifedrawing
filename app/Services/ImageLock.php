@@ -37,8 +37,14 @@ final class ImageLock
     /**
      * Acquire the lock, waiting up to $timeoutSeconds for the image worker to
      * finish its batch. Returns false if it could not be taken in time.
+     *
+     * The default is deliberately well under PHP's 30-second max_execution_time
+     * on shared hosting. Waiting longer than the request is allowed to live means
+     * the process is killed mid-wait, and callers never reach their own
+     * not-acquired branch — for withdrawal that meant consent recorded, files
+     * still public, and nobody told.
      */
-    public static function acquire(int $timeoutSeconds = 60): bool
+    public static function acquire(int $timeoutSeconds = 20): bool
     {
         if (self::$handle !== null) {
             return true; // already held by this request

@@ -161,15 +161,33 @@ try {
         }
 
         $ok = true;
+        $restoredNow = [];
         foreach ($movable as $rel) {
             $src  = $withdrawnDir . '/' . $rel;
             $dest = $uploadDir . '/' . $rel;
             $destDir = dirname($dest);
             if (!is_dir($destDir)) @mkdir($destDir, 0755, true);
 
-            if (!@rename($src, $dest) && !(@copy($src, $dest) && @unlink($src))) {
+            if (@rename($src, $dest) || (@copy($src, $dest) && @unlink($src))) {
+                $restoredNow[] = $rel;
+            } else {
                 echo "        FAILED to restore {$rel}\n";
                 $ok = false;
+            }
+        }
+
+        // Roll back a partial restore. Otherwise the files that DID move are
+        // sitting in the public tree, fetchable by direct URL, while the row
+        // stays 'private' and the operator is told the restore failed — the
+        // image is live and nothing says so.
+        if (!$ok) {
+            foreach ($restoredNow as $rel) {
+                $back = $withdrawnDir . '/' . $rel;
+                $from = $uploadDir . '/' . $rel;
+                if (!is_dir(dirname($back))) @mkdir(dirname($back), 0755, true);
+                if (!@rename($from, $back) && !(@copy($from, $back) && @unlink($from))) {
+                    echo "        WARNING: {$rel} is now PUBLIC and could not be put back\n";
+                }
             }
         }
 

@@ -93,7 +93,9 @@
                                   action="<?= route('pose.schedule', ['id' => hex_id((int) $entry['id'])]) ?>"
                                   class="form-inline">
                                 <?= csrf_field() ?>
-                                <?php if (!empty($upcomingSessions)): ?>
+                                <?php if (empty($upcomingSessions)): ?>
+                                    <span class="text-muted">No upcoming session to schedule onto.</span>
+                                <?php else: ?>
                                     <select name="session_id" class="input-sm" required>
                                         <option value="">Which session?</option>
                                         <?php foreach ($upcomingSessions as $s): ?>
@@ -103,8 +105,8 @@
                                             </option>
                                         <?php endforeach; ?>
                                     </select>
+                                    <button type="submit" class="btn btn-sm">Schedule</button>
                                 <?php endif; ?>
-                                <button type="submit" class="btn btn-sm">Schedule</button>
                             </form>
                         <?php else: ?>
                             <form method="POST"

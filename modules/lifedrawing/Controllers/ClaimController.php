@@ -18,7 +18,7 @@ final class ClaimController extends BaseController
     /** Claim an artwork as artist or model (authenticated, consent required). */
     public function claim(Request $request): Response
     {
-        if ($redirect = $this->requireAuth()) return $redirect;
+        if ($redirect = $this->requireAuth($request)) return $redirect;
         $this->auth->requireConsent();
 
         $artworkId = from_hex($request->param('id'));
@@ -127,7 +127,7 @@ final class ClaimController extends BaseController
      */
     public function withdraw(Request $request): Response
     {
-        if ($redirect = $this->requireAuth()) return $redirect;
+        if ($redirect = $this->requireAuth($request)) return $redirect;
 
         $claimId = from_hex($request->param('id'));
 
@@ -281,7 +281,7 @@ final class ClaimController extends BaseController
 
         // Redirect back to the session
         $artwork = $this->table('ld_artworks')->where('id', '=', $claim['artwork_id'])->first();
-        return Response::redirect(route('sessions.show', ['id' => $artwork['session_id'] ?? 0]));
+        return Response::redirect(route('sessions.show', ['id' => hex_id((int) ($artwork['session_id'] ?? 0))]));
     }
 
     private function denyModelClaim(Request $request): Response

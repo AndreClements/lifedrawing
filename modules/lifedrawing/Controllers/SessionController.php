@@ -290,6 +290,10 @@ final class SessionController extends BaseController
             'user_id' => $this->userId(),
             'role' => 'facilitator',
             'attended' => true,
+            // Both columns, together. No-show undo restores from `attended`, so
+            // a row with attended=1 but attendance='booked' would be *promoted*
+            // to 'attended' by an undo - a state it never held.
+            'attendance' => 'attended',
         ]);
 
         $this->provenance->log(
@@ -656,21 +660,7 @@ final class SessionController extends BaseController
         // Notify opted-in participants BEFORE deleting (query needs participant rows)
         app('notifications')->sessionCancelled($session);
 
-        // Remove any artwork files from disk before cascade-delete removes DB records
         $artworks = $this->table('ld_artworks')->where('session_id', '=', $sessionId)->get();
-        if (!empty($artworks)) {
-            $uploadDir = app('upload')->uploadDir;
-            foreach ($artworks as $artwork) {
-                foreach (['file_path', 'web_path', 'thumbnail_path'] as $col) {
-                    if (!empty($artwork[$col])) {
-                        $fullPath = $uploadDir . '/' . $artwork[$col];
-                        if (is_file($fullPath)) {
-                            @unlink($fullPath);
-                        }
-                    }
-                }
-            }
-        }
 
         // Everything below has to happen BEFORE the delete.
         //
@@ -689,8 +679,13 @@ final class SessionController extends BaseController
         }
 
         // Queued mail about this session would otherwise arrive minutes later
-        // pointing at a page that no longer resolves.
+        // pointing at a page that no longer resolves. That includes mail raised
+        // by the session's artworks - claims and comments - which the cascade
+        // is about to delete along with everything else.
         app('notifications')->cancelQueued('session', $sessionId);
+        foreach ($artworks as $artwork) {
+            app('notifications')->cancelQueuedForArtwork((int) $artwork['id']);
+        }
 
         $this->provenance->log(
             $this->userId(),
@@ -710,13 +705,27 @@ final class SessionController extends BaseController
             app('stats')->refreshUser((int) $p['user_id']);
         }
 
+        // Files go LAST, and only once the database work has succeeded.
+        //
+        // Deleting them first meant that if anything after it threw — a lock
+        // wait on the sitter-queue updates, say — every participant had already
+        // been emailed "your session is cancelled", every file was gone, and the
+        // session and its artwork rows still existed pointing at nothing. The
+        // page then rendered permanently broken images with no way back.
+        //
+        // Under the image lock, and including the derivative names the database
+        // may never have recorded: a worker that made the web image but failed
+        // on the thumbnail leaves a real public file with no row referencing it,
+        // and after this delete there is no row to find it from at all.
+        $this->deleteArtworkFiles($artworks);
+
         return Response::redirect(route('sessions.index'));
     }
 
     /** Join a session as participant (authenticated). */
     public function join(Request $request): Response
     {
-        if ($redirect = $this->requireAuth()) return $redirect;
+        if ($redirect = $this->requireAuth($request)) return $redirect;
 
         $sessionId = from_hex($request->param('id'));
         $role = $request->input('role', 'artist');
@@ -731,6 +740,19 @@ final class SessionController extends BaseController
             return Response::notFound('Session not found.');
         }
 
+        // The views hide the join button on past sessions, but the endpoint
+        // never enforced it. Participation rows feed attendance, streaks and the
+        // artist leaderboard, so a POST against a 2017 session was a self-serve
+        // attendance record - and leave() refuses to undo a past booking, so
+        // only the facilitator could clear it up, one row at a time.
+        if (session_starts_at($session) <= time()) {
+            $message = 'That session has already started.';
+            if ($request->isHtmx()) {
+                return Response::html('<span class="card-badge">' . e($message) . '</span>');
+            }
+            return Response::redirect(route('sessions.show', ['id' => hex_id($sessionId, session_title($session))]));
+        }
+
         // Some sessions book their sitters elsewhere — the card hides the model
         // link, and this closes the endpoint behind it.
         if ($role === 'model' && !model_join_open($session)) {
@@ -738,7 +760,7 @@ final class SessionController extends BaseController
             if ($request->isHtmx()) {
                 return Response::html('<span class="card-badge">' . e($message) . '</span>');
             }
-            return Response::redirect(route('sessions.show', ['id' => $sessionId]));
+            return Response::redirect(route('sessions.show', ['id' => hex_id($sessionId, session_title($session))]));
         }
 
         // Check not already joined in this role
@@ -790,7 +812,10 @@ final class SessionController extends BaseController
      */
     public function leave(Request $request): Response
     {
-        if ($redirect = $this->requireAuth()) return $redirect;
+        if ($redirect = $this->requireAuth($request)) return $redirect;
+
+        // Cancelling from the dashboard should leave you on the dashboard.
+        $backToDashboard = $request->input('return') === 'dashboard';
 
         $sessionId = from_hex($request->param('id'));
         $role = $request->input('role', 'artist');
@@ -810,8 +835,13 @@ final class SessionController extends BaseController
         // Refusing to leave a past session is not merely caution. Nothing marks
         // attendance separately for a web booking, so deleting a past
         // participation row would rewrite history rather than cancel a booking.
-        if ($session['session_date'] < date('Y-m-d')) {
-            $message = 'That session has already happened.';
+        // Once it has STARTED, not merely once the day has passed. A session
+        // that ran at 10:00 this morning is exactly the case the 48-hour clause
+        // exists for; treating it as cancellable meant the latest possible
+        // cancellation was recorded as the most routine one, and deleted the
+        // participation row on a session that had actually happened.
+        if (session_starts_at($session) <= time()) {
+            $message = 'That session has already started.';
             if ($request->isHtmx()) {
                 return Response::html('<span class="card-badge">' . e($message) . '</span>');
             }
@@ -858,6 +888,10 @@ final class SessionController extends BaseController
             ]);
         }
 
+        if ($backToDashboard) {
+            return Response::redirect(route('dashboard'));
+        }
+
         return Response::redirect(route('sessions.show', ['id' => hex_id($sessionId, session_title($session))]));
     }
 
@@ -869,7 +903,7 @@ final class SessionController extends BaseController
      */
     public function toggleNoShow(Request $request): Response
     {
-        if ($redirect = $this->requireAuth()) return $redirect;
+        if ($redirect = $this->requireAuth($request)) return $redirect;
         if ($redirect = $this->requireRole('admin', 'facilitator')) return $redirect;
 
         $sessionId = from_hex($request->param('id'));
@@ -889,7 +923,10 @@ final class SessionController extends BaseController
             [$pid, $sessionId]
         );
 
-        if ($participant) {
+        // The view hides this control for the facilitator row; the endpoint
+        // needs to agree, or a stale pid marks the host absent from their own
+        // session and dents their own attendance record.
+        if ($participant && $participant['role'] !== 'facilitator') {
             // Un-marking must restore what the row was before, not flatten it to
             // 'booked'. The legacy `attended` column is that record - without
             // this, one click quietly destroys a backfilled attendance.
@@ -923,6 +960,45 @@ final class SessionController extends BaseController
         }
 
         return Response::redirect(route('sessions.show', ['id' => hex_id($sessionId, session_title($session))]));
+    }
+
+    /**
+     * Remove artwork files from the public tree, derivatives included.
+     *
+     * Takes the image-processing lock: a process_images.php run already in
+     * flight rewrites originals in place and writes derivatives, so unlinking
+     * without it can leave files that reappear moments later.
+     *
+     * Best-effort by design — the rows are already gone by the time this runs,
+     * so there is nothing left to roll back. Failures are logged loudly because
+     * a file that survives here is invisible to everything else afterwards.
+     */
+    private function deleteArtworkFiles(array $artworks): void
+    {
+        if (empty($artworks)) {
+            return;
+        }
+
+        $locked = \App\Services\ImageLock::acquire();
+        if (!$locked) {
+            error_log('Session cancel: image lock unavailable; artwork files left on disk: '
+                . implode(', ', array_column($artworks, 'file_path')));
+            return;
+        }
+
+        try {
+            $uploadDir = app('upload')->uploadDir;
+            foreach ($artworks as $artwork) {
+                foreach (artwork_public_paths($artwork) as $rel) {
+                    $fullPath = $uploadDir . '/' . $rel;
+                    if (is_file($fullPath) && !@unlink($fullPath)) {
+                        error_log("Session cancel: could not remove {$rel}; it is still publicly served.");
+                    }
+                }
+            }
+        } finally {
+            \App\Services\ImageLock::release();
+        }
     }
 
     /** Roles the given user already holds on a session. */

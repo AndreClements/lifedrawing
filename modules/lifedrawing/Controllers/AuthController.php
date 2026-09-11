@@ -364,6 +364,19 @@ final class AuthController extends BaseController
                     ? $params['role'] : 'artist';
 
                 $session = db('ld_sessions')->where('id', '=', $sessionId)->first();
+
+                // Same gates as SessionController::join(). This path skipped
+                // both: a crafted ?intent= link could book a past session, or
+                // book as model on a session whose sitters are arranged
+                // elsewhere (model_join_enabled = 0), which is the whole point
+                // of that flag.
+                if ($session && session_starts_at($session) <= time()) {
+                    return Response::redirect(route('sessions.show', ['id' => hex_id($sessionId, session_title($session))]));
+                }
+                if ($session && $role === 'model' && !model_join_open($session)) {
+                    return Response::redirect(route('sessions.show', ['id' => hex_id($sessionId, session_title($session))]));
+                }
+
                 if ($session) {
                     $existing = db('ld_session_participants')
                         ->where('session_id', '=', $sessionId)

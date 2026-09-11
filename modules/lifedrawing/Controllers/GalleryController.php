@@ -418,32 +418,21 @@ final class GalleryController extends BaseController
             }
 
             $uploadDir = app('upload')->uploadDir;
+            $stuck = [];
 
-            // Derivative names the worker writes beside the original, whether or
-            // not the row records them - a run that made the web image but
-            // failed on the thumbnail leaves an unreferenced public file.
-            $targets = [];
-            foreach (['file_path', 'web_path', 'thumbnail_path'] as $col) {
-                if (!empty($artwork[$col])) {
-                    $targets[] = $artwork[$col];
-                }
-            }
-            if (!empty($artwork['file_path'])) {
-                $dir  = dirname($artwork['file_path']);
-                $stem = pathinfo(basename($artwork['file_path']), PATHINFO_FILENAME);
-                $dir  = ($dir === '.' || $dir === '') ? '' : $dir . '/';
-                foreach ([$dir . 'web_' . $stem . '.webp', $dir . 'thumb_' . $stem . '.webp'] as $sibling) {
-                    if (!in_array($sibling, $targets, true)) {
-                        $targets[] = $sibling;
-                    }
-                }
-            }
-
-            foreach ($targets as $rel) {
+            foreach (artwork_public_paths($artwork) as $rel) {
                 $fullPath = $uploadDir . '/' . $rel;
-                if (is_file($fullPath)) {
-                    @unlink($fullPath);
+                if (is_file($fullPath) && !@unlink($fullPath)) {
+                    $stuck[] = $rel;
                 }
+            }
+
+            // A file that survives here is invisible afterwards: withdrawal
+            // deliberately skips 'removed' rows on the grounds that their files
+            // were unlinked, so an unlink that quietly failed leaves the image
+            // public forever with nothing left to find it.
+            if ($stuck !== []) {
+                error_log('Artwork delete #' . $id . ': files still public: ' . implode(', ', $stuck));
             }
 
             // Soft-delete: hide from all queries

@@ -119,7 +119,10 @@
  * made of you. Promising more than the software does is how consent notices
  * become dishonest.
  */
-$consentState = $_SESSION['consent_state'] ?? 'pending';
+// Authoritative, not the browser session. Withdrawing on one device leaves
+// another device's session reading 'granted', and this page would then offer to
+// withdraw consent that has already been withdrawn.
+$consentState = \App\Middleware\ConsentGate::currentState()->value;
 ?>
 <?php if ($consentState === 'granted'): ?>
 <section class="profile-edit consent-withdraw">

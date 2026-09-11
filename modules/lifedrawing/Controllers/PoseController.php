@@ -59,7 +59,13 @@ final class PoseController extends BaseController
 
         $userId = $this->userId();
 
-        // Duplicate check: max one active entry
+        // Duplicate check: max one active entry.
+        //
+        // Read-then-insert with no lock is the very pattern SitterQueueService
+        // refuses to use, and a double-submit here leaves two 'waiting' rows.
+        // activeEntry() only ever resolves the earliest, so the second would sit
+        // in the queue forever, invisible to the sitter and looking like an
+        // available model to the facilitator.
         $existing = $this->table('ld_sitter_queue')
             ->where('user_id', '=', $userId)
             ->whereIn('status', ['waiting', 'scheduled'])
@@ -107,11 +113,32 @@ final class PoseController extends BaseController
                 'sitter_auto_rejoin'   => $autoRejoin,
             ]);
 
-        $entryId = $this->table('ld_sitter_queue')->insert([
-            'user_id' => $userId,
-            'note'    => $note ?: null,
-            'status'  => 'waiting',
-        ]);
+        // One statement, so a double-submit cannot create two active entries.
+        // The check above is for the redirect; this is what actually guarantees
+        // it. activeEntry() only ever resolves the earliest row, so a second one
+        // would sit in the queue invisible to the sitter and look like an
+        // available model to the facilitator.
+        //
+        // requested_at from PHP, in the app timezone: left to MySQL's DEFAULT it
+        // takes the server clock, which runs about nine hours behind SAST, and
+        // classify() compares it against a PHP date.
+        $this->db->execute(
+            "INSERT INTO ld_sitter_queue (user_id, note, status, requested_at)
+             SELECT ?, ?, 'waiting', ?
+             FROM DUAL
+             WHERE NOT EXISTS (
+                 SELECT 1 FROM ld_sitter_queue
+                 WHERE user_id = ? AND status IN ('waiting', 'scheduled')
+             )",
+            [$userId, $note ?: null, date('Y-m-d H:i:s'), $userId]
+        );
+
+        $entryId = (int) $this->db->fetchColumn(
+            "SELECT id FROM ld_sitter_queue
+             WHERE user_id = ? AND status IN ('waiting', 'scheduled')
+             ORDER BY requested_at ASC LIMIT 1",
+            [$userId]
+        );
 
         $this->provenance->log(
             $userId,
@@ -249,6 +276,14 @@ final class PoseController extends BaseController
 
         if (!$session) {
             return Response::error('Pick the session they are booked for.', 400);
+        }
+
+        // The dropdown only offers upcoming sessions, but the POST was not
+        // checked. Scheduling onto a past session inserts a participant row and
+        // rewrites attendance history, which leave() explicitly refuses to do
+        // for exactly the same reason.
+        if (session_starts_at($session) <= time()) {
+            return Response::error('That session has already started.', 400);
         }
 
         $userId = (int) $entry['user_id'];
@@ -404,6 +439,6 @@ final class PoseController extends BaseController
             return;
         }
 
-        app('sitterQueue')->sweep($this->userId(), true);
+        app('sitterQueue')->sweep($this->userId());
     }
 }

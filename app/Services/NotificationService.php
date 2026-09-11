@@ -61,7 +61,14 @@ final class NotificationService
                 "A new drawing session has been scheduled:\n\n{$title}\n{$date} at {$venue}",
                 $sessionId,
                 "View details and join: {$link}",
-                $footer
+                $footer,
+                // Sourced so cancelling the session cancels this mail too.
+                // Creating a session, spotting a wrong date and cancelling
+                // inside the five-minute digest window is an ordinary thing to
+                // do; without a source, everyone still receives "New Session"
+                // carrying a link to a page that no longer exists.
+                'session',
+                $sessionId
             );
         }
     }

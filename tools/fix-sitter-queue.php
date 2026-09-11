@@ -46,6 +46,13 @@ if (file_exists(LDR_ROOT . '/.env')) {
     }
 }
 
+// classify() compares PHP dates against session dates. Kernel.php is the only
+// place the app timezone is set, and this tool never builds one — so from the
+// CLI "today" was the US server's date while the live sweep used SAST. Between
+// midnight and 09:00 the tool and the site disagreed about the whole queue,
+// which is exactly when this work gets done.
+date_default_timezone_set('Africa/Johannesburg');
+
 use App\Container;
 use App\Database\Connection;
 use App\Services\ProvenanceService;

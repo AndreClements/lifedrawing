@@ -471,6 +471,110 @@ $second = $queue->classify($fresh);
 check('a second pass proposes nothing', $second['action'] === 'skip',
     "got {$second['action']}: {$second['reason']}");
 
+echo "\n7. A future booking must not starve completion\n";
+
+// The rule ordering bug: "a future booking wins over everything" used to be
+// checked first, so a sitter booked months ahead could never complete. They
+// would sit every weekend with the queue showing the far-off date and nothing
+// ever recorded.
+$db->execute("DELETE FROM ld_sitter_queue WHERE user_id = ?", [$sitterId]);
+$db->execute("DELETE FROM ld_session_participants WHERE user_id = ? AND role = 'model'", [$sitterId]);
+
+$farFuture = $mkSession('far', date('Y-m-d', strtotime('+90 days')));
+$cleanupSessions[] = $farFuture;
+
+$db->execute("INSERT INTO ld_session_participants (session_id, user_id, role) VALUES (?, ?, 'model')",
+    [$past, $sitterId]);
+$db->execute("INSERT INTO ld_session_participants (session_id, user_id, role) VALUES (?, ?, 'model')",
+    [$farFuture, $sitterId]);
+$db->execute(
+    "INSERT INTO ld_sitter_queue (user_id, status, scheduled_session_id, requested_at)
+     VALUES (?, 'scheduled', ?, ?)",
+    [$sitterId, $past, date('Y-m-d H:i:s', strtotime('-40 days'))]
+);
+$starvedId = (int) $db->lastInsertId();
+
+$starved = $db->fetch("SELECT * FROM ld_sitter_queue WHERE id = ?", [$starvedId]);
+$d = $queue->classify($starved);
+check('a sitting that has happened completes even with a booking months out',
+    $d['action'] === 'complete',
+    "got {$d['action']}: {$d['reason']} — the December booking must not starve it");
+
+$queue->apply($starvedId, null, false);
+$starved = $db->fetch("SELECT * FROM ld_sitter_queue WHERE id = ?", [$starvedId]);
+check('and it actually reaches completed', $starved['status'] === 'completed',
+    "got {$starved['status']}");
+
+// Completion keys off whether the session has FINISHED, not off the date. Both
+// sides of that boundary matter: the facilitator's "Complete & Notify" button
+// used to be a silent no-op on the evening of the session, and a date-only rule
+// would close an entry on the morning before the sitting happened.
+$sameDay = function (string $label, string $date, string $start, int $duration)
+        use ($db, $mkSession, $sitterId, &$cleanupSessions, $queue) {
+    $db->execute("DELETE FROM ld_sitter_queue WHERE user_id = ?", [$sitterId]);
+    $db->execute("DELETE FROM ld_session_participants WHERE user_id = ? AND role = 'model'", [$sitterId]);
+    $sid = $mkSession($label, $date);
+    $cleanupSessions[] = $sid;
+    $db->execute("UPDATE ld_sessions SET start_time = ?, duration_minutes = ? WHERE id = ?",
+        [$start, $duration, $sid]);
+    $db->execute("INSERT INTO ld_session_participants (session_id, user_id, role) VALUES (?, ?, 'model')",
+        [$sid, $sitterId]);
+    $db->execute(
+        "INSERT INTO ld_sitter_queue (user_id, status, scheduled_session_id, requested_at)
+         VALUES (?, 'scheduled', ?, ?)",
+        [$sitterId, $sid, date('Y-m-d H:i:s', strtotime('-1 day'))]
+    );
+    $entry = $db->fetch("SELECT * FROM ld_sitter_queue WHERE id = ?", [(int) $db->lastInsertId()]);
+    return $queue->classify($entry);
+};
+
+$d = $sameDay('todayDone', date('Y-m-d'), '00:00:00', 1);
+check('a session earlier TODAY that has finished does complete', $d['action'] === 'complete',
+    "got {$d['action']}: {$d['reason']} — this is the case the Complete button silently skipped");
+
+$d = $sameDay('tomorrow', date('Y-m-d', strtotime('+1 day')), '10:00:00', 180);
+check('a session still to come does not complete', $d['action'] !== 'complete',
+    "got {$d['action']}: {$d['reason']}");
+
+echo "\n8. Auto-rejoin puts them back exactly once\n";
+
+// The growth loop: requested_at used to come from MySQL's DEFAULT, on a server
+// clock about nine hours behind SAST, and was then compared against a PHP date.
+// The fresh row matched the very sitting that had just closed the previous one,
+// completing and rejoining again on every sweep.
+$db->execute("DELETE FROM ld_sitter_queue WHERE user_id = ?", [$sitterId]);
+$db->execute("DELETE FROM ld_session_participants WHERE user_id = ? AND role = 'model'", [$sitterId]);
+$db->execute("UPDATE users SET sitter_auto_rejoin = 1 WHERE id = ?", [$sitterId]);
+
+$db->execute("INSERT INTO ld_session_participants (session_id, user_id, role) VALUES (?, ?, 'model')",
+    [$past, $sitterId]);
+$db->execute(
+    "INSERT INTO ld_sitter_queue (user_id, status, scheduled_session_id, requested_at)
+     VALUES (?, 'scheduled', ?, ?)",
+    [$sitterId, $past, date('Y-m-d H:i:s', strtotime('-40 days'))]
+);
+$rejoinId = (int) $db->lastInsertId();
+
+$queue->apply($rejoinId, null, false);
+$active = (int) $db->fetchColumn(
+    "SELECT COUNT(*) FROM ld_sitter_queue WHERE user_id = ? AND status IN ('waiting','scheduled')",
+    [$sitterId]
+);
+check('completing with auto-rejoin leaves exactly one active entry', $active === 1,
+    "got {$active}");
+
+for ($i = 0; $i < 3; $i++) {
+    $queue->sweep(null);
+}
+$active = (int) $db->fetchColumn(
+    "SELECT COUNT(*) FROM ld_sitter_queue WHERE user_id = ? AND status IN ('waiting','scheduled')",
+    [$sitterId]
+);
+check('three further sweeps do not multiply it', $active === 1,
+    "got {$active} — the rejoined row is being closed by the sitting that created it");
+
+$db->execute("UPDATE users SET sitter_auto_rejoin = 0 WHERE id = ?", [$sitterId]);
+
 // --- Teardown -------------------------------------------------------------
 
 echo "\nTeardown\n";
@@ -485,9 +589,11 @@ $db->execute("DELETE FROM provenance_log WHERE user_id = ? AND created_at >= ?",
 $db->execute("DELETE FROM ld_claims WHERE artwork_id = ?", [$artworkId]);
 $db->execute("DELETE FROM ld_artworks WHERE id = ?", [$artworkId]);
 $db->execute("DELETE FROM ld_sitter_queue WHERE user_id = ?", [$sitterId]);
-$db->execute("DELETE FROM ld_session_participants WHERE session_id IN (?, ?, ?)", [$future, $future2, $past]);
+$inS = implode(',', array_fill(0, count($cleanupSessions), '?'));
+$db->execute("DELETE FROM ld_session_participants WHERE session_id IN ($inS)", $cleanupSessions);
 $db->execute("DELETE FROM ld_artist_stats WHERE user_id IN (?, ?, ?)", [$artistId, $otherId, $sitterId]);
-$db->execute("DELETE FROM ld_sessions WHERE id IN (?, ?, ?)", [$future, $future2, $past]);
+$db->execute("DELETE FROM ld_notification_queue WHERE session_id IN ($inS)", $cleanupSessions);
+$db->execute("DELETE FROM ld_sessions WHERE id IN ($inS)", $cleanupSessions);
 $db->execute("DELETE FROM users WHERE id IN (?, ?, ?)", [$artistId, $otherId, $sitterId]);
 
 echo "  cleaned up\n";

@@ -60,10 +60,12 @@ final class ConsentGate implements MiddlewareInterface
                 // that, and 'pending' is the safe reading in the meantime.
                 self::$cache[$userId] = $row['consent_state'] ?? 'pending';
             } catch (\Throwable $e) {
-                // Never lock everyone out because the database hiccuped —
-                // fall back to the session value, which was authoritative at login.
+                // Fail CLOSED. This gate exists because the session value cannot
+                // be trusted after a withdrawal performed on another device, so
+                // falling back to that same value on a database hiccup would let
+                // exactly the request it guards against straight through.
                 error_log('ConsentGate state lookup failed: ' . $e->getMessage());
-                self::$cache[$userId] = $_SESSION['consent_state'] ?? 'pending';
+                self::$cache[$userId] = 'pending';
             }
             // Keep the session in step so views reading it agree with the gate.
             $_SESSION['consent_state'] = self::$cache[$userId];

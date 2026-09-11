@@ -63,6 +63,42 @@ function env(string $key, mixed $default = null): mixed
     };
 }
 
+/**
+ * Every public file belonging to an artwork, derivatives included.
+ *
+ * process_images.php writes the web image before the thumbnail but records both
+ * paths only once both succeed, so a thumbnail failure leaves a real, publicly
+ * served web_*.webp with no row pointing at it. Anything that removes or hides
+ * an artwork has to go by name as well as by column, or it leaves that file
+ * behind and reports success.
+ *
+ * @return list<string> paths relative to public/assets/uploads/
+ */
+function artwork_public_paths(array $artwork): array
+{
+    $paths = [];
+
+    foreach (['file_path', 'web_path', 'thumbnail_path'] as $col) {
+        if (!empty($artwork[$col])) {
+            $paths[] = $artwork[$col];
+        }
+    }
+
+    if (!empty($artwork['file_path'])) {
+        $dir  = dirname($artwork['file_path']);
+        $stem = pathinfo(basename($artwork['file_path']), PATHINFO_FILENAME);
+        $dir  = ($dir === '.' || $dir === '') ? '' : $dir . '/';
+
+        foreach ([$dir . 'web_' . $stem . '.webp', $dir . 'thumb_' . $stem . '.webp'] as $sibling) {
+            if (!in_array($sibling, $paths, true)) {
+                $paths[] = $sibling;
+            }
+        }
+    }
+
+    return $paths;
+}
+
 /** Dump and die — development only. */
 function dd(mixed ...$vars): never
 {

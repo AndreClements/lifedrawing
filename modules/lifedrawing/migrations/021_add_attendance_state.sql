@@ -19,6 +19,11 @@
 -- `attended` is deliberately kept for now. Un-marking a no-show has to restore
 -- the state the row had before, and the legacy column is that record. Dropping
 -- it is a later migration, once nothing depends on it.
+-- If this migration fails partway, MySQL will already have committed the
+-- ALTER (DDL is implicit-commit) while the runner records nothing, so a re-run
+-- dies on "Duplicate column name 'attendance'". Recovery is one statement:
+--   ALTER TABLE ld_session_participants DROP COLUMN attendance;
+-- then run the migration again.
 ALTER TABLE ld_session_participants
     ADD COLUMN attendance ENUM('booked','attended','no_show')
         NOT NULL DEFAULT 'booked' AFTER attended;

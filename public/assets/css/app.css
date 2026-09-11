@@ -2222,6 +2222,10 @@ form.search-result-create button.btn-link-inline:hover {
 
 .queue-entry.queue-scheduled { opacity: 0.75; }
 
+/* Used by the dashboard and profile notes; previously only defined scoped
+   to .artwork-actions-guest, so these rendered at body size. */
+.text-sm { font-size: 0.85rem; }
+
 /* Footer links */
 .footer-links {
     font-family: var(--font-ui);

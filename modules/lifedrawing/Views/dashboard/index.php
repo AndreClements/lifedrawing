@@ -125,18 +125,33 @@ $memberSince = $stats['member_since'] ?? null;
                             </div>
                             <div class="upcoming-action">
                                 <?php
-                                $confirmText = is_late_cancel($booking)
-                                    ? 'This session starts in under 48 hours. A 50% contribution is appreciated for late cancellations. Cancel your place?'
-                                    : 'Cancel your place at this session?';
-                                $firstRole = explode(', ', (string) $booking['role'])[0];
+                                // Cancellable roles only. Creating a session
+                                // auto-adds the facilitator as 'facilitator',
+                                // and leave() refuses that role - so André's own
+                                // sessions used to show a Cancel button that
+                                // confirmed, navigated, and did nothing at all.
+                                $cancellable = array_values(array_intersect(
+                                    array_map('trim', explode(',', (string) $booking['role'])),
+                                    ['artist', 'model', 'observer']
+                                ));
                                 ?>
-                                <form method="POST" action="<?= route('sessions.leave', ['id' => $bookingHex]) ?>"
-                                      class="form-inline confirm-action"
-                                      data-confirm="<?= e($confirmText) ?>">
-                                    <?= csrf_field() ?>
-                                    <input type="hidden" name="role" value="<?= e($firstRole) ?>">
-                                    <button type="submit" class="btn-sm btn-outline">Cancel</button>
-                                </form>
+                                <?php if ($cancellable): ?>
+                                    <?php
+                                    $confirmText = is_late_cancel($booking)
+                                        ? 'This session starts in under 48 hours. A 50% contribution is appreciated for late cancellations. Cancel your place?'
+                                        : 'Cancel your place at this session?';
+                                    ?>
+                                    <form method="POST" action="<?= route('sessions.leave', ['id' => $bookingHex]) ?>"
+                                          class="form-inline confirm-action"
+                                          data-confirm="<?= e($confirmText) ?>">
+                                        <?= csrf_field() ?>
+                                        <input type="hidden" name="role" value="<?= e($cancellable[0]) ?>">
+                                        <input type="hidden" name="return" value="dashboard">
+                                        <button type="submit" class="btn-sm btn-outline">Cancel</button>
+                                    </form>
+                                <?php else: ?>
+                                    <span class="text-muted text-sm">hosting</span>
+                                <?php endif; ?>
                             </div>
                         </div>
                     <?php endforeach; ?>

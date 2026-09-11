@@ -448,22 +448,9 @@ final class AuthService
             );
 
             foreach ($artworks as $artwork) {
-                foreach (['file_path', 'web_path', 'thumbnail_path'] as $col) {
-                    if (!empty($artwork[$col])) {
-                        $paths[] = $artwork[$col];
-                    }
-                }
-
-                // Derivatives the database does not know about.
-                //
-                // process_images.php writes the web image BEFORE the thumbnail
-                // but records both paths only once both succeed. A thumbnail
-                // failure therefore leaves a real, public web_*.webp with no row
-                // pointing at it. Moving only database-listed paths would leave
-                // that file served and still report success.
-                foreach ($this->derivativeSiblings($artwork['file_path'] ?? '') as $sibling) {
-                    if (!in_array($sibling, $paths, true)) {
-                        $paths[] = $sibling;
+                foreach (artwork_public_paths($artwork) as $rel) {
+                    if (!in_array($rel, $paths, true)) {
+                        $paths[] = $rel;
                     }
                 }
             }
@@ -530,28 +517,6 @@ final class AuthService
             'moved'     => $moved,
             'remaining' => $remaining,
             'locked'    => $locked,
-        ];
-    }
-
-    /**
-     * Derivative filenames process_images.php would have written beside an
-     * original, whether or not the database ever recorded them.
-     *
-     * @return list<string>
-     */
-    private function derivativeSiblings(string $filePath): array
-    {
-        if ($filePath === '') {
-            return [];
-        }
-
-        $dir  = dirname($filePath);
-        $stem = pathinfo(basename($filePath), PATHINFO_FILENAME);
-        $dir  = ($dir === '.' || $dir === '') ? '' : $dir . '/';
-
-        return [
-            $dir . 'web_' . $stem . '.webp',
-            $dir . 'thumb_' . $stem . '.webp',
         ];
     }
 
@@ -712,12 +677,20 @@ final class AuthService
 
     // --- Provenance ---
 
-    private function logProvenance(int $userId, string $action, string $entityType, int $entityId): void
+    private function logProvenance(int $userId, string $action, string $entityType, int $entityId, array $context = []): void
     {
         try {
+            // claimStub() has always passed a fifth argument. PHP ignores extras
+            // on a user-defined function, so previous_name — the only record of
+            // who a claimed stub used to be — was being dropped without error.
             $this->db->execute(
-                "INSERT INTO provenance_log (user_id, action, entity_type, entity_id, ip_address) VALUES (?, ?, ?, ?, ?)",
-                [$userId, $action, $entityType, $entityId, $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0']
+                "INSERT INTO provenance_log (user_id, action, entity_type, entity_id, context, ip_address)
+                 VALUES (?, ?, ?, ?, ?, ?)",
+                [
+                    $userId, $action, $entityType, $entityId,
+                    $context === [] ? null : json_encode($context),
+                    $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0',
+                ]
             );
         } catch (\Throwable) {
             // Provenance logging should never break the main flow

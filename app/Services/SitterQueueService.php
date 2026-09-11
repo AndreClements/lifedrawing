@@ -139,7 +139,6 @@ final class SitterQueueService
         $userId    = (int) $entry['user_id'];
         $status    = (string) $entry['status'];
         $sessionId = $entry['scheduled_session_id'] !== null ? (int) $entry['scheduled_session_id'] : null;
-        $today     = date('Y-m-d');
 
         $skip = fn(string $why) => [
             'action' => 'skip', 'expect_status' => $status, 'session_id' => $sessionId, 'reason' => $why,
@@ -149,8 +148,72 @@ final class SitterQueueService
             return $skip('not an active entry');
         }
 
-        // Preserving a future booking wins over every other rule. Completing or
-        // requeueing someone who is booked next weekend would be simply wrong.
+        // ORDER MATTERS, and an earlier version had it wrong.
+        //
+        // "A future booking wins over everything" used to be checked FIRST. That
+        // rule belongs to the remove path, not to completion, and putting it
+        // first starved completion entirely: book a recurring sitter onto a
+        // December session in September and their entry could never complete,
+        // because every classification found December and stopped. They would
+        // sit in September, October and November with the queue showing
+        // "Scheduled — 12 Dec" and no completion recorded for any of it. The
+        // documented Saturday-and-Sunday weekend case silently lost the
+        // Saturday sitting for the same reason.
+        //
+        // So: has a sitting actually happened? Decide that first. Only then use
+        // a future booking to decide where the entry should point.
+
+        // 1. Scheduled for a session that has now finished.
+        if ($status === 'scheduled' && $sessionId !== null) {
+            $session = $this->db->fetch(
+                "SELECT id, session_date, start_time, duration_minutes FROM ld_sessions WHERE id = ?",
+                [$sessionId]
+            );
+
+            if ($session && $this->sessionIsOver($session)) {
+                if ($this->wasNoShow($userId, (int) $session['id'], $forUpdate)) {
+                    return $skip('marked no-show — whether they rejoin is the facilitator\'s call');
+                }
+                return [
+                    'action' => 'complete', 'expect_status' => 'scheduled',
+                    'session_id' => (int) $session['id'], 'reason' => 'sat at a session that has finished',
+                ];
+            }
+        }
+
+        // 2. Waiting, but they have sat since asking.
+        //
+        // Evidence must match THIS request: classifying on "was ever a model on
+        // a past session" would close an entry opened last week on the strength
+        // of a sitting from two years ago.
+        if ($status === 'waiting') {
+            $since = $entry['requested_at'] ?? null;
+            if ($since !== null) {
+                $past = $this->db->fetch(
+                    "SELECT s.id, s.session_date, s.start_time, s.duration_minutes
+                     FROM ld_session_participants sp
+                     JOIN ld_sessions s ON s.id = sp.session_id
+                     WHERE sp.user_id = ? AND sp.role = 'model'
+                       AND s.session_date >= DATE(?)
+                       AND sp.attendance != 'no_show'
+                     ORDER BY s.session_date DESC
+                     LIMIT 1" . ($forUpdate ? ' FOR UPDATE' : ''),
+                    [$userId, $since]
+                );
+
+                // NOTE: accepts attendance 'booked'. Requiring 'attended' would
+                // strand the whole backlog, because nothing writes that column
+                // for a booking made through the site.
+                if ($past && $this->sessionIsOver($past)) {
+                    return [
+                        'action' => 'complete', 'expect_status' => 'waiting',
+                        'session_id' => (int) $past['id'], 'reason' => 'sat since joining the queue',
+                    ];
+                }
+            }
+        }
+
+        // 3. Nothing has happened yet. Point the entry at their next booking.
         $future = $this->earliestFutureBooking($userId, null, $forUpdate);
         if ($future !== null) {
             if ($status === 'scheduled' && $sessionId === $future) {
@@ -162,15 +225,13 @@ final class SitterQueueService
             ];
         }
 
-        // A session that was deleted, or never recorded, never auto-completes:
-        // the sitting demonstrably did not happen. The live sweep and the repair
-        // tool must agree on this, which is why it lives here and not in either.
+        // 4. Scheduled, but the session is gone or was never recorded. Back to
+        //    waiting — the sitting demonstrably did not happen. Never completed.
         if ($status === 'scheduled') {
-            $session = $sessionId !== null
-                ? $this->db->fetch("SELECT id, session_date FROM ld_sessions WHERE id = ?", [$sessionId])
-                : null;
+            $exists = $sessionId !== null
+                && $this->db->fetchColumn("SELECT id FROM ld_sessions WHERE id = ?", [$sessionId]);
 
-            if (!$session) {
+            if (!$exists) {
                 return [
                     'action' => 'requeue', 'expect_status' => 'scheduled', 'session_id' => null,
                     'reason' => $sessionId === null
@@ -179,54 +240,10 @@ final class SitterQueueService
                 ];
             }
 
-            if ($session['session_date'] > $today) {
-                return $skip('scheduled for a session still to come');
-            }
-
-            if ($this->wasNoShow($userId, (int) $session['id'], $forUpdate)) {
-                return $skip('marked no-show — whether they rejoin is the facilitator\'s call');
-            }
-
-            return [
-                'action' => 'complete', 'expect_status' => 'scheduled',
-                'session_id' => (int) $session['id'], 'reason' => 'sat at a session that has passed',
-            ];
+            return $skip('scheduled for a session still to come');
         }
 
-        // status === 'waiting': did they sit since asking?
-        //
-        // Evidence must match THIS request. Classifying on "was ever a model on
-        // a past session" would complete an entry somebody opened last week on
-        // the strength of a sitting from two years ago.
-        $since = $entry['requested_at'] ?? null;
-        if ($since === null) {
-            return $skip('no requested_at to measure against');
-        }
-
-        $past = $this->db->fetch(
-            "SELECT s.id, s.session_date
-             FROM ld_session_participants sp
-             JOIN ld_sessions s ON s.id = sp.session_id
-             WHERE sp.user_id = ? AND sp.role = 'model'
-               AND s.session_date <= ?
-               AND s.session_date >= DATE(?)
-               AND sp.attendance != 'no_show'
-             ORDER BY s.session_date DESC
-             LIMIT 1" . ($forUpdate ? ' FOR UPDATE' : ''),
-            [$userId, $today, $since]
-        );
-
-        if (!$past) {
-            return $skip('no qualifying booking since they joined the queue');
-        }
-
-        // NOTE: this deliberately accepts attendance = 'booked'. Requiring
-        // 'attended' would strand the entire backlog, because nothing has ever
-        // written that column for a web booking.
-        return [
-            'action' => 'complete', 'expect_status' => 'waiting',
-            'session_id' => (int) $past['id'], 'reason' => 'sat since joining the queue',
-        ];
+        return $skip('no qualifying booking since they joined the queue');
     }
 
     /**
@@ -238,17 +255,22 @@ final class SitterQueueService
      * entry that has since been rescheduled onto a different session. So the
      * row is locked FOR UPDATE and re-classified inside the transaction.
      *
+     * Mail is sent AFTER the commit, never inside it. sitterSessionCompleted()
+     * goes out over SMTP synchronously, and holding row locks on ld_sitter_queue,
+     * ld_session_participants and ld_sessions across a 30-second connect timeout
+     * would block every concurrent booking change on those sessions.
+     *
      * Returns true when something changed.
      */
     public function apply(int $entryId, ?int $actorId, bool $notify): bool
     {
-        return (bool) $this->db->transaction(function () use ($entryId, $actorId, $notify) {
+        $outcome = $this->db->transaction(function () use ($entryId, $actorId) {
             $entry = $this->db->fetch(
                 "SELECT * FROM ld_sitter_queue WHERE id = ? FOR UPDATE",
                 [$entryId]
             );
             if (!$entry) {
-                return false;
+                return null;
             }
 
             // Locked reads: the queue row alone is not enough, because another
@@ -258,7 +280,7 @@ final class SitterQueueService
             $action = $decision['action'];
 
             if ($action === 'skip') {
-                return false;
+                return null;
             }
 
             if ($action === 'reschedule') {
@@ -271,7 +293,7 @@ final class SitterQueueService
                 if ($n > 0) {
                     $this->log($actorId, 'sitter_queue.schedule', $entryId, $decision);
                 }
-                return $n > 0;
+                return $n > 0 ? ['changed' => true, 'notify' => false] : null;
             }
 
             if ($action === 'requeue') {
@@ -284,7 +306,7 @@ final class SitterQueueService
                 if ($n > 0) {
                     $this->log($actorId, 'sitter_queue.unschedule', $entryId, $decision);
                 }
-                return $n > 0;
+                return $n > 0 ? ['changed' => true, 'notify' => false] : null;
             }
 
             // complete — carry the status classification actually saw. Hardcoding
@@ -299,7 +321,7 @@ final class SitterQueueService
             );
 
             if ($n === 0) {
-                return false;   // someone else got there first
+                return null;   // someone else got there first
             }
 
             $userId = (int) $entry['user_id'];
@@ -317,9 +339,16 @@ final class SitterQueueService
                     [$userId]
                 );
                 if ($already === 0) {
+                    // requested_at written from PHP, in the app timezone. Left to
+                    // MySQL's DEFAULT it takes the server clock, which runs about
+                    // nine hours behind SAST — and classify() compares it against
+                    // a PHP date. A row stamped in the past then matched the very
+                    // sitting that had just closed the previous entry, completing
+                    // again and rejoining again on every sweep.
                     $this->db->execute(
-                        "INSERT INTO ld_sitter_queue (user_id, status) VALUES (?, 'waiting')",
-                        [$userId]
+                        "INSERT INTO ld_sitter_queue (user_id, note, status, requested_at)
+                         VALUES (?, ?, 'waiting', ?)",
+                        [$userId, $entry['note'] ?? null, date('Y-m-d H:i:s')]
                     );
                     $autoRejoined = true;
                 }
@@ -329,24 +358,46 @@ final class SitterQueueService
                 'auto_rejoined' => $autoRejoined,
             ]);
 
-            if ($notify && $this->worthNotifying($decision['session_id'])) {
-                try {
-                    app('notifications')->sitterSessionCompleted($userId, $autoRejoined);
-                } catch (\Throwable $e) {
-                    error_log('sitterSessionCompleted failed: ' . $e->getMessage());
-                }
-            }
-
-            return true;
+            return [
+                'changed'       => true,
+                'notify'        => $this->worthNotifying($decision['session_id']),
+                'user_id'       => $userId,
+                'auto_rejoined' => $autoRejoined,
+            ];
         });
+
+        if ($outcome === null) {
+            return false;
+        }
+
+        if ($notify && !empty($outcome['notify'])) {
+            try {
+                app('notifications')->sitterSessionCompleted(
+                    (int) $outcome['user_id'],
+                    (bool) $outcome['auto_rejoined']
+                );
+            } catch (\Throwable $e) {
+                error_log('sitterSessionCompleted failed: ' . $e->getMessage());
+            }
+        }
+
+        return true;
     }
 
     /**
      * Sweep every active entry. Called from the queue views and by the repair tool.
      *
+     * NEVER notifies. The sweep fires on every queue page and every session
+     * page's queue panel, which means it can run the morning after a session,
+     * before the facilitator has had any chance to mark a no-show — and a model
+     * who failed to turn up would receive "Thank you for posing at Life Drawing
+     * Randburg". classify()'s no-show guard cannot help, because the row still
+     * reads 'booked' at that moment. Mail belongs to the explicit
+     * "Complete & Notify" button, which is pressed by someone who was there.
+     *
      * @return int number of entries changed
      */
-    public function sweep(?int $actorId, bool $notify): int
+    public function sweep(?int $actorId): int
     {
         $ids = $this->db->fetchAll(
             "SELECT id FROM ld_sitter_queue WHERE status IN ('waiting','scheduled')"
@@ -354,14 +405,34 @@ final class SitterQueueService
 
         $changed = 0;
         foreach ($ids as $row) {
-            if ($this->apply((int) $row['id'], $actorId, $notify)) {
-                $changed++;
+            try {
+                if ($this->apply((int) $row['id'], $actorId, false)) {
+                    $changed++;
+                }
+            } catch (\Throwable $e) {
+                // One bad entry must not 500 the queue page and every session
+                // page's panel until somebody fixes the row by hand.
+                error_log('sitter queue sweep failed on entry ' . $row['id'] . ': ' . $e->getMessage());
             }
         }
         return $changed;
     }
 
     // --- Helpers -----------------------------------------------------------
+
+    /**
+     * Has this session finished?
+     *
+     * Date comparison alone was wrong in both directions: a sweep on the morning
+     * of a session would complete an entry before the sitting happened, and the
+     * facilitator's "Complete & Notify" button was a silent no-op on the evening
+     * of the session because the date was not yet in the past.
+     */
+    private function sessionIsOver(array $session): bool
+    {
+        $minutes = (int) ($session['duration_minutes'] ?? 180);
+        return time() > session_starts_at($session) + ($minutes * 60);
+    }
 
     /** The one active queue entry for a user, if any. */
     public function activeEntry(int $userId, bool $forUpdate = false): ?array

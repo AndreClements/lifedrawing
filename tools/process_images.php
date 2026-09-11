@@ -99,8 +99,16 @@ foreach ($argv as $arg) {
 }
 
 if ($reprocess) {
-    $pdo->exec("UPDATE ld_artworks SET processed_at = NULL, web_path = NULL, thumbnail_path = NULL");
-    logLine("Reset all artworks for reprocessing.");
+    // Scoped to what will actually be reprocessed. Resetting every row also
+    // nulled the derivative paths of withdrawn ('private') artwork, which the
+    // selection below correctly skips - so nothing was regenerated, but
+    // restore-withdrawn.php lost the record of where those archived files
+    // belong and could never put them back.
+    $reset = $pdo->exec(
+        "UPDATE ld_artworks SET processed_at = NULL, web_path = NULL, thumbnail_path = NULL
+         WHERE visibility NOT IN ('removed', 'private')"
+    );
+    logLine("Reset {$reset} artwork(s) for reprocessing (hidden and deleted ones left untouched).");
 }
 
 // --- Fetch unprocessed artworks ---
@@ -181,6 +189,13 @@ foreach ($artworks as $artwork) {
 
         if (!$webOk) {
             logLine("  FAIL #{$id}: web display generation failed");
+            // Symmetric to the thumbnail branch below: a failed imagewebp() can
+            // still leave a truncated file at $webDest, and an unreferenced
+            // public image is one nothing can later find and withdraw.
+            if (is_file($webDest)) {
+                @unlink($webDest);
+                logLine("    Removed the partial web image so nothing unreferenced stays public.");
+            }
             logLine("    And-Yet: Source exists and passed earlier checks — GD may have failed on this specific image format or dimensions.");
             $failed++;
             continue;
