@@ -136,11 +136,16 @@ final class SessionController extends BaseController
             return Response::notFound('Session not found.');
         }
 
-        // Get participants
-        $participants = $this->getParticipants($id);
+        // Get participants — the facilitator's manager needs the full set,
+        // every other viewer gets the consent-filtered one.
+        $participants = $this->getParticipants($id, $this->auth->hasRole('admin', 'facilitator'));
 
-        // Get artworks (respect visibility)
-        $userId = $this->userId();
+        // Get artworks. The old query carried an "OR a.uploaded_by = ?" escape
+        // hatch so an uploader saw their own work regardless of visibility. The
+        // only other states are 'removed' and 'private', and both must stay
+        // hidden from everyone — 'private' is set by consent withdrawal, and
+        // showing it back to the uploader is showing it to the person who asked
+        // for it to be gone.
         $artworks = $this->db->fetchAll(
             "SELECT a.*, u.display_name as uploader_name,
                     (SELECT GROUP_CONCAT(CONCAT(c.claim_type, ':', cu.display_name) SEPARATOR ', ')
@@ -156,9 +161,9 @@ final class SessionController extends BaseController
              FROM ld_artworks a
              JOIN users u ON a.uploaded_by = u.id
              WHERE a.session_id = ?
-               AND (a.visibility IN ('session', 'claimed', 'public') OR a.uploaded_by = ?)
+               AND a.visibility IN ('session', 'claimed', 'public')
              ORDER BY a.pose_index ASC, a.created_at ASC",
-            [$id, $userId ?? 0]
+            [$id]
         );
 
         $participantCount = count($participants);
@@ -318,11 +323,26 @@ final class SessionController extends BaseController
         return null;
     }
 
-    /** Get participant list for a session (used by show + HTMX responses). */
-    private function getParticipants(int $sessionId): array
+    /**
+     * Get participant list for a session (used by show + HTMX responses).
+     *
+     * This feeds two audiences. The public list must not name someone who has
+     * withdrawn consent; the facilitator's participant manager must still show
+     * them, because André has real obligations to people and cannot act on a
+     * row he cannot see. So withdrawn users keep their place in the list — the
+     * count stays correct, and the listing cards still match the WhatsApp
+     * numbering — but lose their name, which visible_name() renders as
+     * "Participant".
+     */
+    private function getParticipants(int $sessionId, bool $forFacilitator = false): array
     {
+        $nameExpr = $forFacilitator
+            ? 'u.display_name'
+            : "CASE WHEN u.consent_state = 'withdrawn' THEN NULL ELSE u.display_name END";
+
         return $this->db->fetchAll(
-            "SELECT sp.*, u.display_name FROM ld_session_participants sp
+            "SELECT sp.*, {$nameExpr} AS display_name, u.consent_state
+             FROM ld_session_participants sp
              JOIN users u ON sp.user_id = u.id
              WHERE sp.session_id = ?
              ORDER BY FIELD(sp.role, 'facilitator', 'model', 'artist', 'observer'), sp.id ASC",
@@ -424,7 +444,7 @@ final class SessionController extends BaseController
             app('stats')->refreshUser($userId);
         }
 
-        $participants = $this->getParticipants($sessionId);
+        $participants = $this->getParticipants($sessionId, true);
 
         return $this->partial('sessions._participant_manager', [
             'session' => $session,
@@ -481,7 +501,7 @@ final class SessionController extends BaseController
             app('stats')->refreshUser($userId);
         }
 
-        $participants = $this->getParticipants($sessionId);
+        $participants = $this->getParticipants($sessionId, true);
 
         if ($request->isHtmx()) {
             return $this->partial('sessions._participant_manager', [
@@ -529,7 +549,7 @@ final class SessionController extends BaseController
             app('stats')->refreshUser((int) $participant['user_id']);
         }
 
-        $participants = $this->getParticipants($sessionId);
+        $participants = $this->getParticipants($sessionId, true);
 
         if ($request->isHtmx()) {
             return $this->partial('sessions._participant_manager', [
@@ -559,7 +579,7 @@ final class SessionController extends BaseController
             [$pid, $sessionId]
         );
 
-        $participants = $this->getParticipants($sessionId);
+        $participants = $this->getParticipants($sessionId, true);
 
         if ($request->isHtmx()) {
             return $this->partial('sessions._participant_manager', [

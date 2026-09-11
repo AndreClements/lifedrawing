@@ -380,21 +380,47 @@ final class GalleryController extends BaseController
             return Response::forbidden('You can only delete artworks from your own sessions.');
         }
 
-        // Remove physical files
-        $uploadDir = app('upload')->uploadDir;
-        foreach (['file_path', 'web_path', 'thumbnail_path'] as $col) {
-            if (!empty($artwork[$col])) {
-                $fullPath = $uploadDir . '/' . $artwork[$col];
-                if (is_file($fullPath)) {
-                    @unlink($fullPath);
+        // Whoever holds approved claims loses an artwork from their totals.
+        // Collected before the delete, refreshed after.
+        $claimants = $this->db->fetchAll(
+            "SELECT DISTINCT claimant_id FROM ld_claims WHERE artwork_id = ? AND status = 'approved'",
+            [$id]
+        );
+
+        // Hold the image-worker lock across unlink + soft-delete. Without it a
+        // process_images.php run already in flight can rewrite the original or
+        // write fresh derivatives back into the public tree after the unlink.
+        $locked = \App\Services\ImageLock::acquire();
+
+        try {
+            // Remove physical files
+            $uploadDir = app('upload')->uploadDir;
+            foreach (['file_path', 'web_path', 'thumbnail_path'] as $col) {
+                if (!empty($artwork[$col])) {
+                    $fullPath = $uploadDir . '/' . $artwork[$col];
+                    if (is_file($fullPath)) {
+                        @unlink($fullPath);
+                    }
                 }
+            }
+
+            // Soft-delete: hide from all queries
+            $this->table('ld_artworks')
+                ->where('id', '=', $id)
+                ->update(['visibility' => 'removed']);
+        } finally {
+            if ($locked) {
+                \App\Services\ImageLock::release();
             }
         }
 
-        // Soft-delete: hide from all queries
-        $this->table('ld_artworks')
-            ->where('id', '=', $id)
-            ->update(['visibility' => 'removed']);
+        // Cancel mail that would otherwise arrive minutes later pointing at a
+        // page that no longer resolves — both artwork-origin and claim-origin.
+        app('notifications')->cancelQueuedForArtwork($id);
+
+        foreach ($claimants as $c) {
+            app('stats')->refreshUser((int) $c['claimant_id']);
+        }
 
         $this->provenance->log(
             $this->userId(),
@@ -404,6 +430,7 @@ final class GalleryController extends BaseController
             [
                 'session_id' => $artwork['session_id'],
                 'file' => $artwork['file_path'],
+                'lock_held' => $locked,
             ]
         );
 

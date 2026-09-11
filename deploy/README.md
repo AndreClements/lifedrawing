@@ -80,11 +80,85 @@ From local machine:
 ssh -i ~/.ssh/dreamhost_ldr ldrusr@69.163.140.7 'cd ~/lifedrawing.andresclements.com/randburg && git pull && ~/bin/composer install --no-dev --optimize-autoloader'
 ```
 
-If there are new migrations:
+### Deploys that carry a migration
+
+`git pull && composer && migrate` joined by `&&` sequences only those commands. Apache keeps
+serving and cron keeps firing throughout, so a request arriving between the code landing and
+the migration running hits new code against a missing column. Re-running a backfill afterwards
+repairs data, never the requests that already failed.
+
+Reversing the order does not help either: the migration file only arrives *with* the pull, so
+"migrate first" would find nothing pending and report a false success.
+
+So a migration deploy needs the web gate, not just a cron pause.
+
+**Install the maintenance gate first.** It cannot ship in the deploy it is meant to protect.
+Copy `deploy/maintenance.html` to the document root and merge the gate block from
+`deploy/dreamhost-root.htaccess` into `~/lifedrawing.andresclements.com/.htaccess`, replacing
+`CHANGE_ME` with a real token. Keep that token on the server only, never in git.
+
+Note the three things that are easy to get wrong, all handled in the template:
+
+- The flag lives at the **document root** (`~/lifedrawing.andresclements.com/maintenance.flag`),
+  not under `randburg/public/`. The app sits one level below the document root.
+- `R=503` alone does **not** serve the page — Apache discards the substitution for non-redirect
+  status codes, so the page comes from `ErrorDocument`.
+- The bypass is a GET, to `_health`, with the token. A bare token check would exempt every
+  route and method including writes, which is what the gate exists to prevent.
+
+Test it on its own before relying on it. An unchanged `storage/logs/` proves nothing, since a
+successful request logs nothing anyway — add a temporary marker line at the top of
+`public/index.php`, confirm the table below, then remove it.
+
+| With the flag up | Expect |
+|---|---|
+| Public GET | 503, maintenance page, no marker line |
+| Public POST | 503, no marker line |
+| GET `_health` without the token | 503, no marker line |
+| GET `_health` with the token | 200 JSON, marker line written |
+| POST with the token | 503 — the bypass must not extend to writes |
+| Flag removed | Normal routing on every route |
+
+**Then deploy:**
 
 ```bash
-ssh -i ~/.ssh/dreamhost_ldr ldrusr@69.163.140.7 'cd ~/lifedrawing.andresclements.com/randburg && php tools/migrate.php run'
+# 1. Gate up
+ssh -i ~/.ssh/dreamhost_ldr ldrusr@69.163.140.7 'touch ~/lifedrawing.andresclements.com/maintenance.flag'
+
+# 2. Pause both crons and WAIT for in-flight workers. Commenting out a cron line
+#    does not stop a process already running mid-batch — storage/process_images.lock
+#    and the notification lock are the signals.
+
+# 3. Pull, install, migrate
+ssh -i ~/.ssh/dreamhost_ldr ldrusr@69.163.140.7 'cd ~/lifedrawing.andresclements.com/randburg && git pull && ~/bin/composer install --no-dev --optimize-autoloader && php tools/migrate.php run'
+
+# 4. Verify, through the bypass token. Without it the check just returns the
+#    maintenance page and proves nothing.
+ssh -i ~/.ssh/dreamhost_ldr ldrusr@69.163.140.7 'cd ~/lifedrawing.andresclements.com/randburg && php tools/migrate.php status'
+curl -s 'https://lifedrawing.andresclements.com/randburg/_health?maint=YOUR_TOKEN'
+
+# 5. Gate down, restore the crons
+ssh -i ~/.ssh/dreamhost_ldr ldrusr@69.163.140.7 'rm ~/lifedrawing.andresclements.com/maintenance.flag'
 ```
+
+### Consent and access release — extra steps
+
+- Confirm `storage/withdrawn/` exists, is writable, and sits **outside** the document root.
+- Run the cutover purge **inside the window, while the notification cron is still paused**, so
+  nothing is delivered between the purge and the restart:
+
+  ```bash
+  php tools/purge-legacy-notifications.php            # dry run first
+  php tools/purge-legacy-notifications.php --execute
+  ```
+
+  Rows queued before migration 020 carry no source identifier, so deleting an artwork cannot
+  find and cancel their mail. They do not age out on their own either: `cleanup()` only removes
+  rows already sent. A handful of buffered notifications are lost; that is the right trade
+  against a cancellation guarantee that cannot be honoured.
+
+- After the gate comes down, withdraw consent on a test account and **fetch its image URL
+  directly**. It must 404. The database column alone has never proved anything.
 
 ## Creating Sessions (incl. off-pattern)
 

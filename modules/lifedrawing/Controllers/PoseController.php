@@ -174,7 +174,7 @@ final class PoseController extends BaseController
 
         if ($activeView === 'active') {
             $entries = $this->db->fetchAll(
-                "SELECT q.*, u.display_name, u.email, u.whatsapp_number,
+                "SELECT q.*, u.display_name, u.email, u.whatsapp_number, u.consent_state,
                         u.sitter_pref_friday, u.sitter_pref_saturday, u.sitter_pref_sunday,
                         u.sitter_auto_rejoin, u.sitter_notes,
                         s.title as session_title, s.session_date, s.id as sid
@@ -186,7 +186,7 @@ final class PoseController extends BaseController
             );
         } else {
             $entries = $this->db->fetchAll(
-                "SELECT q.*, u.display_name, u.email, u.whatsapp_number,
+                "SELECT q.*, u.display_name, u.email, u.whatsapp_number, u.consent_state,
                         u.sitter_pref_friday, u.sitter_pref_saturday, u.sitter_pref_sunday,
                         u.sitter_notes,
                         s.title as session_title, s.session_date, s.id as sid,
@@ -345,7 +345,7 @@ final class PoseController extends BaseController
         if ($redirect = $this->requireRole('admin', 'facilitator')) return $redirect;
 
         $entries = $this->db->fetchAll(
-            "SELECT q.*, u.display_name, u.whatsapp_number,
+            "SELECT q.*, u.display_name, u.whatsapp_number, u.consent_state,
                     u.sitter_pref_friday, u.sitter_pref_saturday, u.sitter_pref_sunday,
                     u.sitter_notes
              FROM ld_sitter_queue q

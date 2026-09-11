@@ -229,6 +229,9 @@ final class Kernel
         $this->router->get('/register/search-stub', [$auth, 'searchStubs'], 'auth.register.search_stubs');
         $this->router->get('/consent',         [$auth, 'consentForm'], 'auth.consent');
         $this->router->post('/consent',        [$auth, 'consent'], 'auth.consent.post');
+        // Withdrawal sits outside ConsentGate for the obvious reason: a person
+        // whose consent is pending or withdrawn must still be able to reach it.
+        $this->router->post('/consent/withdraw', [$auth, 'withdrawConsent'], 'auth.consent.withdraw');
         $this->router->get('/logout',          [$auth, 'logout'], 'auth.logout');
         $this->router->get('/forgot-password', [$auth, 'forgotPasswordForm'], 'auth.forgot_password');
         $this->router->get('/reset-password',  [$auth, 'resetPasswordForm'], 'auth.reset_password');

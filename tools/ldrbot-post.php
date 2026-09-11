@@ -127,7 +127,8 @@ $checkExisting = $pdo->prepare(
 $findArtwork = $pdo->prepare(
     "SELECT a.id, a.session_id
      FROM ld_artworks a
-     WHERE a.id = ?"
+     WHERE a.id = ?
+       AND a.visibility NOT IN ('removed', 'private')"
 );
 
 $findArtistClaim = $pdo->prepare(
@@ -136,13 +137,17 @@ $findArtistClaim = $pdo->prepare(
      JOIN users u ON c.claimant_id = u.id
      WHERE c.artwork_id = ? AND c.claim_type = 'artist' AND c.status = 'approved'
        AND u.email NOT LIKE '%.stub@local'
+       AND u.consent_state != 'withdrawn'
      LIMIT 1"
 );
 
+// source_type/source_id (migration 020) let this mail be cancelled if the
+// artwork is deleted before the digest goes out.
 $enqueueNotification = $pdo->prepare(
     "INSERT INTO ld_notification_queue
-     (recipient_id, recipient_name, recipient_email, notification_type, session_id, subject, summary, detail, footer)
-     VALUES (?, ?, ?, 'artworkCommented', ?, ?, ?, ?, ?)"
+     (recipient_id, recipient_name, recipient_email, notification_type, session_id,
+      source_type, source_id, subject, summary, detail, footer)
+     VALUES (?, ?, ?, 'artworkCommented', ?, 'artwork', ?, ?, ?, ?, ?)"
 );
 
 // --- Process each feedback entry ---
@@ -228,6 +233,7 @@ foreach ($feedback as $entry) {
                 $artist['display_name'],
                 $artist['email'],
                 (int) $artwork['session_id'],
+                (int) $artworkId,
                 "New Comment on Your Artwork",
                 "LDRBot commented on artwork you've claimed:\n\n\"{$snippet}\"",
                 "View the conversation: {$artworkLink}",

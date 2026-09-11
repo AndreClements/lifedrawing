@@ -109,6 +109,7 @@ $stmt = $pdo->prepare(
              JOIN users um ON cm.claimant_id = um.id
              WHERE cm.artwork_id = a.id AND cm.claim_type = 'model'
                AND cm.status = 'approved'
+               AND um.consent_state != 'withdrawn'
              LIMIT 1) as model_name,
             (SELECT COUNT(*) FROM ld_comments c WHERE c.artwork_id = a.id) as comment_count,
             (SELECT COUNT(*) FROM ld_comments c
@@ -118,6 +119,8 @@ $stmt = $pdo->prepare(
        AND ca.claim_type = 'artist' AND ca.status = 'approved'
      JOIN users ua ON ca.claimant_id = ua.id
      WHERE a.session_id = ?
+       AND a.visibility NOT IN ('removed', 'private')
+       AND ua.consent_state != 'withdrawn'
      ORDER BY a.pose_index ASC, a.created_at ASC"
 );
 $stmt->execute([LDRBOT_USER_ID, $sessionId]);

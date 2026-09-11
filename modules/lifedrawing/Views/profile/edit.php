@@ -108,3 +108,41 @@
         </div>
     </form>
 </section>
+
+<?php
+/**
+ * Consent withdrawal.
+ *
+ * The consent page tells people this lives "in your profile settings", so this
+ * is where it has to be. The copy is deliberately specific about the limit:
+ * withdrawal hides what you uploaded, it cannot retract a drawing somebody else
+ * made of you. Promising more than the software does is how consent notices
+ * become dishonest.
+ */
+$consentState = $_SESSION['consent_state'] ?? 'pending';
+?>
+<?php if ($consentState === 'granted'): ?>
+<section class="profile-edit consent-withdraw">
+    <h2>Withdraw consent</h2>
+
+    <p>Withdrawing consent hides any artwork you uploaded and removes your name from
+       public pages, the artist and sitter directories, and the site&rsquo;s feedback tooling.
+       Your session history is kept, because it is part of other people&rsquo;s records too.</p>
+
+    <p><strong>What it cannot do.</strong> It cannot withdraw a drawing another artist made
+       of you. Those belong to the person who drew them, and taking one down is a
+       conversation with Andr&eacute; rather than something this button can settle.
+       Call or message him and he will sort it out.</p>
+
+    <p>You can grant consent again whenever you like. Work that was hidden stays hidden
+       until you ask for it back, in case some of it was meant to stay private.</p>
+
+    <form method="POST" action="<?= route('auth.consent.withdraw') ?>"
+          class="form-inline confirm-action"
+          data-confirm="Withdraw consent? Your uploads will be hidden and your name removed from public pages.">
+        <?= csrf_field() ?>
+        <input type="hidden" name="confirm" value="yes">
+        <button type="submit" class="btn btn-outline btn-danger">Withdraw my consent</button>
+    </form>
+</section>
+<?php endif; ?>

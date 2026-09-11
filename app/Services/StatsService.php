@@ -24,22 +24,38 @@ final class StatsService
     /** Refresh stats for a single user. Call after claim approval, session join, etc. */
     public function refreshUser(int $userId): void
     {
+        $today = date('Y-m-d');
+
+        // Attendance means sessions that have actually happened. Counting every
+        // participation row let a booking for a future session inflate the total
+        // and the streak before the person had drawn a line.
         $totalSessions = (int) $this->db->fetchColumn(
-            "SELECT COUNT(DISTINCT session_id) FROM ld_session_participants WHERE user_id = ?",
-            [$userId]
+            "SELECT COUNT(DISTINCT sp.session_id)
+             FROM ld_session_participants sp
+             JOIN ld_sessions s ON s.id = sp.session_id
+             WHERE sp.user_id = ? AND s.session_date <= ?",
+            [$userId, $today]
         );
 
+        // Joined to ld_artworks: without it a deleted artwork stayed in the
+        // total forever, and refreshing the cache just recomputed the same
+        // wrong number.
         $totalArtworks = (int) $this->db->fetchColumn(
-            "SELECT COUNT(*) FROM ld_claims WHERE claimant_id = ? AND status = 'approved'",
+            "SELECT COUNT(*)
+             FROM ld_claims c
+             JOIN ld_artworks a ON a.id = c.artwork_id
+             WHERE c.claimant_id = ? AND c.status = 'approved'
+               AND a.visibility NOT IN ('removed', 'private')",
             [$userId]
         );
 
+        // Same rule, or "last attended" reports a session not yet held.
         $lastDate = $this->db->fetchColumn(
             "SELECT MAX(s.session_date)
              FROM ld_sessions s
              JOIN ld_session_participants sp ON sp.session_id = s.id
-             WHERE sp.user_id = ?",
-            [$userId]
+             WHERE sp.user_id = ? AND s.session_date <= ?",
+            [$userId, $today]
         );
 
         // Calculate streaks from session dates
@@ -87,7 +103,8 @@ final class StatsService
     /**
      * Calculate weekly streaks.
      *
-     * A streak is consecutive ISO weeks where the user attended at least one session.
+     * A streak is consecutive ISO weeks where the user attended at least one
+     * session that has already taken place. Future bookings do not count.
      * Current streak counts backwards from the most recent week with activity.
      * If the most recent activity was more than 2 weeks ago, current streak resets to 0.
      *
@@ -100,9 +117,9 @@ final class StatsService
             "SELECT DISTINCT YEARWEEK(s.session_date, 1) as yw
              FROM ld_sessions s
              JOIN ld_session_participants sp ON sp.session_id = s.id
-             WHERE sp.user_id = ?
+             WHERE sp.user_id = ? AND s.session_date <= ?
              ORDER BY yw DESC",
-            [$userId]
+            [$userId, date('Y-m-d')]
         );
 
         if (empty($weeks)) {
@@ -177,7 +194,8 @@ final class StatsService
             "SELECT a.caption
              FROM ld_artworks a
              JOIN ld_claims c ON c.artwork_id = a.id
-             WHERE c.claimant_id = ? AND c.status = 'approved' AND a.caption IS NOT NULL",
+             WHERE c.claimant_id = ? AND c.status = 'approved' AND a.caption IS NOT NULL
+               AND a.visibility NOT IN ('removed', 'private')",
             [$userId]
         );
 

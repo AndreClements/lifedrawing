@@ -3,6 +3,42 @@ RewriteEngine On
 # Life Drawing Randburg — route /randburg/* to the app
 # Place this at ~/lifedrawing.andresclements.com/.htaccess
 
+# --- Maintenance gate -------------------------------------------------------
+#
+# Deploys that run a migration need web traffic stopped, not just cron paused.
+# A request arriving between the code landing and the migration running hits new
+# code against a missing column, and re-running a backfill repairs data, never
+# the requests that already failed.
+#
+# This stops traffic BEFORE PHP: Apache answers from the static page, so no
+# front controller and no database connection.
+#
+# The flag lives at the DOCUMENT ROOT — ~/lifedrawing.andresclements.com/ — not
+# under randburg/public/. The app sits one level below the document root, so
+# %{DOCUMENT_ROOT} is the site directory.
+#
+#   touch ~/lifedrawing.andresclements.com/maintenance.flag     # gate up
+#   rm    ~/lifedrawing.andresclements.com/maintenance.flag     # gate down
+#
+# R=503 alone would NOT serve the page: Apache discards the substitution URL for
+# non-redirect status codes. The page has to come from ErrorDocument, and the
+# error document itself has to be excluded or its subrequest re-enters the rule.
+#
+# The bypass is deliberately narrow — a GET, to _health, carrying the token.
+# A bare token check would exempt every route and method, writes included, which
+# during a migration is precisely what this gate exists to prevent. Replace
+# CHANGE_ME with a real secret; keep it in this file on the server only.
+ErrorDocument 503 /maintenance.html
+
+RewriteCond %{DOCUMENT_ROOT}/maintenance.flag -f
+RewriteCond %{REQUEST_URI} !^/maintenance\.html$
+RewriteCond %{REQUEST_METHOD} !=GET [OR]
+RewriteCond %{REQUEST_URI} !^/randburg/_health$ [OR]
+RewriteCond %{QUERY_STRING} !(^|&)maint=CHANGE_ME
+RewriteRule ^ - [R=503,L]
+
+# --- Normal routing ---------------------------------------------------------
+
 # Static files: serve directly from public/
 RewriteCond %{DOCUMENT_ROOT}/randburg/public/$1 -f
 RewriteRule ^randburg/(.+)$ randburg/public/$1 [L]

@@ -28,8 +28,13 @@ final class ClaimController extends BaseController
             $claimType = 'artist';
         }
 
-        // Check artwork exists
-        $artwork = $this->table('ld_artworks')->where('id', '=', $artworkId)->first();
+        // Check artwork exists AND is still claimable. Without the visibility
+        // filter a direct POST can claim a deleted or consent-withdrawn artwork
+        // and raise a facilitator alert about it.
+        $artwork = $this->table('ld_artworks')
+            ->where('id', '=', $artworkId)
+            ->whereIn('visibility', ['session', 'claimed', 'public'])
+            ->first();
         if (!$artwork) {
             return Response::notFound('Artwork not found.');
         }
@@ -70,7 +75,7 @@ final class ClaimController extends BaseController
             ['claim_id' => $claimId, 'claim_type' => $claimType]
         );
 
-        app('notifications')->claimSubmitted($artworkId, $this->userId(), $claimType);
+        app('notifications')->claimSubmitted($artworkId, $this->userId(), $claimType, $claimId);
 
         if ($request->isHtmx()) {
             return Response::html('<span class="badge badge-pending">Claim pending</span>');
@@ -102,6 +107,9 @@ final class ClaimController extends BaseController
         if (!$artwork) {
             return Response::notFound('Associated artwork not found.');
         }
+        if (in_array($artwork['visibility'], ['removed', 'private'], true)) {
+            return Response::forbidden('That artwork is no longer available.');
+        }
         $session = $this->table('ld_sessions')->where('id', '=', (int) $artwork['session_id'])->first();
         if (!$this->auth->hasRole('admin') && (int) ($session['facilitator_id'] ?? 0) !== $this->userId()) {
             return Response::forbidden('You can only resolve claims for your own sessions.');
@@ -109,19 +117,26 @@ final class ClaimController extends BaseController
 
         $newStatus = $action === 'approve' ? 'approved' : 'rejected';
 
-        $this->table('ld_claims')
-            ->where('id', '=', $claimId)
-            ->update([
-                'status' => $newStatus,
-                'approved_by' => $this->userId(),
-                'resolved_at' => date('Y-m-d H:i:s'),
-            ]);
+        // Guard inside the UPDATE, not in a preceding read. A claimant can
+        // withdraw between this page rendering and the button being pressed;
+        // without the status condition a stale page silently reinstates it.
+        $affected = $this->db->execute(
+            "UPDATE ld_claims SET status = ?, approved_by = ?, resolved_at = ?
+             WHERE id = ? AND status = 'pending'",
+            [$newStatus, $this->userId(), date('Y-m-d H:i:s'), $claimId]
+        );
 
-        // If approved, refresh claimant stats (artwork is already public —
-        // consent happens in the room, claiming is for profile-building)
-        if ($newStatus === 'approved') {
-            app('stats')->refreshUser((int) $claim['claimant_id']);
+        if ($affected === 0) {
+            $message = 'That claim is no longer pending — it may have been withdrawn or already resolved.';
+            if ($request->isHtmx()) {
+                return Response::html('<span class="badge badge-muted">' . e($message) . '</span>');
+            }
+            return Response::redirect(route('claims.pending'));
         }
+
+        // Refresh either way: a reject must also drop the cached total, which
+        // the original only did on approve.
+        app('stats')->refreshUser((int) $claim['claimant_id']);
 
         $this->provenance->log(
             $this->userId(),
@@ -169,6 +184,7 @@ final class ClaimController extends BaseController
              JOIN ld_artworks a ON c.artwork_id = a.id
              JOIN ld_sessions s ON a.session_id = s.id
              WHERE c.status = 'pending'
+               AND a.visibility NOT IN ('removed', 'private')
                AND (s.facilitator_id = ? OR ? = 1)",
             [$this->userId(), $isAdmin ? 1 : 0]
         );
@@ -177,13 +193,17 @@ final class ClaimController extends BaseController
         $refreshed = [];
 
         foreach ($claims as $claim) {
-            $this->table('ld_claims')
-                ->where('id', '=', (int) $claim['id'])
-                ->update([
-                    'status' => 'approved',
-                    'approved_by' => $this->userId(),
-                    'resolved_at' => $now,
-                ]);
+            $affected = $this->db->execute(
+                "UPDATE ld_claims SET status = 'approved', approved_by = ?, resolved_at = ?
+                 WHERE id = ? AND status = 'pending'",
+                [$this->userId(), $now, (int) $claim['id']]
+            );
+
+            // Withdrawn between the page load and the button press — skip it
+            // rather than reinstating something the claimant retracted.
+            if ($affected === 0) {
+                continue;
+            }
 
             $this->provenance->log(
                 $this->userId(),
@@ -225,6 +245,7 @@ final class ClaimController extends BaseController
              JOIN ld_sessions s ON a.session_id = s.id
              JOIN users u ON c.claimant_id = u.id
              WHERE c.status = 'pending'
+               AND a.visibility NOT IN ('removed', 'private')
                AND (s.facilitator_id = ? OR ? = 1)
              ORDER BY c.claimed_at DESC",
             [$this->userId(), $isAdmin ? 1 : 0]

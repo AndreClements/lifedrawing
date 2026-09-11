@@ -105,7 +105,10 @@ if ($reprocess) {
 
 // --- Fetch unprocessed artworks ---
 
-$query = "SELECT id, file_path FROM ld_artworks WHERE processed_at IS NULL AND file_path IS NOT NULL ORDER BY id ASC";
+$query = "SELECT id, file_path FROM ld_artworks
+          WHERE processed_at IS NULL AND file_path IS NOT NULL
+            AND visibility NOT IN ('removed', 'private')
+          ORDER BY id ASC";
 if ($limit > 0) {
     $query .= " LIMIT {$limit}";
 }
@@ -127,6 +130,11 @@ $updateStmt = $pdo->prepare(
     "UPDATE ld_artworks SET web_path = ?, thumbnail_path = ?, processed_at = NOW() WHERE id = ?"
 );
 
+// Marks a row as looked-at without claiming derivatives were produced.
+$stampStmt = $pdo->prepare(
+    "UPDATE ld_artworks SET processed_at = NOW() WHERE id = ?"
+);
+
 foreach ($artworks as $artwork) {
     $id = (int) $artwork['id'];
     $filePath = $artwork['file_path'];
@@ -135,7 +143,11 @@ foreach ($artworks as $artwork) {
     // --- Source file check ---
 
     if (!file_exists($sourcePath)) {
-        logLine("  SKIP #{$id}: source file missing ({$filePath})");
+        logLine("  SKIP #{$id}: source file missing ({$filePath}) — stamping so it stops being rescanned");
+        // Without this the row keeps processed_at NULL and is reselected on
+        // every cron run for the life of the database. Derivatives stay NULL,
+        // so the view fallback chain still renders nothing for it.
+        $stampStmt->execute([$id]);
         $skipped++;
         continue;
     }

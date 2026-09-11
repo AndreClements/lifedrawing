@@ -13,7 +13,7 @@ A digital home for LDR that enables:
 - **Artwork archive** — facilitator uploads batches of drawings per session with pose duration and labels, automatic image processing (EXIF rotation, 10MP cap, WebP conversion, three-tier thumbnails). Bulk backfill from phone photos via CLI (`stage-phone-photos.ps1` + `import-session-photos.php`) for whole-session imports
 - **Claim system** — artists and models claim their work/likeness after sessions, building personal portfolios. Intent-preserving registration: unauthenticated users are redirected through register/login and returned to their claim
 - **Comments** — conversation on individual artworks, with artist/model comments surfaced first and role badges
-- **Consent system** — `pending → granted → withdrawn` state machine, enforced by middleware before identity-exposing operations. Non-consented users see contextual prompts instead of disabled buttons; HTMX errors redirect to consent page
+- **Consent system** — `pending → granted → withdrawn` state machine, enforced by middleware before identity-exposing operations. Non-consented users see contextual prompts instead of disabled buttons; HTMX errors redirect to consent page. Withdrawal is reachable from profile settings and **moves the person's uploaded files out of the web root** into `storage/withdrawn/`, because `.htaccess` serves existing files without PHP — hiding the database row alone leaves the image fetchable at its direct URL. The gate reads consent from the database, not the browser session, so a second logged-in browser cannot keep a stale `granted`. Re-granting restores participation but deliberately does not republish hidden work; `tools/restore-withdrawn.php` does that on request
 - **Strava-for-artistry** — personal dashboard with attendance streaks, weekly heatmap, session timeline, role distribution, milestone tracking
 - **Public profiles** — artists and models build visible portfolios through participation, with name privacy gating (real names only visible to fellow session participants)
 - **Sitter queue** — models join a waiting list with day preferences and WhatsApp contact; facilitators schedule, complete, and manage entries from `/pose/queue`. Auto-rejoin option. Consent-gated join, provenance-logged
@@ -179,6 +179,10 @@ php tools/instagram-prep.php --session=ID              # Render carousel slides 
 php tools/instagram-prep.php --session=ID --mark-posted=URL   # Record posted images in the repost-safety ledger
 php tools/reset-production.php         # Reset production state (dangerous)
 php tools/test-mail.php [email]        # Send test email via configured SMTP
+php tools/restore-withdrawn.php --user=ID     # Restore artwork archived by a consent withdrawal (dry run)
+php tools/restore-withdrawn.php --user=ID --execute      # Apply
+php tools/purge-legacy-notifications.php      # One-off cutover purge of unsent source-less queue rows
+php tools/test-consent-access.php             # Verify withdrawal, file access and eligibility (local DB only)
 php tools/check-users.php                     # Inspect account state (stubs, consent, roles)
 php tools/check-users.php --stubs-only        # Show only unclaimed stub accounts
 php tools/merge-stubs.php                     # Merge hardcoded stub→real account pairs
@@ -227,6 +231,7 @@ The same staged originals also feed the Instagram pipeline (`tools/instagram-pre
 | GET/POST | `/register` | Registration (supports `?intent=` for post-auth redirect) |
 | GET | `/logout` | Logout |
 | GET/POST | `/consent` | Consent disclosure |
+| POST | `/consent/withdraw` | Withdraw consent (hides uploads, archives their files) |
 | GET/POST | `/forgot-password` | Request password reset |
 | GET/POST | `/reset-password` | Reset password (with token) |
 

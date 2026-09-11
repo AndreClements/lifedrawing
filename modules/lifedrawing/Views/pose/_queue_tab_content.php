@@ -37,6 +37,9 @@
                             <span class="text-muted">Requested <?= format_date($entry['requested_at']) ?></span>
                         </div>
 
+                        <?php if (($entry['consent_state'] ?? '') === 'withdrawn'): ?>
+                            <span class="badge badge-muted" title="This person has withdrawn consent — talk to them before scheduling">Consent withdrawn</span>
+                        <?php endif; ?>
                         <?php if ($entry['whatsapp_number']): ?>
                             <?php $waNum = preg_replace('/[^0-9]/', '', $entry['whatsapp_number']); ?>
                             <div class="queue-whatsapp">
