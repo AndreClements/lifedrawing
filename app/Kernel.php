@@ -183,6 +183,13 @@ final class Kernel
         });
 
         // Notification service (email alerts, opt-in)
+        // Keeps ld_sitter_queue in step with who is actually booked as a model,
+        // and owns the single classification routine shared by the live sweep
+        // and tools/fix-sitter-queue.php.
+        $this->container->singleton('sitterQueue', function (Container $c) {
+            return new \App\Services\SitterQueueService($c->get('db'));
+        });
+
         $this->container->singleton('notifications', function (Container $c) {
             return new \App\Services\NotificationService($c->get('mail'), $c->get('db'));
         });
@@ -229,6 +236,9 @@ final class Kernel
         $this->router->get('/register/search-stub', [$auth, 'searchStubs'], 'auth.register.search_stubs');
         $this->router->get('/consent',         [$auth, 'consentForm'], 'auth.consent');
         $this->router->post('/consent',        [$auth, 'consent'], 'auth.consent.post');
+        // Withdrawal sits outside ConsentGate for the obvious reason: a person
+        // whose consent is pending or withdrawn must still be able to reach it.
+        $this->router->post('/consent/withdraw', [$auth, 'withdrawConsent'], 'auth.consent.withdraw');
         $this->router->get('/logout',          [$auth, 'logout'], 'auth.logout');
         $this->router->get('/forgot-password', [$auth, 'forgotPasswordForm'], 'auth.forgot_password');
         $this->router->get('/reset-password',  [$auth, 'resetPasswordForm'], 'auth.reset_password');

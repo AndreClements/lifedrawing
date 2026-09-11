@@ -59,7 +59,13 @@ final class PoseController extends BaseController
 
         $userId = $this->userId();
 
-        // Duplicate check: max one active entry
+        // Duplicate check: max one active entry.
+        //
+        // Read-then-insert with no lock is the very pattern SitterQueueService
+        // refuses to use, and a double-submit here leaves two 'waiting' rows.
+        // activeEntry() only ever resolves the earliest, so the second would sit
+        // in the queue forever, invisible to the sitter and looking like an
+        // available model to the facilitator.
         $existing = $this->table('ld_sitter_queue')
             ->where('user_id', '=', $userId)
             ->whereIn('status', ['waiting', 'scheduled'])
@@ -107,11 +113,32 @@ final class PoseController extends BaseController
                 'sitter_auto_rejoin'   => $autoRejoin,
             ]);
 
-        $entryId = $this->table('ld_sitter_queue')->insert([
-            'user_id' => $userId,
-            'note'    => $note ?: null,
-            'status'  => 'waiting',
-        ]);
+        // One statement, so a double-submit cannot create two active entries.
+        // The check above is for the redirect; this is what actually guarantees
+        // it. activeEntry() only ever resolves the earliest row, so a second one
+        // would sit in the queue invisible to the sitter and look like an
+        // available model to the facilitator.
+        //
+        // requested_at from PHP, in the app timezone: left to MySQL's DEFAULT it
+        // takes the server clock, which runs about nine hours behind SAST, and
+        // classify() compares it against a PHP date.
+        $this->db->execute(
+            "INSERT INTO ld_sitter_queue (user_id, note, status, requested_at)
+             SELECT ?, ?, 'waiting', ?
+             FROM DUAL
+             WHERE NOT EXISTS (
+                 SELECT 1 FROM ld_sitter_queue
+                 WHERE user_id = ? AND status IN ('waiting', 'scheduled')
+             )",
+            [$userId, $note ?: null, date('Y-m-d H:i:s'), $userId]
+        );
+
+        $entryId = (int) $this->db->fetchColumn(
+            "SELECT id FROM ld_sitter_queue
+             WHERE user_id = ? AND status IN ('waiting', 'scheduled')
+             ORDER BY requested_at ASC LIMIT 1",
+            [$userId]
+        );
 
         $this->provenance->log(
             $userId,
@@ -174,7 +201,7 @@ final class PoseController extends BaseController
 
         if ($activeView === 'active') {
             $entries = $this->db->fetchAll(
-                "SELECT q.*, u.display_name, u.email, u.whatsapp_number,
+                "SELECT q.*, u.display_name, u.email, u.whatsapp_number, u.consent_state,
                         u.sitter_pref_friday, u.sitter_pref_saturday, u.sitter_pref_sunday,
                         u.sitter_auto_rejoin, u.sitter_notes,
                         s.title as session_title, s.session_date, s.id as sid
@@ -182,11 +209,11 @@ final class PoseController extends BaseController
                  JOIN users u ON q.user_id = u.id
                  LEFT JOIN ld_sessions s ON q.scheduled_session_id = s.id
                  WHERE q.status IN ('waiting', 'scheduled')
-                 ORDER BY q.requested_at ASC"
+                 ORDER BY FIELD(q.status, 'waiting', 'scheduled'), q.requested_at ASC"
             );
         } else {
             $entries = $this->db->fetchAll(
-                "SELECT q.*, u.display_name, u.email, u.whatsapp_number,
+                "SELECT q.*, u.display_name, u.email, u.whatsapp_number, u.consent_state,
                         u.sitter_pref_friday, u.sitter_pref_saturday, u.sitter_pref_sunday,
                         u.sitter_notes,
                         s.title as session_title, s.session_date, s.id as sid,
@@ -240,26 +267,54 @@ final class PoseController extends BaseController
             return Response::notFound('Queue entry not found.');
         }
 
-        $update = [
-            'status'      => 'scheduled',
-            'resolved_at' => date('Y-m-d H:i:s'),
-            'resolved_by' => $this->userId(),
-        ];
-        if ($sessionId > 0) {
-            $update['scheduled_session_id'] = $sessionId;
+        // A real session is now required. "No specific session" left
+        // scheduled_session_id NULL, which the auto-complete could never match,
+        // so those entries sat in the queue forever.
+        $session = $sessionId > 0
+            ? $this->table('ld_sessions')->where('id', '=', $sessionId)->first()
+            : null;
+
+        if (!$session) {
+            return Response::error('Pick the session they are booked for.', 400);
         }
 
-        $this->table('ld_sitter_queue')
-            ->where('id', '=', $entryId)
-            ->update($update);
+        // The dropdown only offers upcoming sessions, but the POST was not
+        // checked. Scheduling onto a past session inserts a participant row and
+        // rewrites attendance history, which leave() explicitly refuses to do
+        // for exactly the same reason.
+        if (session_starts_at($session) <= time()) {
+            return Response::error('That session has already started.', 400);
+        }
 
-        $this->provenance->log(
-            $this->userId(),
-            'sitter_queue.schedule',
-            'sitter_queue',
-            $entryId,
-            ['user_id' => $entry['user_id'], 'session_id' => $sessionId]
-        );
+        $userId = (int) $entry['user_id'];
+
+        // Scheduling must also produce the booking. Marking the queue entry
+        // without adding the participant left the queue saying "scheduled"
+        // while the session itself had no model.
+        $already = $this->table('ld_session_participants')
+            ->where('session_id', '=', $sessionId)
+            ->where('user_id', '=', $userId)
+            ->where('role', '=', 'model')
+            ->first();
+
+        if (!$already) {
+            $this->table('ld_session_participants')->insert([
+                'session_id' => $sessionId,
+                'user_id'    => $userId,
+                'role'       => 'model',
+            ]);
+            $this->provenance->log(
+                $this->userId(),
+                'participant.add',
+                'session',
+                $sessionId,
+                ['added_user' => $userId, 'role' => 'model', 'via' => 'sitter_queue']
+            );
+            app('stats')->refreshUser($userId);
+        }
+
+        // One code path owns the queue state.
+        app('sitterQueue')->onModelAdded($userId, $sessionId, $this->userId());
 
         return Response::redirect(route('pose.queue'));
     }
@@ -283,7 +338,9 @@ final class PoseController extends BaseController
             return Response::notFound('Queue entry not found.');
         }
 
-        $this->completeEntry($entry);
+        // Pressed by hand, so notify — subject to the service's own cutoff on
+        // sessions more than 30 days past.
+        app('sitterQueue')->apply($entryId, $this->userId(), true);
 
         return Response::redirect(route('pose.queue'));
     }
@@ -344,14 +401,16 @@ final class PoseController extends BaseController
         if ($redirect = $this->requireAuth()) return $redirect;
         if ($redirect = $this->requireRole('admin', 'facilitator')) return $redirect;
 
+        $this->autoCompleteExpired();
+
         $entries = $this->db->fetchAll(
-            "SELECT q.*, u.display_name, u.whatsapp_number,
+            "SELECT q.*, u.display_name, u.whatsapp_number, u.consent_state,
                     u.sitter_pref_friday, u.sitter_pref_saturday, u.sitter_pref_sunday,
                     u.sitter_notes
              FROM ld_sitter_queue q
              JOIN users u ON q.user_id = u.id
              WHERE q.status IN ('waiting', 'scheduled')
-             ORDER BY q.requested_at ASC"
+             ORDER BY FIELD(q.status, 'waiting', 'scheduled'), q.requested_at ASC"
         );
 
         $sessionDay = $request->input('day', '');
@@ -364,61 +423,22 @@ final class PoseController extends BaseController
 
     // --- Private helpers ---
 
-    /** Render a partial (no layout wrapper) for HTMX responses. */
-    private function partial(string $view, array $data = []): Response
-    {
-        return Response::html($this->view->render($view, $data));
-    }
-
-    /** Auto-complete scheduled entries whose session date has passed. */
+    /**
+     * Bring the queue up to date.
+     *
+     * The rules live in SitterQueueService::classify(), shared with
+     * tools/fix-sitter-queue.php, so the live sweep and the repair tool cannot
+     * drift apart. The old version here had its own logic and an inner JOIN, so
+     * an entry whose session had been deleted was unreachable forever.
+     *
+     * Off until the backlog has been swept — see config/app.php.
+     */
     private function autoCompleteExpired(): void
     {
-        $expired = $this->db->fetchAll(
-            "SELECT q.*
-             FROM ld_sitter_queue q
-             JOIN ld_sessions s ON q.scheduled_session_id = s.id
-             WHERE q.status = 'scheduled'
-               AND s.session_date < CURDATE()"
-        );
-
-        foreach ($expired as $entry) {
-            $this->completeEntry($entry);
-        }
-    }
-
-    /** Complete a queue entry: update status, auto-rejoin if applicable, notify. */
-    private function completeEntry(array $entry): void
-    {
-        $this->table('ld_sitter_queue')
-            ->where('id', '=', (int) $entry['id'])
-            ->update([
-                'status'      => 'completed',
-                'resolved_at' => date('Y-m-d H:i:s'),
-                'resolved_by' => $this->userId(),
-            ]);
-
-        $userId = (int) $entry['user_id'];
-
-        // Check auto-rejoin preference
-        $user = $this->table('users')->where('id', '=', $userId)->first();
-        $autoRejoined = false;
-
-        if ($user && $user['sitter_auto_rejoin']) {
-            $this->table('ld_sitter_queue')->insert([
-                'user_id' => $userId,
-                'status'  => 'waiting',
-            ]);
-            $autoRejoined = true;
+        if (!config('app.sitter_auto_complete')) {
+            return;
         }
 
-        $this->provenance->log(
-            $this->userId(),
-            'sitter_queue.complete',
-            'sitter_queue',
-            (int) $entry['id'],
-            ['user_id' => $userId, 'auto_rejoined' => $autoRejoined]
-        );
-
-        app('notifications')->sitterSessionCompleted($userId, $autoRejoined);
+        app('sitterQueue')->sweep($this->userId());
     }
 }

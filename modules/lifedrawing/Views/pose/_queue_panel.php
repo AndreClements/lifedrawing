@@ -36,6 +36,9 @@ $matchCol = $dayMap[$sessionDay] ?? '';
                         <?php if ($entry['status'] === 'scheduled'): ?>
                             <span class="badge badge-info" title="Already scheduled">Sched.</span>
                         <?php endif; ?>
+                        <?php if (($entry['consent_state'] ?? '') === 'withdrawn'): ?>
+                            <span class="badge badge-muted" title="Consent withdrawn — talk to them first">Withdrawn</span>
+                        <?php endif; ?>
                         <?php if ($days): ?>
                             <span class="badge badge-muted"><?= implode(', ', $days) ?></span>
                         <?php endif; ?>

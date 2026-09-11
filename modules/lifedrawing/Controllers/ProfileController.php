@@ -130,7 +130,17 @@ final class ProfileController extends BaseController
             [$user['display_name'], '/profile/' . hex_id($id, $user['display_name'])],
         ]);
 
+        // Facilitator-only. Never on a public profile: a count of missed
+        // sessions next to someone's work is a mark, not information.
+        $noShows = app('auth')->hasRole('admin', 'facilitator')
+            ? (int) $this->db->fetchColumn(
+                "SELECT COUNT(*) FROM ld_session_participants WHERE user_id = ? AND attendance = 'no_show'",
+                [$id]
+            )
+            : null;
+
         return $this->render('profile.show', [
+            'noShows' => $noShows,
             'profile' => $user,
             'artworks' => $artworks,
             'sessions' => $sessions,

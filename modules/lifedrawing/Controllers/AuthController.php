@@ -110,7 +110,11 @@ final class AuthController extends BaseController
 
                 app('notifications')->stubClaimed($claimStubId, $name, $email, $previousName, $sessionCount);
             } else {
-                $this->auth->register($name, $email, $password);
+                $newUserId = $this->auth->register($name, $email, $password);
+                // Plain registrations only. A stub claim already sends
+                // stubClaimed, and two emails about one person arriving reads
+                // as a bug rather than as thoroughness.
+                app('notifications')->userRegistered($newUserId);
             }
             $this->auth->attempt($email, $password);
 
@@ -154,6 +158,46 @@ final class AuthController extends BaseController
             }
         }
         return Response::redirect(route('home'));
+    }
+
+    /**
+     * POST /consent/withdraw — the person withdraws consent.
+     *
+     * Reports an incomplete withdrawal honestly rather than redirecting as if
+     * it had worked. If a file could not be moved out of the public tree it is
+     * still being served, and the one thing this must never do is claim success.
+     */
+    public function withdrawConsent(Request $request): Response
+    {
+        $userId = $this->auth->currentUserId();
+        if ($userId === null) {
+            return Response::redirect(route('auth.login'));
+        }
+
+        if ($request->input('confirm') !== 'yes') {
+            return Response::redirect(route('profiles.edit'));
+        }
+
+        $result = $this->auth->withdrawConsent($userId);
+
+        $user = db('users')->where('id', '=', $userId)->first();
+
+        if (!$result['complete']) {
+            return $this->render('profile.edit', [
+                'user'  => $user,
+                'error' => 'Your consent has been withdrawn and your work is hidden from the site. '
+                    . 'However, ' . count($result['remaining']) . ' file(s) could not be removed from '
+                    . 'the server automatically. André has been notified and will remove them by hand. '
+                    . 'We are telling you rather than reporting this as done.',
+            ], 'Account');
+        }
+
+        return $this->render('profile.edit', [
+            'user'    => $user,
+            'success' => 'Consent withdrawn. Your uploads are hidden and your name has been removed '
+                . 'from public pages. You can grant consent again at any time, though hidden work '
+                . 'stays hidden until you ask for it back.',
+        ], 'Account');
     }
 
     // --- Logout ---
@@ -288,7 +332,10 @@ final class AuthController extends BaseController
                 $claimType = in_array($params['claim_type'] ?? '', ['artist', 'model'], true)
                     ? $params['claim_type'] : 'artist';
 
-                $artwork = db('ld_artworks')->where('id', '=', $artworkId)->first();
+                $artwork = db('ld_artworks')
+                    ->where('id', '=', $artworkId)
+                    ->whereIn('visibility', ['session', 'claimed', 'public'])
+                    ->first();
                 if ($artwork) {
                     $existing = db('ld_claims')
                         ->where('artwork_id', '=', $artworkId)
@@ -301,10 +348,11 @@ final class AuthController extends BaseController
                             "INSERT INTO ld_claims (artwork_id, claimant_id, claim_type, status) VALUES (?, ?, ?, 'pending')",
                             [$artworkId, $userId, $claimType]
                         );
-                        $this->provenance->log($userId, 'claim.create', 'claim', (int) $this->db->lastInsertId(), [
+                        $claimId = (int) $this->db->lastInsertId();
+                        $this->provenance->log($userId, 'claim.create', 'claim', $claimId, [
                             'claim_type' => $claimType, 'via' => 'intent',
                         ]);
-                        app('notifications')->claimSubmitted($artworkId, $userId, $claimType);
+                        app('notifications')->claimSubmitted($artworkId, $userId, $claimType, $claimId);
                     }
                     return Response::redirect(route('artworks.show', ['id' => hex_id($artworkId)]));
                 }
@@ -316,6 +364,19 @@ final class AuthController extends BaseController
                     ? $params['role'] : 'artist';
 
                 $session = db('ld_sessions')->where('id', '=', $sessionId)->first();
+
+                // Same gates as SessionController::join(). This path skipped
+                // both: a crafted ?intent= link could book a past session, or
+                // book as model on a session whose sitters are arranged
+                // elsewhere (model_join_enabled = 0), which is the whole point
+                // of that flag.
+                if ($session && session_starts_at($session) <= time()) {
+                    return Response::redirect(route('sessions.show', ['id' => hex_id($sessionId, session_title($session))]));
+                }
+                if ($session && $role === 'model' && !model_join_open($session)) {
+                    return Response::redirect(route('sessions.show', ['id' => hex_id($sessionId, session_title($session))]));
+                }
+
                 if ($session) {
                     $existing = db('ld_session_participants')
                         ->where('session_id', '=', $sessionId)
@@ -332,6 +393,15 @@ final class AuthController extends BaseController
                         $this->provenance->log($userId, 'session.join', 'session_participant', $sessionId, [
                             'role' => $role, 'via' => 'intent',
                         ]);
+
+                        // Separate code from SessionController::join(), and easy
+                        // to miss. Without these two lines a booking made during
+                        // sign-up is silent, and a sitter booked this way stays
+                        // 'waiting' forever — the original bug, reproduced.
+                        if ($role === 'model') {
+                            app('sitterQueue')->onModelAdded($userId, $sessionId, $userId);
+                        }
+                        app('notifications')->sessionJoined($sessionId, $userId, $role);
                     }
                     return Response::redirect(route('sessions.show', ['id' => hex_id($sessionId, session_title($session))]));
                 }

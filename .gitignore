@@ -17,6 +17,9 @@
 /storage/photo-import/
 /storage/instagram/
 /storage/ldrbot-images/
+/storage/*.lock
+/storage/withdrawn/
+
 
 # LDRBot working files + SSH/scratch output (transient, may hold participant data)
 /feedback.json

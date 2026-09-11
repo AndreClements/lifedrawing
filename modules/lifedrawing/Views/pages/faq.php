@@ -7,7 +7,7 @@
         <h3>General Information</h3>
         <div class="info-block">
             <ul>
-                <li>Scheduling and bookings happen through our <a href="https://chat.whatsapp.com/" target="_blank" rel="noopener">WhatsApp group</a>.</li>
+                <li>Session announcements and day-to-day chat happen in our <a href="<?= e(config('app.whatsapp_url')) ?>" target="_blank" rel="noopener">WhatsApp group</a>. You can book and cancel your place here on the site.</li>
                 <li>Sessions are hosted by Andr&eacute; Clements (<a href="tel:+27828120549">+27 82 812 0549</a>) at <a href="https://maps.google.com/?q=10+Victoria+Street,+Kensington-B,+Randburg" target="_blank" rel="noopener">10 Victoria Street, Kensington-B, Randburg</a>.</li>
             </ul>
             <p><strong>Session times:</strong></p>
@@ -98,7 +98,7 @@
             <summary>What does it cost?</summary>
             <div class="faq-answer">
                 <p>The suggested contribution is <strong>R 350</strong>, or as near as is affordable to you.</p>
-                <p>If you cancel less than 48 hours before a fully booked session a 50% cancellation fee is appreciated.</p>
+                <p>If you cancel less than 48 hours before a session, a 50% contribution is appreciated.</p>
             </div>
         </details>
     </div>

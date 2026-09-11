@@ -91,6 +91,74 @@ $memberSince = $stats['member_since'] ?? null;
     </div>
 
     <div class="dashboard-columns">
+        <?php if (($noShows ?? 0) > 0): ?>
+            <p class="text-muted text-sm dashboard-noshow">
+                Missed sessions: <?= (int) $noShows ?>
+                <em>(only you and the facilitator see this)</em>
+            </p>
+        <?php endif; ?>
+
+        <!-- Upcoming bookings -->
+        <div class="dashboard-section">
+            <h3>Your upcoming sessions</h3>
+            <?php if (empty($upcoming)): ?>
+                <div class="empty-state small">
+                    <p>Nothing booked yet. <a href="<?= route('sessions.index') ?>">See what&rsquo;s coming up</a></p>
+                </div>
+            <?php else: ?>
+                <div class="upcoming-list">
+                    <?php foreach ($upcoming as $booking): ?>
+                        <?php $bookingHex = hex_id((int) $booking['id'], session_title($booking)); ?>
+                        <div class="upcoming-entry">
+                            <div class="upcoming-when">
+                                <strong><?= date('j', strtotime($booking['session_date'])) ?></strong>
+                                <small><?= date('M', strtotime($booking['session_date'])) ?></small>
+                            </div>
+                            <div class="upcoming-what">
+                                <a href="<?= route('sessions.show', ['id' => $bookingHex]) ?>">
+                                    <em><?= e(session_title($booking)) ?></em>
+                                </a>
+                                <div class="text-muted text-sm">
+                                    <?= format_date($booking['session_date']) ?>
+                                    &middot; <?= e($booking['role']) ?>
+                                </div>
+                            </div>
+                            <div class="upcoming-action">
+                                <?php
+                                // Cancellable roles only. Creating a session
+                                // auto-adds the facilitator as 'facilitator',
+                                // and leave() refuses that role - so André's own
+                                // sessions used to show a Cancel button that
+                                // confirmed, navigated, and did nothing at all.
+                                $cancellable = array_values(array_intersect(
+                                    array_map('trim', explode(',', (string) $booking['role'])),
+                                    ['artist', 'model', 'observer']
+                                ));
+                                ?>
+                                <?php if ($cancellable): ?>
+                                    <?php
+                                    $confirmText = is_late_cancel($booking)
+                                        ? 'This session starts in under 48 hours. A 50% contribution is appreciated for late cancellations. Cancel your place?'
+                                        : 'Cancel your place at this session?';
+                                    ?>
+                                    <form method="POST" action="<?= route('sessions.leave', ['id' => $bookingHex]) ?>"
+                                          class="form-inline confirm-action"
+                                          data-confirm="<?= e($confirmText) ?>">
+                                        <?= csrf_field() ?>
+                                        <input type="hidden" name="role" value="<?= e($cancellable[0]) ?>">
+                                        <input type="hidden" name="return" value="dashboard">
+                                        <button type="submit" class="btn-sm btn-outline">Cancel</button>
+                                    </form>
+                                <?php else: ?>
+                                    <span class="text-muted text-sm">hosting</span>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+            <?php endif; ?>
+        </div>
+
         <!-- Session Timeline -->
         <div class="dashboard-section">
             <h3>Recent Sessions</h3>

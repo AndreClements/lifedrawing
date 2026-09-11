@@ -35,7 +35,8 @@ final class NotificationService
     {
         $recipients = $this->db->fetchAll(
             "SELECT id, email, display_name FROM users
-             WHERE notify_new_session = 1 AND id != ? AND email NOT LIKE '%.stub@local'",
+             WHERE notify_new_session = 1 AND id != ? AND email NOT LIKE '%.stub@local'
+               AND consent_state != 'withdrawn'",
             [$creatorId]
         );
 
@@ -60,7 +61,14 @@ final class NotificationService
                 "A new drawing session has been scheduled:\n\n{$title}\n{$date} at {$venue}",
                 $sessionId,
                 "View details and join: {$link}",
-                $footer
+                $footer,
+                // Sourced so cancelling the session cancels this mail too.
+                // Creating a session, spotting a wrong date and cancelling
+                // inside the five-minute digest window is an ordinary thing to
+                // do; without a source, everyone still receives "New Session"
+                // carrying a link to a page that no longer exists.
+                'session',
+                $sessionId
             );
         }
     }
@@ -76,7 +84,8 @@ final class NotificationService
              FROM users u
              JOIN ld_session_participants sp ON sp.user_id = u.id
              WHERE sp.session_id = ? AND u.notify_session_cancelled = 1
-               AND u.email NOT LIKE '%.stub@local'",
+               AND u.email NOT LIKE '%.stub@local'
+               AND u.consent_state != 'withdrawn'",
             [$session['id']]
         );
 
@@ -108,7 +117,7 @@ final class NotificationService
     {
         $claimant = $this->db->fetch(
             "SELECT id, email, display_name, notify_claim_resolved
-             FROM users WHERE id = ?",
+             FROM users WHERE id = ? AND consent_state != 'withdrawn'",
             [$claim['claimant_id']]
         );
 
@@ -139,7 +148,9 @@ final class NotificationService
             "{$emoji} Your {$claim['claim_type']} claim on an artwork from \"{$sessionTitle}\" has been {$action}.",
             $artwork ? (int) $artwork['session_id'] : null,
             "View the artwork: {$artworkLink}",
-            $footer
+            $footer,
+            isset($claim['id']) ? 'claim' : 'artwork',
+            isset($claim['id']) ? (int) $claim['id'] : $artworkId
         );
     }
 
@@ -147,12 +158,13 @@ final class NotificationService
      * Operational: new claim submitted.
      * Notifies facilitators so they can review and approve/reject.
      */
-    public function claimSubmitted(int $artworkId, int $claimantId, string $claimType): void
+    public function claimSubmitted(int $artworkId, int $claimantId, string $claimType, ?int $claimId = null): void
     {
         $facilitators = $this->db->fetchAll(
             "SELECT id, email, display_name FROM users
              WHERE role IN ('admin', 'facilitator') AND id != ?
-               AND email NOT LIKE '%.stub@local'",
+               AND email NOT LIKE '%.stub@local'
+               AND consent_state != 'withdrawn'",
             [$claimantId]
         );
 
@@ -179,9 +191,162 @@ final class NotificationService
                 "New {$claimType} claim from {$claimantName}",
                 "{$claimantName} has submitted a {$claimType} claim on an artwork from \"{$sessionTitle}\".",
                 $artwork ? (int) $artwork['session_id'] : null,
-                "Review pending claims: {$claimsLink}"
+                "Review pending claims: {$claimsLink}",
+                null,
+                $claimId !== null ? 'claim' : 'artwork',
+                $claimId ?? $artworkId
             );
         }
+    }
+
+    /**
+     * Operational: someone booked a place at a session.
+     *
+     * Fired from BOTH join paths — SessionController::join() and the
+     * register-with-intent path in AuthController. They are separate code, and
+     * missing the second would silence exactly the bookings André most wants to
+     * hear about: the ones from people who have only just signed up.
+     */
+    public function sessionJoined(int $sessionId, int $userId, string $role): void
+    {
+        $facilitators = $this->facilitators($userId);
+        if (empty($facilitators)) return;
+
+        $session = $this->db->fetch("SELECT * FROM ld_sessions WHERE id = ?", [$sessionId]);
+        if (!$session) return;
+
+        $user = $this->db->fetch("SELECT display_name FROM users WHERE id = ?", [$userId]);
+        $name = $user['display_name'] ?? 'Someone';
+        $title = session_title($session);
+        $date = format_date($session['session_date']);
+        $link = $this->baseUrl . route('sessions.show', ['id' => hex_id($sessionId, $title)]);
+
+        $artists = (int) $this->db->fetchColumn(
+            "SELECT COUNT(*) FROM ld_session_participants WHERE session_id = ? AND role = 'artist'",
+            [$sessionId]
+        );
+
+        foreach ($facilitators as $fac) {
+            $this->enqueue(
+                (int) $fac['id'],
+                $fac['display_name'],
+                $fac['email'],
+                'sessionJoined',
+                "Booking: {$name} for {$title}",
+                "{$name} booked a place as {$role}.
+
+{$title}
+{$date}
+Artists now booked: {$artists}",
+                $sessionId,
+                "View the session: {$link}",
+                null,
+                'session',
+                $sessionId
+            );
+        }
+    }
+
+    /**
+     * Operational: someone cancelled their own booking.
+     *
+     * The other half of the loop. Without it a cancellation is silent and the
+     * only clue is a number that quietly went down. $lateNotice flags a
+     * cancellation inside 48 hours, which is the case worth seeing at a glance.
+     */
+    public function sessionLeft(int $sessionId, int $userId, string $role, bool $lateNotice): void
+    {
+        $facilitators = $this->facilitators($userId);
+        if (empty($facilitators)) return;
+
+        $session = $this->db->fetch("SELECT * FROM ld_sessions WHERE id = ?", [$sessionId]);
+        if (!$session) return;
+
+        $user = $this->db->fetch("SELECT display_name FROM users WHERE id = ?", [$userId]);
+        $name = $user['display_name'] ?? 'Someone';
+        $title = session_title($session);
+        $date = format_date($session['session_date']);
+        $link = $this->baseUrl . route('sessions.show', ['id' => hex_id($sessionId, $title)]);
+
+        $artists = (int) $this->db->fetchColumn(
+            "SELECT COUNT(*) FROM ld_session_participants WHERE session_id = ? AND role = 'artist'",
+            [$sessionId]
+        );
+
+        $late = $lateNotice
+            ? "
+
+This is inside 48 hours of the session."
+            : '';
+
+        foreach ($facilitators as $fac) {
+            $this->enqueue(
+                (int) $fac['id'],
+                $fac['display_name'],
+                $fac['email'],
+                'sessionLeft',
+                "Cancellation: {$name} for {$title}",
+                "{$name} cancelled their {$role} booking.
+
+{$title}
+{$date}
+Artists still booked: {$artists}{$late}",
+                $sessionId,
+                "View the session: {$link}",
+                null,
+                'session',
+                $sessionId
+            );
+        }
+    }
+
+    /**
+     * Operational: a new account was created.
+     *
+     * Plain registrations only. Claiming a stub already sends stubClaimed, and
+     * two emails about one person arriving reads as a bug.
+     */
+    public function userRegistered(int $userId): void
+    {
+        $facilitators = $this->facilitators($userId);
+        if (empty($facilitators)) return;
+
+        $user = $this->db->fetch("SELECT display_name, email FROM users WHERE id = ?", [$userId]);
+        if (!$user) return;
+
+        $profileLink = $this->baseUrl . route('profiles.show', ['id' => hex_id($userId)]);
+
+        foreach ($facilitators as $fac) {
+            $this->enqueue(
+                (int) $fac['id'],
+                $fac['display_name'],
+                $fac['email'],
+                'userRegistered',
+                "New member: {$user['display_name']}",
+                "{$user['display_name']} ({$user['email']}) has registered.
+
+"
+                    . "They did not claim an existing stub account, so if they have been to "
+                    . "sessions before, their history may need merging.",
+                null,
+                "View their profile: {$profileLink}",
+                null,
+                'user',
+                $userId
+            );
+        }
+    }
+
+    /** Facilitator recipients for operational mail, excluding one user. */
+    private function facilitators(int $excludeUserId): array
+    {
+        return $this->db->fetchAll(
+            "SELECT id, email, display_name FROM users
+             WHERE role IN ('admin', 'facilitator') AND id != ?
+               AND email NOT LIKE '%.stub@local'
+               AND consent_state != 'withdrawn'",
+            [$excludeUserId]
+        );
     }
 
     /**
@@ -193,7 +358,8 @@ final class NotificationService
         $facilitators = $this->db->fetchAll(
             "SELECT id, email, display_name FROM users
              WHERE role IN ('admin', 'facilitator')
-               AND email NOT LIKE '%.stub@local'"
+               AND email NOT LIKE '%.stub@local'
+               AND consent_state != 'withdrawn'"
         );
 
         if (empty($facilitators)) return;
@@ -223,7 +389,8 @@ final class NotificationService
         $facilitators = $this->db->fetchAll(
             "SELECT id, email, display_name FROM users
              WHERE role IN ('admin', 'facilitator') AND id != ?
-               AND email NOT LIKE '%.stub@local'",
+               AND email NOT LIKE '%.stub@local'
+               AND consent_state != 'withdrawn'",
             [$userId]
         );
 
@@ -264,7 +431,8 @@ final class NotificationService
     public function sitterSessionCompleted(int $userId, bool $autoRejoined): void
     {
         $user = $this->db->fetch(
-            "SELECT id, email, display_name FROM users WHERE id = ?",
+            "SELECT id, email, display_name FROM users
+             WHERE id = ? AND consent_state != 'withdrawn'",
             [$userId]
         );
 
@@ -303,7 +471,8 @@ final class NotificationService
              JOIN ld_claims c ON c.claimant_id = u.id
              WHERE c.artwork_id = ? AND c.status = 'approved'
                AND u.id != ? AND u.notify_comment = 1
-               AND u.email NOT LIKE '%.stub@local'",
+               AND u.email NOT LIKE '%.stub@local'
+               AND u.consent_state != 'withdrawn'",
             [$artworkId, $commenterId]
         );
 
@@ -332,13 +501,110 @@ final class NotificationService
                 "{$commenterName} commented on artwork you've claimed:\n\n\"{$snippet}\"",
                 $artwork ? (int) $artwork['session_id'] : null,
                 "View the conversation: {$artworkLink}",
-                $footer
+                $footer,
+                'artwork',
+                $artworkId
             );
         }
     }
 
     /**
+     * Operational, IMMEDIATE: a consent withdrawal could not fully remove files
+     * from the public tree.
+     *
+     * Not queued. A queued digest would arrive up to seven minutes later, and
+     * this is the one failure where the gap between happening and being told
+     * matters, because the images are still being served the whole time.
+     */
+    public function withdrawalIncomplete(int $userId, array $remainingPaths): void
+    {
+        $facilitators = $this->db->fetchAll(
+            "SELECT id, email, display_name FROM users
+             WHERE role IN ('admin', 'facilitator')
+               AND email NOT LIKE '%.stub@local'"
+        );
+
+        if (empty($facilitators)) return;
+
+        $user = $this->db->fetch("SELECT display_name FROM users WHERE id = ?", [$userId]);
+        $name = $user['display_name'] ?? "User #{$userId}";
+        $list = implode("
+", array_map(fn($p) => '  - ' . $p, $remainingPaths));
+
+        foreach ($facilitators as $fac) {
+            $body = "Hi {$fac['display_name']},
+
+"
+                . "{$name} withdrew consent, but these files could NOT be moved out of "
+                . "the public uploads directory and are still reachable by direct URL:
+
+"
+                . "{$list}
+
+"
+                . "The database rows are already hidden, so the images no longer appear "
+                . "anywhere on the site. The files themselves still need removing by hand.
+
+"
+                . "— Life Drawing Randburg";
+
+            $this->mail->send($fac['email'], "Action needed: consent withdrawal incomplete", $body);
+        }
+    }
+
+    /**
+     * Cancel unsent queued notifications for one source.
+     *
+     * Only unsent rows are touched — a delivered email cannot be recalled.
+     * Returns the number cancelled.
+     */
+    public function cancelQueued(string $sourceType, int $sourceId): int
+    {
+        try {
+            return $this->db->execute(
+                "DELETE FROM ld_notification_queue
+                 WHERE sent_at IS NULL AND source_type = ? AND source_id = ?",
+                [$sourceType, $sourceId]
+            );
+        } catch (\Throwable $e) {
+            error_log("Notification cancel failed ({$sourceType} #{$sourceId}): " . $e->getMessage());
+            return 0;
+        }
+    }
+
+    /**
+     * Cancel everything queued about an artwork, including mail raised by claims
+     * on it. Cancelling only the artwork-origin rows would leave claim mail
+     * pointing at a page that no longer resolves.
+     *
+     * And-Yet: rows queued before migration 020 carry a NULL source and cannot be
+     * matched here. The cutover purge clears those once; after it, this is complete.
+     */
+    public function cancelQueuedForArtwork(int $artworkId): int
+    {
+        $cancelled = $this->cancelQueued('artwork', $artworkId);
+
+        try {
+            $cancelled += $this->db->execute(
+                "DELETE FROM ld_notification_queue
+                 WHERE sent_at IS NULL AND source_type = 'claim'
+                   AND source_id IN (SELECT id FROM ld_claims WHERE artwork_id = ?)",
+                [$artworkId]
+            );
+        } catch (\Throwable $e) {
+            error_log("Notification cancel (claims of artwork #{$artworkId}) failed: " . $e->getMessage());
+        }
+
+        return $cancelled;
+    }
+
+    /**
      * Queue a notification for batched delivery.
+     *
+     * $sourceType/$sourceId tie the row back to the artwork or claim that caused
+     * it, so deleting that thing can cancel the mail before it goes out. Rows
+     * queued before migration 020 carry NULL and cannot be cancelled.
+     *
      * Never throws — failures are logged.
      */
     private function enqueue(
@@ -350,14 +616,18 @@ final class NotificationService
         string $summary,
         ?int $sessionId = null,
         ?string $detail = null,
-        ?string $footer = null
+        ?string $footer = null,
+        ?string $sourceType = null,
+        ?int $sourceId = null
     ): void {
         try {
             $this->db->execute(
                 "INSERT INTO ld_notification_queue
-                 (recipient_id, recipient_name, recipient_email, notification_type, session_id, subject, summary, detail, footer)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                [$recipientId, $recipientName, $recipientEmail, $type, $sessionId, $subject, $summary, $detail, $footer]
+                 (recipient_id, recipient_name, recipient_email, notification_type, session_id,
+                  source_type, source_id, subject, summary, detail, footer)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                [$recipientId, $recipientName, $recipientEmail, $type, $sessionId,
+                 $sourceType, $sourceId, $subject, $summary, $detail, $footer]
             );
         } catch (\Throwable $e) {
             error_log("Notification enqueue failed ({$type} to {$recipientEmail}): " . $e->getMessage());

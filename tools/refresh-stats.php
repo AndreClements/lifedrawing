@@ -26,6 +26,13 @@ if (file_exists($envFile)) {
 
 require LDR_ROOT . '/vendor/autoload.php';
 
+// StatsService now uses PHP date('Y-m-d') as its "today" cutoff. This tool
+// builds the service directly and never boots the Kernel, which is the only
+// place the app timezone is set - so under the 2am DreamHost cron the cutoff
+// was the US server date. A user's totals would then differ depending on
+// whether their dashboard or the cron last wrote them, and visibly flip-flop.
+date_default_timezone_set('Africa/Johannesburg');
+
 $config = require LDR_ROOT . '/config/database.php';
 
 $db = new App\Database\Connection(

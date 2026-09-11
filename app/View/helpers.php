@@ -221,6 +221,38 @@ function model_join_open(array $session): bool
     return !isset($session['model_join_enabled']) || (bool) $session['model_join_enabled'];
 }
 
+/**
+ * Timestamp a session starts at.
+ *
+ * start_time is nullable. Falling back to 10:00 — the earlier of the two real
+ * start times — errs toward warning about a late cancellation sooner rather
+ * than later, which is the safe direction to be wrong in.
+ */
+function session_starts_at(array $session): int
+{
+    $date = $session['session_date'] ?? date('Y-m-d');
+    $time = $session['start_time'] ?? null;
+
+    if ($time === null || $time === '') {
+        $time = '10:00:00';
+    }
+
+    return (int) strtotime($date . ' ' . $time);
+}
+
+/**
+ * Is this session close enough that the contribution note applies?
+ *
+ * The FAQ asks for 50% if you cancel inside 48 hours. That used to be scoped to
+ * fully booked sessions; it now applies to every session, which is both simpler
+ * to say and simpler to check.
+ */
+function is_late_cancel(array $session): bool
+{
+    $starts = session_starts_at($session);
+    return $starts > time() && ($starts - time()) < 48 * 3600;
+}
+
 /** Format the facilitator's WhatsApp schedule for pasting into the group.
  *  Pure: sessions in display order, participants keyed by session id.
  *  Asterisks bold, underscores italicise — hence [1] for the footnote marker,

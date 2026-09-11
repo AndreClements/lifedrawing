@@ -141,17 +141,34 @@ abstract class BaseController
     }
 
     /** Require authentication — redirect to login if not logged in or session is stale. */
-    protected function requireAuth(): ?Response
+    protected function requireAuth(?Request $request = null): ?Response
     {
-        if (!$this->auth->isLoggedIn()) {
-            return Response::redirect(route('auth.login'));
+        $loggedIn = $this->auth->isLoggedIn()
+            // Guard against stale sessions (user_id in session but user deleted)
+            && $this->auth->currentUser() !== null;
+
+        if ($loggedIn) {
+            return null;
         }
-        // Guard against stale sessions (user_id in session but user deleted from DB)
-        if ($this->auth->currentUser() === null) {
+
+        if ($this->auth->isLoggedIn()) {
             $this->auth->logout();
-            return Response::redirect(route('auth.login'));
         }
-        return null;
+
+        // Match AuthMiddleware: an HTMX caller needs a 401 it can turn into a
+        // redirect, not a 302 the browser follows so the whole login page gets
+        // swapped into a small control div.
+        if ($request !== null && ($request->isHtmx() || $request->wantsJson())) {
+            return Response::json(['error' => 'Authentication required'], 401);
+        }
+
+        return Response::redirect(route('auth.login'));
+    }
+
+    /** Render a partial (no layout wrapper) — for HTMX fragment responses. */
+    protected function partial(string $view, array $data = []): Response
+    {
+        return Response::html($this->view->render($view, $data));
     }
 
     /** Require a specific role — return 403 if not authorized. */

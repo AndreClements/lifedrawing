@@ -99,13 +99,24 @@ foreach ($argv as $arg) {
 }
 
 if ($reprocess) {
-    $pdo->exec("UPDATE ld_artworks SET processed_at = NULL, web_path = NULL, thumbnail_path = NULL");
-    logLine("Reset all artworks for reprocessing.");
+    // Scoped to what will actually be reprocessed. Resetting every row also
+    // nulled the derivative paths of withdrawn ('private') artwork, which the
+    // selection below correctly skips - so nothing was regenerated, but
+    // restore-withdrawn.php lost the record of where those archived files
+    // belong and could never put them back.
+    $reset = $pdo->exec(
+        "UPDATE ld_artworks SET processed_at = NULL, web_path = NULL, thumbnail_path = NULL
+         WHERE visibility NOT IN ('removed', 'private')"
+    );
+    logLine("Reset {$reset} artwork(s) for reprocessing (hidden and deleted ones left untouched).");
 }
 
 // --- Fetch unprocessed artworks ---
 
-$query = "SELECT id, file_path FROM ld_artworks WHERE processed_at IS NULL AND file_path IS NOT NULL ORDER BY id ASC";
+$query = "SELECT id, file_path FROM ld_artworks
+          WHERE processed_at IS NULL AND file_path IS NOT NULL
+            AND visibility NOT IN ('removed', 'private')
+          ORDER BY id ASC";
 if ($limit > 0) {
     $query .= " LIMIT {$limit}";
 }
@@ -127,6 +138,11 @@ $updateStmt = $pdo->prepare(
     "UPDATE ld_artworks SET web_path = ?, thumbnail_path = ?, processed_at = NOW() WHERE id = ?"
 );
 
+// Marks a row as looked-at without claiming derivatives were produced.
+$stampStmt = $pdo->prepare(
+    "UPDATE ld_artworks SET processed_at = NOW() WHERE id = ?"
+);
+
 foreach ($artworks as $artwork) {
     $id = (int) $artwork['id'];
     $filePath = $artwork['file_path'];
@@ -135,7 +151,11 @@ foreach ($artworks as $artwork) {
     // --- Source file check ---
 
     if (!file_exists($sourcePath)) {
-        logLine("  SKIP #{$id}: source file missing ({$filePath})");
+        logLine("  SKIP #{$id}: source file missing ({$filePath}) — stamping so it stops being rescanned");
+        // Without this the row keeps processed_at NULL and is reselected on
+        // every cron run for the life of the database. Derivatives stay NULL,
+        // so the view fallback chain still renders nothing for it.
+        $stampStmt->execute([$id]);
         $skipped++;
         continue;
     }
@@ -169,6 +189,13 @@ foreach ($artworks as $artwork) {
 
         if (!$webOk) {
             logLine("  FAIL #{$id}: web display generation failed");
+            // Symmetric to the thumbnail branch below: a failed imagewebp() can
+            // still leave a truncated file at $webDest, and an unreferenced
+            // public image is one nothing can later find and withdraw.
+            if (is_file($webDest)) {
+                @unlink($webDest);
+                logLine("    Removed the partial web image so nothing unreferenced stays public.");
+            }
             logLine("    And-Yet: Source exists and passed earlier checks — GD may have failed on this specific image format or dimensions.");
             $failed++;
             continue;
@@ -190,6 +217,17 @@ foreach ($artworks as $artwork) {
         if (!$thumbOk) {
             logLine("  FAIL #{$id}: thumbnail generation failed from both web and original");
             logLine("    And-Yet: Web display was generated OK but thumbnail failed — unusual. Check GD memory or the generated WebP file.");
+
+            // Remove the web image we just wrote. The database only learns about
+            // both paths once BOTH succeed, so leaving this behind creates a
+            // real, publicly served file that no row points at - which consent
+            // withdrawal would have no way to find, and would move everything
+            // else while reporting success.
+            if (is_file($webDest)) {
+                @unlink($webDest);
+                logLine("    Removed the orphaned web image so nothing unreferenced stays public.");
+            }
+
             $failed++;
             continue;
         }

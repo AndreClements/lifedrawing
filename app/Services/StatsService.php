@@ -24,22 +24,40 @@ final class StatsService
     /** Refresh stats for a single user. Call after claim approval, session join, etc. */
     public function refreshUser(int $userId): void
     {
+        $today = date('Y-m-d');
+
+        // Attendance means sessions that have actually happened. Counting every
+        // participation row let a booking for a future session inflate the total
+        // and the streak before the person had drawn a line.
         $totalSessions = (int) $this->db->fetchColumn(
-            "SELECT COUNT(DISTINCT session_id) FROM ld_session_participants WHERE user_id = ?",
-            [$userId]
+            "SELECT COUNT(DISTINCT sp.session_id)
+             FROM ld_session_participants sp
+             JOIN ld_sessions s ON s.id = sp.session_id
+             WHERE sp.user_id = ? AND s.session_date <= ?
+               AND sp.attendance != 'no_show'",
+            [$userId, $today]
         );
 
+        // Joined to ld_artworks: without it a deleted artwork stayed in the
+        // total forever, and refreshing the cache just recomputed the same
+        // wrong number.
         $totalArtworks = (int) $this->db->fetchColumn(
-            "SELECT COUNT(*) FROM ld_claims WHERE claimant_id = ? AND status = 'approved'",
+            "SELECT COUNT(*)
+             FROM ld_claims c
+             JOIN ld_artworks a ON a.id = c.artwork_id
+             WHERE c.claimant_id = ? AND c.status = 'approved'
+               AND a.visibility NOT IN ('removed', 'private')",
             [$userId]
         );
 
+        // Same rule, or "last attended" reports a session not yet held.
         $lastDate = $this->db->fetchColumn(
             "SELECT MAX(s.session_date)
              FROM ld_sessions s
              JOIN ld_session_participants sp ON sp.session_id = s.id
-             WHERE sp.user_id = ?",
-            [$userId]
+             WHERE sp.user_id = ? AND s.session_date <= ?
+               AND sp.attendance != 'no_show'",
+            [$userId, $today]
         );
 
         // Calculate streaks from session dates
@@ -87,7 +105,13 @@ final class StatsService
     /**
      * Calculate weekly streaks.
      *
-     * A streak is consecutive ISO weeks where the user attended at least one session.
+     * A streak is consecutive ISO weeks where the user attended at least one
+     * session that has already taken place. Future bookings do not count, and
+     * neither does a session they were marked a no-show for.
+     *
+     * The rule is "not marked no_show", NOT "attendance = 'attended'". Nothing
+     * has ever written 'attended' for a web booking, so requiring it would wipe
+     * the attendance history of everyone who booked through the site.
      * Current streak counts backwards from the most recent week with activity.
      * If the most recent activity was more than 2 weeks ago, current streak resets to 0.
      *
@@ -100,9 +124,10 @@ final class StatsService
             "SELECT DISTINCT YEARWEEK(s.session_date, 1) as yw
              FROM ld_sessions s
              JOIN ld_session_participants sp ON sp.session_id = s.id
-             WHERE sp.user_id = ?
+             WHERE sp.user_id = ? AND s.session_date <= ?
+               AND sp.attendance != 'no_show'
              ORDER BY yw DESC",
-            [$userId]
+            [$userId, date('Y-m-d')]
         );
 
         if (empty($weeks)) {
@@ -177,7 +202,8 @@ final class StatsService
             "SELECT a.caption
              FROM ld_artworks a
              JOIN ld_claims c ON c.artwork_id = a.id
-             WHERE c.claimant_id = ? AND c.status = 'approved' AND a.caption IS NOT NULL",
+             WHERE c.claimant_id = ? AND c.status = 'approved' AND a.caption IS NOT NULL
+               AND a.visibility NOT IN ('removed', 'private')",
             [$userId]
         );
 
@@ -236,14 +262,43 @@ final class StatsService
                      WHERE a2.session_id = s.id AND c.claimant_id = ? AND c.status = 'approved') as my_claimed
              FROM ld_sessions s
              JOIN ld_session_participants sp ON sp.session_id = s.id
-             WHERE sp.user_id = ?
+             WHERE sp.user_id = ? AND s.session_date <= ?
+               AND sp.attendance != 'no_show'
              GROUP BY s.id
              ORDER BY s.session_date DESC
              LIMIT 10",
-            [$userId, $userId]
+            [$userId, $userId, date('Y-m-d')]
         );
 
-        // Weekly activity for the last 12 weeks (heatmap data)
+        // Sessions they have booked but not yet been to. These used to sort to
+        // the top of the list above, which is headed "Recent Sessions" - so a
+        // booking for next month read as the most recent thing they had done.
+        $upcoming = $this->db->fetchAll(
+            "SELECT s.id, s.title, s.session_date, s.start_time, s.venue, s.status,
+                    GROUP_CONCAT(sp.role ORDER BY sp.role SEPARATOR ', ') as role
+             FROM ld_sessions s
+             JOIN ld_session_participants sp ON sp.session_id = s.id
+             WHERE sp.user_id = ? AND s.session_date >= ?
+               AND s.status != 'cancelled'
+             GROUP BY s.id
+             ORDER BY s.session_date ASC",
+            [$userId, date('Y-m-d')]
+        );
+
+        // Shown only to this person and to the facilitator. It is a fact, not a
+        // reprimand, and it never appears on a public profile.
+        $noShows = (int) $this->db->fetchColumn(
+            "SELECT COUNT(*) FROM ld_session_participants
+             WHERE user_id = ? AND attendance = 'no_show'",
+            [$userId]
+        );
+
+        // Weekly activity for the last 12 weeks (heatmap data).
+        //
+        // Same two filters as the streak query, or the dashboard contradicts
+        // itself: a week lights up in the heatmap while contributing nothing to
+        // the streak printed beside it. Future bookings had no upper bound here,
+        // and no-shows were counted as activity.
         $weeklyActivity = $this->db->fetchAll(
             "SELECT YEARWEEK(s.session_date, 1) as yw,
                     COUNT(DISTINCT s.id) as sessions,
@@ -251,23 +306,29 @@ final class StatsService
              FROM ld_sessions s
              JOIN ld_session_participants sp ON sp.session_id = s.id
              WHERE sp.user_id = ?
-               AND s.session_date >= DATE_SUB(CURDATE(), INTERVAL 12 WEEK)
+               AND s.session_date >= DATE_SUB(?, INTERVAL 12 WEEK)
+               AND s.session_date <= ?
+               AND sp.attendance != 'no_show'
              GROUP BY yw
              ORDER BY yw",
-            [$userId]
+            [$userId, date('Y-m-d'), date('Y-m-d')]
         );
 
         // Build full 12-week grid (including empty weeks)
         $weekGrid = $this->buildWeekGrid($weeklyActivity);
 
-        // Role distribution
+        // Role distribution. Same filters as everything else on this page, or
+        // the roles bar keeps counting a session the streak and the total have
+        // already excluded.
         $roles = $this->db->fetchAll(
-            "SELECT role, COUNT(*) as count
-             FROM ld_session_participants
-             WHERE user_id = ?
-             GROUP BY role
+            "SELECT sp.role, COUNT(*) as count
+             FROM ld_session_participants sp
+             JOIN ld_sessions s ON s.id = sp.session_id
+             WHERE sp.user_id = ? AND s.session_date <= ?
+               AND sp.attendance != 'no_show'
+             GROUP BY sp.role
              ORDER BY count DESC",
-            [$userId]
+            [$userId, date('Y-m-d')]
         );
 
         // Milestones achieved
@@ -289,6 +350,8 @@ final class StatsService
         return [
             'stats' => $stats,
             'timeline' => $timeline,
+            'upcoming' => $upcoming,
+            'noShows' => $noShows,
             'weekGrid' => $weekGrid,
             'roles' => $roles,
             'milestones' => $milestones,

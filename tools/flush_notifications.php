@@ -84,6 +84,9 @@ const TYPE_LABELS = [
     'stubClaimed'       => 'STUB CLAIMED',
     'sitterQueueJoined' => 'SITTER QUEUE',
     'artworkCommented'  => 'NEW COMMENT',
+    'sessionJoined'     => 'NEW BOOKING',
+    'sessionLeft'       => 'BOOKING CANCELLED',
+    'userRegistered'    => 'NEW MEMBER',
 ];
 
 // --- Find recipients ready to flush ---
@@ -127,6 +130,49 @@ $resetStmt = $pdo->prepare(
      WHERE batch_id = ?"
 );
 
+// Eligibility is re-checked HERE, at send time, not only when the row was
+// queued. Filtering at enqueue does nothing for mail already buffered: someone
+// who withdraws consent, or switches a preference off, would still receive
+// everything queued in the preceding minutes — footed with a note telling them
+// they had opted in.
+$eligibilityStmt = $pdo->prepare(
+    "SELECT email, consent_state, notify_new_session, notify_session_cancelled,
+            notify_claim_resolved, notify_comment, role
+     FROM users WHERE id = ?"
+);
+
+$dropStmt = $pdo->prepare(
+    "DELETE FROM ld_notification_queue WHERE sent_at IS NULL AND recipient_id = ? AND id = ?"
+);
+
+/** Preference column gating each buffered type; operational types have none. */
+const TYPE_PREF = [
+    'sessionCreated'   => 'notify_new_session',
+    'claimResolved'    => 'notify_claim_resolved',
+    'artworkCommented' => 'notify_comment',
+];
+
+/**
+ * May this row still be delivered to this user?
+ *
+ * Returns false for a withdrawn account, a stub address, or a type whose
+ * preference has since been switched off.
+ */
+function stillEligible(array $user, array $row): bool
+{
+    if (($user['consent_state'] ?? '') === 'withdrawn') {
+        return false;
+    }
+    if (str_ends_with((string) $user['email'], '.stub@local')) {
+        return false;
+    }
+    $pref = TYPE_PREF[$row['notification_type']] ?? null;
+    if ($pref !== null && empty($user[$pref])) {
+        return false;
+    }
+    return true;
+}
+
 foreach ($readyRecipients as $recipient) {
     $recipientId = (int) $recipient['recipient_id'];
     $fetchStmt->execute([$recipientId]);
@@ -134,9 +180,41 @@ foreach ($readyRecipients as $recipient) {
 
     if (empty($notifications)) continue;
 
+    // Re-check against current state, and drop anything no longer deliverable.
+    $eligibilityStmt->execute([$recipientId]);
+    $user = $eligibilityStmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$user) {
+        logLine("  Recipient #{$recipientId} no longer exists — dropping " . count($notifications) . " row(s).");
+        foreach ($notifications as $row) {
+            $dropStmt->execute([$recipientId, (int) $row['id']]);
+        }
+        continue;
+    }
+
+    $kept = [];
+    foreach ($notifications as $row) {
+        if (stillEligible($user, $row)) {
+            $kept[] = $row;
+        } else {
+            $dropStmt->execute([$recipientId, (int) $row['id']]);
+        }
+    }
+
+    if (count($kept) !== count($notifications)) {
+        $dropped = count($notifications) - count($kept);
+        logLine("  Recipient #{$recipientId}: dropped {$dropped} row(s) no longer eligible.");
+    }
+
+    if (empty($kept)) continue;
+    $notifications = $kept;
+
     $batchId = bin2hex(random_bytes(18));
+    // Prefer the live address over the enqueue-time snapshot. The snapshot is
+    // what the row was addressed to when queued; if the person has changed
+    // their email since, that is no longer where their mail should go.
     $recipientName = $notifications[0]['recipient_name'];
-    $recipientEmail = $notifications[0]['recipient_email'];
+    $recipientEmail = $user['email'] ?: $notifications[0]['recipient_email'];
     $count = count($notifications);
 
     // Mark as sent BEFORE sending (prevents duplicates on crash)

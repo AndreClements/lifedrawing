@@ -48,17 +48,10 @@
                 <?php if ($canJoin): ?>
                     <div class="card-actions">
                         <?php if (app('auth')->isLoggedIn()): ?>
-                            <?php if (empty($session['joined_as_artist'])): ?>
-                                <form method="POST" action="<?= route('sessions.join', ['id' => $sessionHexId]) ?>" class="form-inline"
-                                      hx-post="<?= route('sessions.join', ['id' => $sessionHexId]) ?>"
-                                      hx-swap="outerHTML">
-                                    <?= csrf_field() ?>
-                                    <input type="hidden" name="role" value="artist">
-                                    <button type="submit" class="btn btn-outline btn-sm">Join as Artist</button>
-                                </form>
-                            <?php else: ?>
-                                <span class="card-badge badge-active">Joined as artist</span>
-                            <?php endif; ?>
+                            <?php
+                            $joinedRoles = !empty($session['joined_as_artist']) ? ['artist'] : [];
+                            include __DIR__ . '/_join_control.php';
+                            ?>
                         <?php else: ?>
                             <a href="<?= route('auth.register') ?>?intent=join_session&session_id=<?= $sessionHexId ?>&role=artist" class="btn btn-outline btn-sm">Join as Artist</a>
                             <?php if (model_join_open($session)): ?>

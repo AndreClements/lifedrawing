@@ -49,46 +49,40 @@
 
         <?php if (app('auth')->isLoggedIn()): ?>
           <?php if (app('auth')->consentState()->canParticipate()): ?>
-            <?php $uc = $userClaims ?? []; ?>
-            <?php $hasArtistClaim = isset($uc['artist']); ?>
-            <?php $hasModelClaim = isset($uc['model']); ?>
-            <?php $artistAlreadyClaimed = !empty(array_filter($claims, fn($c) => $c['claim_type'] === 'artist')); ?>
-            <?php $canClaimAsModel = ($isSessionModel ?? false) || !($sessionHasKnownModel ?? false); ?>
-            <?php if (!$hasArtistClaim || !$hasModelClaim): ?>
-                <div class="artwork-actions">
-                    <?php if (!$hasArtistClaim && !$artistAlreadyClaimed): ?>
-                        <form method="POST" action="<?= route('claims.claim', ['id' => hex_id((int) $artwork['id'])]) ?>"
-                              hx-post="<?= route('claims.claim', ['id' => hex_id((int) $artwork['id'])]) ?>"
-                              hx-swap="outerHTML"
-                              class="form-inline">
-                            <?= csrf_field() ?>
-                            <input type="hidden" name="claim_type" value="artist">
-                            <button type="submit" class="btn-sm">That's mine</button>
-                        </form>
-                    <?php else: ?>
-                        <span class="badge badge-<?= $uc['artist'] === 'approved' ? 'success' : 'pending' ?>">Artist <?= e($uc['artist']) ?></span>
-                    <?php endif; ?>
-                    <?php if (!$hasModelClaim && $canClaimAsModel): ?>
-                        <form method="POST" action="<?= route('claims.claim', ['id' => hex_id((int) $artwork['id'])]) ?>"
-                              hx-post="<?= route('claims.claim', ['id' => hex_id((int) $artwork['id'])]) ?>"
-                              hx-swap="outerHTML"
-                              class="form-inline">
-                            <?= csrf_field() ?>
-                            <input type="hidden" name="claim_type" value="model">
-                            <button type="submit" class="btn-sm btn-outline">That's me</button>
-                        </form>
-                    <?php else: ?>
-                        <?php if ($hasModelClaim): ?>
-                            <span class="badge badge-<?= $uc['model'] === 'approved' ? 'success' : 'pending' ?>">Model <?= e($uc['model']) ?></span>
-                        <?php endif; ?>
-                    <?php endif; ?>
-                </div>
-            <?php else: ?>
-                <div class="artwork-actions">
-                    <span class="badge badge-<?= $uc['artist'] === 'approved' ? 'success' : 'pending' ?>">Artist <?= e($uc['artist']) ?></span>
-                    <span class="badge badge-<?= $uc['model'] === 'approved' ? 'success' : 'pending' ?>">Model <?= e($uc['model']) ?></span>
-                </div>
-            <?php endif; ?>
+            <?php
+            /*
+             * One shared control per claim type, so claim and undo swap cleanly
+             * in both directions.
+             *
+             * This also fixes a latent bug in the block it replaces: the else
+             * branch fired when somebody ELSE had claimed as artist, and then
+             * read $uc['artist'], which is unset in exactly that case - emitting
+             * "Artist " plus a PHP warning.
+             */
+            $uc = $userClaims ?? [];
+            $artistClaimedByOther = !isset($uc['artist'])
+                && !empty(array_filter($claims, fn($c) => $c['claim_type'] === 'artist'));
+            $canClaimAsModel = ($isSessionModel ?? false) || !($sessionHasKnownModel ?? false);
+            ?>
+            <div class="artwork-actions">
+                <?php if (!$artistClaimedByOther): ?>
+                    <?php
+                    $claimType = 'artist';
+                    $status    = $uc['artist']['status'] ?? null;
+                    $claimId   = $uc['artist']['id'] ?? null;
+                    include __DIR__ . '/_claim_control.php';
+                    ?>
+                <?php endif; ?>
+
+                <?php if ($canClaimAsModel || isset($uc['model'])): ?>
+                    <?php
+                    $claimType = 'model';
+                    $status    = $uc['model']['status'] ?? null;
+                    $claimId   = $uc['model']['id'] ?? null;
+                    include __DIR__ . '/_claim_control.php';
+                    ?>
+                <?php endif; ?>
+            </div>
           <?php else: ?>
                 <div class="artwork-actions">
                     <a href="<?= route('auth.consent') ?>" class="btn-sm">Grant Consent to Claim</a>

@@ -366,7 +366,21 @@ final class AuthService
         $this->logProvenance($userId, 'user.consent.grant', 'user', $userId);
     }
 
-    public function withdrawConsent(int $userId): void
+    /**
+     * Withdraw consent, and make that withdrawal real.
+     *
+     * Setting visibility='private' hides the database row, but public/.htaccess
+     * hands any existing file straight to Apache, so PHP never runs and the
+     * image stays fetchable at its direct URL. Hiding the row is therefore not
+     * enforcement on its own — the files have to leave the public tree.
+     *
+     * Returns a status. The caller MUST surface an incomplete result rather than
+     * reporting success: a withdrawal that claims to have worked while a file is
+     * still served is the one outcome this must never produce.
+     *
+     * @return array{complete:bool, moved:int, remaining:list<string>, locked:bool}
+     */
+    public function withdrawConsent(int $userId): array
     {
         $this->db->execute(
             "UPDATE users SET consent_state = ?, consent_withdrawn_at = NOW() WHERE id = ?",
@@ -374,18 +388,150 @@ final class AuthService
         );
         $_SESSION['consent_state'] = ConsentState::Withdrawn->value;
 
-        // Hide user's artworks (parametric authorship: withdraw hides, doesn't delete)
-        $this->db->execute(
-            "UPDATE ld_artworks SET visibility = 'private' WHERE uploaded_by = ?",
-            [$userId]
-        );
-        // And-Yet: This hides artworks uploaded BY the user, but not artworks
-        // depicting the user as a model (uploaded by facilitators, claimed by artists).
-        // A model-takedown flow — where the model can flag artworks from sessions
-        // they modelled for — is a post-beta feature. For now, model takedowns
-        // are handled manually by the facilitator. (Risk lens: Botha, non-economic.)
+        // Wait for any image-worker batch to finish before reading the paths.
+        // Acquiring around only the move would not help: the worker could add or
+        // rewrite files while we waited, and we would move a stale list.
+        $locked = \App\Services\ImageLock::acquire();
 
-        $this->logProvenance($userId, 'user.consent.withdraw', 'user', $userId);
+        $uploadDir    = LDR_ROOT . '/public/assets/uploads';
+        $withdrawnDir = LDR_ROOT . '/storage/withdrawn/' . $userId;
+        $moved = 0;
+        $paths = [];
+        $remaining = [];
+
+        // Without the lock, ABORT the file move rather than racing the worker.
+        //
+        // Proceeding unlocked was the earlier behaviour and it was wrong: a run
+        // already in flight rewrites the original in place and writes
+        // derivatives, so it can recreate a file moments after we verify it
+        // gone. A withdrawal that cannot be made safe must report that, not
+        // press on and claim success.
+        //
+        // The consent state has already changed above, so every read path is
+        // gated either way; this is only about the files on disk.
+        if (!$locked) {
+            error_log("Consent withdrawal for user {$userId}: could not acquire the image lock; files left in place.");
+
+            $rows = $this->db->fetchAll(
+                "SELECT file_path, web_path, thumbnail_path FROM ld_artworks
+                 WHERE uploaded_by = ? AND visibility != 'removed'",
+                [$userId]
+            );
+            foreach ($rows as $row) {
+                foreach (['file_path', 'web_path', 'thumbnail_path'] as $col) {
+                    if (!empty($row[$col]) && is_file($uploadDir . '/' . $row[$col])) {
+                        $remaining[] = $row[$col];
+                    }
+                }
+            }
+
+            $this->db->execute(
+                "UPDATE ld_artworks SET visibility = 'private'
+                 WHERE uploaded_by = ? AND visibility != 'removed'",
+                [$userId]
+            );
+
+            $this->reportIncompleteWithdrawal($userId, $remaining);
+
+            return ['complete' => false, 'moved' => 0, 'remaining' => $remaining, 'locked' => false];
+        }
+
+        try {
+            // NOT already-removed artwork. The original statement swept those up
+            // too, flipping 'removed' to 'private' and resurrecting deleted work
+            // into the uploader escape hatch on the session page.
+            $artworks = $this->db->fetchAll(
+                "SELECT id, file_path, web_path, thumbnail_path
+                 FROM ld_artworks
+                 WHERE uploaded_by = ? AND visibility != 'removed'",
+                [$userId]
+            );
+
+            foreach ($artworks as $artwork) {
+                foreach (artwork_public_paths($artwork) as $rel) {
+                    if (!in_array($rel, $paths, true)) {
+                        $paths[] = $rel;
+                    }
+                }
+            }
+
+            $this->db->execute(
+                "UPDATE ld_artworks SET visibility = 'private'
+                 WHERE uploaded_by = ? AND visibility != 'removed'",
+                [$userId]
+            );
+
+            foreach ($paths as $rel) {
+                $src = $uploadDir . '/' . $rel;
+                if (!is_file($src)) {
+                    continue;
+                }
+                $dest = $withdrawnDir . '/' . $rel;
+                $destDir = dirname($dest);
+                if (!is_dir($destDir)) {
+                    @mkdir($destDir, 0755, true);
+                }
+                // Never fall back to deleting. There is no verified image backup,
+                // and the consent page promises hiding WITHOUT deletion.
+                if (@rename($src, $dest)) {
+                    $moved++;
+                } elseif (@copy($src, $dest) && @unlink($src)) {
+                    $moved++;
+                }
+            }
+
+            // Verify INSIDE the lock, before releasing it. Verifying afterwards
+            // leaves a gap in which the worker can put a file back, and the
+            // check would have already passed.
+            foreach ($paths as $rel) {
+                if (is_file($uploadDir . '/' . $rel)) {
+                    $remaining[] = $rel;
+                }
+            }
+        } finally {
+            \App\Services\ImageLock::release();
+        }
+
+        $complete = ($remaining === []);
+
+        $this->logProvenance(
+            $userId,
+            $complete ? 'user.consent.withdraw' : 'user.consent.withdraw.incomplete',
+            'user',
+            $userId
+        );
+
+        if (!$complete) {
+            $this->reportIncompleteWithdrawal($userId, $remaining);
+        }
+
+        // And-Yet: This hides artworks uploaded BY the user, but not artworks
+        // depicting the user as a model (uploaded by facilitators, claimed by
+        // artists). A model-takedown flow — where the model can flag artworks
+        // from sessions they modelled for — is a post-beta feature. For now,
+        // model takedowns are handled manually by the facilitator.
+        // (Risk lens: Botha, non-economic.)
+
+        return [
+            'complete'  => $complete,
+            'moved'     => $moved,
+            'remaining' => $remaining,
+            'locked'    => $locked,
+        ];
+    }
+
+    /** Tell the facilitator, and say so out loud in the log. */
+    private function reportIncompleteWithdrawal(int $userId, array $remaining): void
+    {
+        error_log(
+            "Consent withdrawal INCOMPLETE for user {$userId}; still public: "
+            . implode(', ', $remaining)
+        );
+        try {
+            app('notifications')->withdrawalIncomplete($userId, $remaining);
+        } catch (\Throwable $e) {
+            error_log('withdrawalIncomplete notify failed: ' . $e->getMessage());
+        }
     }
 
     public function consentState(): ConsentState
@@ -531,12 +677,20 @@ final class AuthService
 
     // --- Provenance ---
 
-    private function logProvenance(int $userId, string $action, string $entityType, int $entityId): void
+    private function logProvenance(int $userId, string $action, string $entityType, int $entityId, array $context = []): void
     {
         try {
+            // claimStub() has always passed a fifth argument. PHP ignores extras
+            // on a user-defined function, so previous_name — the only record of
+            // who a claimed stub used to be — was being dropped without error.
             $this->db->execute(
-                "INSERT INTO provenance_log (user_id, action, entity_type, entity_id, ip_address) VALUES (?, ?, ?, ?, ?)",
-                [$userId, $action, $entityType, $entityId, $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0']
+                "INSERT INTO provenance_log (user_id, action, entity_type, entity_id, context, ip_address)
+                 VALUES (?, ?, ?, ?, ?, ?)",
+                [
+                    $userId, $action, $entityType, $entityId,
+                    $context === [] ? null : json_encode($context),
+                    $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0',
+                ]
             );
         } catch (\Throwable) {
             // Provenance logging should never break the main flow

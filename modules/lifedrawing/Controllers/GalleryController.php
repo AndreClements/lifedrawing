@@ -47,13 +47,19 @@ final class GalleryController extends BaseController
         // Check if current user already has claims on this artwork
         $userClaims = [];
         if ($this->auth->isLoggedIn()) {
+            // The id comes along now, because the Undo control needs something
+            // to post to. Still filtered to pending/approved: a withdrawn or
+            // rejected row must read as unclaimed so the claim button returns.
             $rows = $this->db->fetchAll(
-                "SELECT claim_type, status FROM ld_claims
+                "SELECT id, claim_type, status FROM ld_claims
                  WHERE artwork_id = ? AND claimant_id = ? AND status IN ('pending', 'approved')",
                 [$id, $this->userId()]
             );
             foreach ($rows as $row) {
-                $userClaims[$row['claim_type']] = $row['status'];
+                $userClaims[$row['claim_type']] = [
+                    'id'     => (int) $row['id'],
+                    'status' => $row['status'],
+                ];
             }
         }
 
@@ -380,21 +386,70 @@ final class GalleryController extends BaseController
             return Response::forbidden('You can only delete artworks from your own sessions.');
         }
 
-        // Remove physical files
-        $uploadDir = app('upload')->uploadDir;
-        foreach (['file_path', 'web_path', 'thumbnail_path'] as $col) {
-            if (!empty($artwork[$col])) {
-                $fullPath = $uploadDir . '/' . $artwork[$col];
-                if (is_file($fullPath)) {
-                    @unlink($fullPath);
-                }
-            }
+        // Whoever holds approved claims loses an artwork from their totals.
+        // Collected before the delete, refreshed after.
+        $claimants = $this->db->fetchAll(
+            "SELECT DISTINCT claimant_id FROM ld_claims WHERE artwork_id = ? AND status = 'approved'",
+            [$id]
+        );
+
+        // Hold the image-worker lock across unlink + soft-delete. Without it a
+        // process_images.php run already in flight can rewrite the original or
+        // write fresh derivatives back into the public tree after the unlink.
+        $locked = \App\Services\ImageLock::acquire();
+
+        if (!$locked) {
+            // Refuse rather than race. Deleting unlocked can miss derivatives
+            // the worker writes while we work, leaving files public for an
+            // artwork the page now reports as deleted.
+            return Response::error(
+                'The image processor is busy. Try again in a moment.',
+                503
+            );
         }
 
-        // Soft-delete: hide from all queries
-        $this->table('ld_artworks')
-            ->where('id', '=', $id)
-            ->update(['visibility' => 'removed']);
+        try {
+            // Re-read INSIDE the lock. The row read before acquiring may be
+            // stale: the worker could have written web/thumbnail paths while we
+            // were waiting for it to finish, and those files would survive.
+            $artwork = $this->table('ld_artworks')->where('id', '=', $id)->first();
+            if (!$artwork) {
+                return Response::notFound('Artwork not found.');
+            }
+
+            $uploadDir = app('upload')->uploadDir;
+            $stuck = [];
+
+            foreach (artwork_public_paths($artwork) as $rel) {
+                $fullPath = $uploadDir . '/' . $rel;
+                if (is_file($fullPath) && !@unlink($fullPath)) {
+                    $stuck[] = $rel;
+                }
+            }
+
+            // A file that survives here is invisible afterwards: withdrawal
+            // deliberately skips 'removed' rows on the grounds that their files
+            // were unlinked, so an unlink that quietly failed leaves the image
+            // public forever with nothing left to find it.
+            if ($stuck !== []) {
+                error_log('Artwork delete #' . $id . ': files still public: ' . implode(', ', $stuck));
+            }
+
+            // Soft-delete: hide from all queries
+            $this->table('ld_artworks')
+                ->where('id', '=', $id)
+                ->update(['visibility' => 'removed']);
+        } finally {
+            \App\Services\ImageLock::release();
+        }
+
+        // Cancel mail that would otherwise arrive minutes later pointing at a
+        // page that no longer resolves — both artwork-origin and claim-origin.
+        app('notifications')->cancelQueuedForArtwork($id);
+
+        foreach ($claimants as $c) {
+            app('stats')->refreshUser((int) $c['claimant_id']);
+        }
 
         $this->provenance->log(
             $this->userId(),
@@ -404,6 +459,7 @@ final class GalleryController extends BaseController
             [
                 'session_id' => $artwork['session_id'],
                 'file' => $artwork['file_path'],
+                'lock_held' => $locked,
             ]
         );
 

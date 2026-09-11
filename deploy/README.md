@@ -80,11 +80,151 @@ From local machine:
 ssh -i ~/.ssh/dreamhost_ldr ldrusr@69.163.140.7 'cd ~/lifedrawing.andresclements.com/randburg && git pull && ~/bin/composer install --no-dev --optimize-autoloader'
 ```
 
-If there are new migrations:
+### Deploys that carry a migration
+
+`git pull && composer && migrate` joined by `&&` sequences only those commands. Apache keeps
+serving and cron keeps firing throughout, so a request arriving between the code landing and
+the migration running hits new code against a missing column. Re-running a backfill afterwards
+repairs data, never the requests that already failed.
+
+Reversing the order does not help either: the migration file only arrives *with* the pull, so
+"migrate first" would find nothing pending and report a false success.
+
+So a migration deploy needs the web gate, not just a cron pause.
+
+**Install the maintenance gate first.** It cannot ship in the deploy it is meant to protect.
+Copy `deploy/maintenance.html` to the document root and merge the gate block from
+`deploy/dreamhost-root.htaccess` into `~/lifedrawing.andresclements.com/.htaccess`. The block
+must go **above** the two routing rules — both carry `[L]`, so a gate pasted below them never
+fires and the window is silently open.
+
+Replace `CHANGE_ME` with a token from `openssl rand -hex 16`. Hex specifically: the token is
+interpolated into a regex, and the `+` and `/` that base64 produces would be read as regex
+syntax and silently widen the bypass. Keep the token on the server only, never in git.
+
+Note the three things that are easy to get wrong, all handled in the template:
+
+- The flag lives at the **document root** (`~/lifedrawing.andresclements.com/maintenance.flag`),
+  not under `randburg/public/`. The app sits one level below the document root.
+- `R=503` alone does **not** serve the page — Apache discards the substitution for non-redirect
+  status codes, so the page comes from `ErrorDocument`.
+- The bypass is a GET, to `_health`, with the token. A bare token check would exempt every
+  route and method including writes, which is what the gate exists to prevent.
+
+Test it on its own before relying on it. An unchanged `storage/logs/` proves nothing, since a
+successful request logs nothing anyway — add a temporary marker line at the top of
+`public/index.php`, confirm the table below, then remove it.
+
+| With the flag up | Expect |
+|---|---|
+| Public GET | 503, maintenance page, no marker line |
+| Public POST | 503, no marker line |
+| GET `_health` without the token | 503, no marker line |
+| GET `_health` with the token | 200 JSON, marker line written |
+| POST with the token | 503 — the bypass must not extend to writes |
+| Flag removed | Normal routing on every route |
+
+**Then deploy:**
 
 ```bash
-ssh -i ~/.ssh/dreamhost_ldr ldrusr@69.163.140.7 'cd ~/lifedrawing.andresclements.com/randburg && php tools/migrate.php run'
+# 1. Gate up
+ssh -i ~/.ssh/dreamhost_ldr ldrusr@69.163.140.7 'touch ~/lifedrawing.andresclements.com/maintenance.flag'
+
+# 2. Pause both crons and WAIT for in-flight workers. Commenting out a cron line
+#    does not stop a process already running mid-batch — storage/process_images.lock
+#    and the notification lock are the signals.
+
+# 3. Pull, install, migrate
+ssh -i ~/.ssh/dreamhost_ldr ldrusr@69.163.140.7 'cd ~/lifedrawing.andresclements.com/randburg && git pull && ~/bin/composer install --no-dev --optimize-autoloader && php tools/migrate.php run'
+
+# 4. Verify, through the bypass token. Without it the check just returns the
+#    maintenance page and proves nothing.
+ssh -i ~/.ssh/dreamhost_ldr ldrusr@69.163.140.7 'cd ~/lifedrawing.andresclements.com/randburg && php tools/migrate.php status'
+curl -s 'https://lifedrawing.andresclements.com/randburg/_health?maint=YOUR_TOKEN'
+
+# 5. Gate down, restore the crons
+ssh -i ~/.ssh/dreamhost_ldr ldrusr@69.163.140.7 'rm ~/lifedrawing.andresclements.com/maintenance.flag'
 ```
+
+### What actually deploys as one unit
+
+**Deploy the branch tip, not an individual commit.** The three commits on
+`bookings-release-2` are a reading order, not a release boundary.
+
+The consent commit (`bd47428`) looks self-contained and its own test suite passes
+at that commit, which is misleading: the tests that would catch its flaws were
+written afterwards. Review found five defects in it, and all five were fixed in
+the later commits — withdrawal continuing when the image lock could not be taken,
+verification happening after the lock was released, derivative files the database
+never recorded being left public, deletion and restoration reading their
+candidates before locking, and a health-check bypass keyed on `REQUEST_URI` that
+the routing rewrite defeats.
+
+So there are two maintenance windows, not three:
+
+1. Install and test the maintenance gate. No migration.
+2. Deploy the branch tip, running both migrations (020 and 021) inside one
+   window, then follow both sets of extra steps below.
+
+Splitting this into a privacy-only release first is possible but is not a cherry
+pick: the fixes are interleaved with the bookings work across `AuthService`,
+`NotificationService`, `StatsService`, `GalleryController`, `Kernel` and
+`flush_notifications.php`. It would mean rebuilding the commits hunk by hunk,
+with a real risk of silently dropping one of the five fixes — the exact class of
+error this review chain kept catching. Ask for it explicitly if the smaller blast
+radius is worth that.
+
+### Consent and access release — extra steps
+
+- Confirm `storage/withdrawn/` exists, is writable, and sits **outside** the document root.
+- Run the cutover purge **inside the window, while the notification cron is still paused**, so
+  nothing is delivered between the purge and the restart:
+
+  ```bash
+  php tools/purge-legacy-notifications.php            # dry run first
+  php tools/purge-legacy-notifications.php --execute
+  ```
+
+  Rows queued before migration 020 carry no source identifier, so deleting an artwork cannot
+  find and cancel their mail. They do not age out on their own either: `cleanup()` only removes
+  rows already sent. A handful of buffered notifications are lost; that is the right trade
+  against a cancellation guarantee that cannot be honoured.
+
+- After the gate comes down, withdraw consent on a test account and **fetch its image URL
+  directly**. It must 404. The database column alone has never proved anything.
+
+### Bookings and sitter-queue release — extra steps
+
+Ship with automatic sitter-queue completion **off**, sweep the backlog, then turn it on.
+
+The 30-day notification cutoff is not enough on its own: a sitter stuck from *last* week is
+inside that window, so the first facilitator page load after deploy would email them. Hence
+the flag.
+
+1. Deploy with `APP_SITTER_AUTO_COMPLETE` unset (it defaults to off).
+2. Dry-run the repair and read the whole table before applying:
+
+   ```bash
+   php tools/fix-sitter-queue.php
+   ```
+
+   Spot-check two or three sitters against their actual session history. Completion accepts a
+   past booking that is not marked `no_show`; it deliberately does **not** require
+   `attendance = 'attended'`, because nothing writes that for a web booking and requiring it
+   would strand the whole backlog.
+
+3. Apply, then run it again. The second run must propose nothing but "leave alone" — that is
+   the idempotence check.
+
+   ```bash
+   php tools/fix-sitter-queue.php --execute
+   php tools/fix-sitter-queue.php
+   ```
+
+4. Set `APP_SITTER_AUTO_COMPLETE=true` in `.env` so the live sweep takes over.
+
+The repair sends no email at all: `sitterSessionCompleted()` delivers immediately rather than
+queueing, so replaying months of history would blast old sitters with thank-you notes.
 
 ## Creating Sessions (incl. off-pattern)
 

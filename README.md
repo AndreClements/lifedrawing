@@ -9,15 +9,16 @@ The model is not an object but a co-participant. What emerges is not just skill,
 A digital home for LDR that enables:
 
 - **Session management** — schedule sessions, track participants and roles (artist, model, facilitator, observer), capacity tracking (X/7 — counts artists only, excluding the facilitator and model, so listing cards match the WhatsApp schedule numbering), cancellation, tentative bookings. Off-pattern sessions (external venue, ticketed, sitters booked elsewhere) carry three flags: `capacity_published=0` shows `X/?` instead of a number, `booking_note` appends session-specific text to the WhatsApp line (marked `[1]`, with a self-expiring footnote), and `model_join_enabled=0` closes the public "Join as Model" route in both the card and the endpoint. Set via `tools/create-session.php` — the web form doesn't expose them. The flags are ordinary columns, so an off-pattern session can converge on the regular shape as circumstances settle — e.g. publishing capacity once the booking count firms up. One-click Join buttons on listing cards (logged-in: HTMX artist join; logged-out: intent-preserving artist/model sign-up)
-- **Participant management** — facilitator can add/remove participants, toggle tentative status, search users by name. Inline "Create stub" action in typeahead when no match — one click creates a new stub user and adds them to the session
+- **Participant management** — facilitator can add/remove participants, toggle tentative status, search users by name. Inline "Create stub" action in typeahead when no match — one click creates a new stub user and adds them to the session. Participants can cancel their own bookings from the session page or the dashboard; inside 48 hours the confirmation mentions the 50% contribution and still lets them proceed
+- **Attendance** — `booked` / `attended` / `no_show` on each participation row (migration 021). Statistics exclude `no_show` rather than requiring `attended`, because nothing has ever written `attended` for a web booking and requiring it would erase everyone's history. A no-show count is visible only to the facilitator and to the person themselves. Un-marking restores the prior state from the legacy `attended` column rather than flattening it to `booked`
 - **Artwork archive** — facilitator uploads batches of drawings per session with pose duration and labels, automatic image processing (EXIF rotation, 10MP cap, WebP conversion, three-tier thumbnails). Bulk backfill from phone photos via CLI (`stage-phone-photos.ps1` + `import-session-photos.php`) for whole-session imports
-- **Claim system** — artists and models claim their work/likeness after sessions, building personal portfolios. Intent-preserving registration: unauthenticated users are redirected through register/login and returned to their claim
+- **Claim system** — artists and models claim their work/likeness after sessions, building personal portfolios. Intent-preserving registration: unauthenticated users are redirected through register/login and returned to their claim. Claims can be undone by the claimant: a pending claim is deleted outright and its queued facilitator alert cancelled with it, while an approved one becomes `withdrawn` so the approval history survives. Both guard inside the UPDATE/DELETE, so an approval landing at the same moment cannot race a withdrawal
 - **Comments** — conversation on individual artworks, with artist/model comments surfaced first and role badges
-- **Consent system** — `pending → granted → withdrawn` state machine, enforced by middleware before identity-exposing operations. Non-consented users see contextual prompts instead of disabled buttons; HTMX errors redirect to consent page
+- **Consent system** — `pending → granted → withdrawn` state machine, enforced by middleware before identity-exposing operations. Non-consented users see contextual prompts instead of disabled buttons; HTMX errors redirect to consent page. Withdrawal is reachable from profile settings and **moves the person's uploaded files out of the web root** into `storage/withdrawn/`, because `.htaccess` serves existing files without PHP — hiding the database row alone leaves the image fetchable at its direct URL. The gate reads consent from the database, not the browser session, so a second logged-in browser cannot keep a stale `granted`. Re-granting restores participation but deliberately does not republish hidden work; `tools/restore-withdrawn.php` does that on request
 - **Strava-for-artistry** — personal dashboard with attendance streaks, weekly heatmap, session timeline, role distribution, milestone tracking
 - **Public profiles** — artists and models build visible portfolios through participation, with name privacy gating (real names only visible to fellow session participants)
-- **Sitter queue** — models join a waiting list with day preferences and WhatsApp contact; facilitators schedule, complete, and manage entries from `/pose/queue`. Auto-rejoin option. Consent-gated join, provenance-logged
-- **Notifications** — opt-in email alerts for new sessions, cancellations, claim resolution, comments, and sitter queue activity. Facilitators automatically receive operational emails for new claims, stub account registrations, and queue joins. Buffered via `ld_notification_queue` with 5-minute digest batching
+- **Sitter queue** — models join a waiting list with day preferences and WhatsApp contact; facilitators schedule, complete, and manage entries from `/pose/queue`. Auto-rejoin option. Consent-gated join, provenance-logged. Booking a sitter as a session `model` — by any route, including the add-participant typeahead the facilitator actually uses — now resolves their queue entry, and removing them returns it to `waiting` with their original place preserved unless they are still booked elsewhere. Waiting sitters sort above a "Scheduled" divider. `SitterQueueService::classify()` is the single rule set shared by the live sweep and `tools/fix-sitter-queue.php`
+- **Notifications** — opt-in email alerts for new sessions, cancellations, claim resolution, comments, and sitter queue activity. Facilitators automatically receive operational emails for new bookings, booking cancellations, new registrations, new claims, stub account registrations, and queue joins. Buffered via `ld_notification_queue` with 5-minute digest batching. Every queued row carries a `source_type`/`source_id` so deleting the thing it refers to cancels the mail before it goes out, and eligibility (consent, preference, stub address) is re-checked at send time rather than only when queued
 - **LDRBot feedback** — AI-generated artwork feedback posted as comments after each session. Two CLI tools (`ldrbot-query.php`, `ldrbot-post.php`) handle data gathering and posting; feedback is written by Claude viewing each image, guided by `VOICE.md`. LDRBot name always visible, notifications target artist claimant only
 - **WhatsApp schedule** — facilitator-facing formatted session schedule for sharing to the community WhatsApp group. Italic session titles, bold header, and a trailing sign-up URL so recipients can tap through
 - **FAQ** — community information page with CSS-only accordion layout (no inline JS, CSP-safe)
@@ -179,6 +180,13 @@ php tools/instagram-prep.php --session=ID              # Render carousel slides 
 php tools/instagram-prep.php --session=ID --mark-posted=URL   # Record posted images in the repost-safety ledger
 php tools/reset-production.php         # Reset production state (dangerous)
 php tools/test-mail.php [email]        # Send test email via configured SMTP
+php tools/fix-sitter-queue.php                # Repair the sitter-queue backlog (dry run)
+php tools/fix-sitter-queue.php --execute      # Apply — sends no email
+php tools/test-booking-lifecycle.php          # Verify bookings, claims, attendance, queue (local DB only)
+php tools/restore-withdrawn.php --user=ID     # Restore artwork archived by a consent withdrawal (dry run)
+php tools/restore-withdrawn.php --user=ID --execute      # Apply
+php tools/purge-legacy-notifications.php      # One-off cutover purge of unsent source-less queue rows
+php tools/test-consent-access.php             # Verify withdrawal, file access and eligibility (local DB only)
 php tools/check-users.php                     # Inspect account state (stubs, consent, roles)
 php tools/check-users.php --stubs-only        # Show only unclaimed stub accounts
 php tools/merge-stubs.php                     # Merge hardcoded stub→real account pairs
@@ -227,6 +235,7 @@ The same staged originals also feed the Instagram pipeline (`tools/instagram-pre
 | GET/POST | `/register` | Registration (supports `?intent=` for post-auth redirect) |
 | GET | `/logout` | Logout |
 | GET/POST | `/consent` | Consent disclosure |
+| POST | `/consent/withdraw` | Withdraw consent (hides uploads, archives their files) |
 | GET/POST | `/forgot-password` | Request password reset |
 | GET/POST | `/reset-password` | Reset password (with token) |
 
@@ -249,6 +258,9 @@ The same staged originals also feed the Instagram pipeline (`tools/instagram-pre
 | POST | `/sessions/{id}/participants/quick-add-stub` | Create stub user + add to session | Facilitator |
 | POST | `/sessions/{id}/participants/remove` | Remove participant | Facilitator |
 | POST | `/sessions/{id}/participants/tentative` | Toggle tentative status | Facilitator |
+| POST | `/sessions/{id}/participants/no-show` | Mark / un-mark a no-show | Facilitator, past sessions only |
+| POST | `/sessions/{id}/leave` | Cancel your own booking | Auth (not consent-gated) |
+| POST | `/claims/{id}/withdraw` | Undo your own claim | Auth (not consent-gated) |
 | GET | `/schedule/whatsapp` | WhatsApp-formatted schedule | Facilitator |
 | GET | `/pose/queue` | Sitter queue management | Facilitator |
 | POST | `/pose/queue/{id}/schedule` | Schedule sitter for session | Facilitator |

@@ -110,6 +110,11 @@ $twitterCard = !empty($og_image) ? 'summary_large_image' : 'summary';
 
     <footer class="site-footer">
         <p><?= axiom('footer') ?></p>
+        <p class="footer-links">
+            <a href="<?= e(config('app.whatsapp_url')) ?>" target="_blank" rel="noopener">WhatsApp group</a>
+            &middot;
+            <a href="<?= route('pages.faq') ?>">Information &amp; FAQs</a>
+        </p>
     </footer>
     <script src="<?= asset('js/app.js') ?>" defer></script>
 </body>
