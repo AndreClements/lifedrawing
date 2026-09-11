@@ -1,5 +1,35 @@
+# Maintenance gate.
+#
+# This file, NOT the one at the document root, is what governs /randburg/*.
+# Apache does not inherit mod_rewrite rules from a parent directory's .htaccess,
+# and this file turns RewriteEngine on — so any rule placed in the document-root
+# .htaccess is silently ignored for every request to the app. A gate was written
+# there first and appeared to do nothing at all.
+#
+# Raise and lower it from the DOCUMENT ROOT, one level above this directory:
+#
+#   touch ~/lifedrawing.andresclements.com/maintenance.flag     # gate up
+#   rm    ~/lifedrawing.andresclements.com/maintenance.flag     # gate down
+#
+# %{DOCUMENT_ROOT} is the site directory, so the flag lives beside maintenance.html
+# rather than inside the app.
+#
+# R=503 with a "-" substitution returns the status without rewriting; the page
+# itself has to come from ErrorDocument, because Apache discards the substitution
+# URL for non-redirect status codes. The maintenance page must be excluded from
+# the rule or its own subrequest re-enters it.
+#
+# Verified on production: with the flag up, a public GET, a POST, /_health and a
+# static asset all return 503 and the front controller is never reached.
+ErrorDocument 503 /maintenance.html
+
 <IfModule mod_rewrite.c>
     RewriteEngine On
+
+    RewriteCond %{DOCUMENT_ROOT}/maintenance.flag -f
+    RewriteCond %{REQUEST_URI} !^/maintenance\.html$
+    RewriteRule ^ - [R=503,L]
+
     RewriteRule ^$ public/ [L]
     RewriteRule (.*) public/$1 [L]
 </IfModule>
