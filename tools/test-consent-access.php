@@ -228,7 +228,7 @@ $legacy = (int) $db->fetchColumn(
 check('legacy NULL-source row survives, as documented', $legacy === 1,
     'this is precisely why the cutover purge exists');
 
-$db->execute("DELETE FROM ld_notification_queue WHERE recipient_id IN (?, ?)", [$claimantId, $facilitatorId]);
+$db->execute("DELETE FROM ld_notification_queue WHERE recipient_email = 'x@local.test'");
 
 // --- 3. Withdrawal removes public access ---------------------------------
 
@@ -377,7 +377,11 @@ $_SESSION = [];
 echo "\nTeardown\n";
 
 $db->execute("DELETE FROM provenance_log WHERE user_id IN (?, ?)", [$uploaderId, $claimantId]);
-$db->execute("DELETE FROM ld_notification_queue WHERE recipient_id IN (?, ?, ?)", [$uploaderId, $claimantId, $facilitatorId]);
+// Fixture users only, plus anything this test addressed to itself. The
+// facilitator is a REAL account here - deleting their queued mail would throw
+// away notifications that have nothing to do with the test.
+$db->execute("DELETE FROM ld_notification_queue WHERE recipient_id IN (?, ?)", [$uploaderId, $claimantId]);
+$db->execute("DELETE FROM ld_notification_queue WHERE recipient_email = 'x@local.test'");
 $db->execute("DELETE FROM ld_claims WHERE artwork_id IN (?, ?, ?)", [$artA['id'], $artB['id'], $artC['id']]);
 $db->execute("DELETE FROM ld_artworks WHERE id IN (?, ?, ?)", [$artA['id'], $artB['id'], $artC['id']]);
 $db->execute("DELETE FROM ld_session_participants WHERE session_id IN (?, ?)", [$pastSessionId, $futureSessionId]);

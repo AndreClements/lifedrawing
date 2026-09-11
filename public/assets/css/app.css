@@ -2134,3 +2134,108 @@ form.search-result-create button.btn-link-inline:hover {
     .queue-entry-actions .form-inline { flex-wrap: wrap; }
     .queue-entry-actions select { width: 100%; }
 }
+
+/* ==========================================================================
+   Bookings, claims, attendance — Release 2
+   ========================================================================== */
+
+/* Join / cancel control — one block, so the HTMX swap target is stable */
+.join-control {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+/* Claim / undo control on the artwork page */
+.claim-control {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+.btn-link {
+    background: none;
+    border: none;
+    padding: 0 0.25rem;
+    font-family: var(--font-ui);
+    font-size: 0.8rem;
+    color: var(--color-muted, #6a6a6a);
+    text-decoration: underline;
+    cursor: pointer;
+}
+
+.btn-link:hover {
+    color: var(--color-text, #2a2a2a);
+}
+
+/* Upcoming bookings on the dashboard */
+.upcoming-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.upcoming-entry {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.upcoming-when {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: 2.75rem;
+    line-height: 1.1;
+}
+
+.upcoming-when strong { font-size: 1.25rem; }
+.upcoming-when small { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; }
+
+.upcoming-what { flex: 1; }
+.upcoming-action { margin-left: auto; }
+
+/* A missed session is a fact, not a warning. Muted, never red. */
+.dashboard-noshow em {
+    font-style: italic;
+    opacity: 0.8;
+}
+
+/* A no-show participant reads as faded rather than flagged */
+.participant.no-show {
+    opacity: 0.55;
+    text-decoration: line-through;
+}
+
+/* Sitter queue: people still waiting sit above the divider */
+.queue-divider {
+    margin: 1.25rem 0 0.5rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--color-border, #ddd);
+    font-family: var(--font-ui);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--color-muted, #6a6a6a);
+}
+
+.queue-entry.queue-scheduled { opacity: 0.75; }
+
+/* Footer links */
+.footer-links {
+    font-family: var(--font-ui);
+    font-size: 0.8rem;
+    margin-top: 0.5rem;
+}
+
+/* Consent withdrawal block */
+.consent-withdraw {
+    margin-top: 2.5rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--color-border, #ddd);
+}
+
+.consent-withdraw h2 {
+    font-size: 1.1rem;
+}

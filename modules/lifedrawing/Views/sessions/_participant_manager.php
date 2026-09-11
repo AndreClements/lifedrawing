@@ -7,14 +7,23 @@
  * @var array $participants
  */
 $hexId = hex_id((int) $session['id'], session_title($session));
+
+// A no-show is not knowable in advance, so the control only appears once the
+// session has happened. The controller enforces the same rule — this is the
+// convenience, that is the guard.
+$sessionIsPast = ($session['session_date'] ?? '') < date('Y-m-d');
 ?>
 <div id="participant-manager" class="participant-manager">
     <h3>Participants</h3>
     <div class="participant-list">
         <?php foreach ($participants as $p): ?>
-            <span class="participant badge-<?= $p['role'] ?><?= $p['tentative'] ? ' tentative' : '' ?>">
+            <?php $isNoShow = ($p['attendance'] ?? 'booked') === 'no_show'; ?>
+            <span class="participant badge-<?= $p['role'] ?><?= $p['tentative'] ? ' tentative' : '' ?><?= $isNoShow ? ' no-show' : '' ?>">
                 <?= visible_name($p['display_name']) ?><?php if ($p['tentative']): ?>?<?php endif; ?>
                 <small>(<?= e($p['role']) ?>)</small>
+                <?php if ($isNoShow): ?>
+                    <small class="badge badge-muted">no-show</small>
+                <?php endif; ?>
                 <?php if ($p['role'] !== 'facilitator'): ?>
                     <form method="POST"
                           action="<?= route('sessions.participants.tentative', ['id' => $hexId]) ?>"
@@ -26,6 +35,19 @@ $hexId = hex_id((int) $session['id'], session_title($session));
                         <input type="hidden" name="pid" value="<?= $p['id'] ?>">
                         <button type="submit" class="btn-icon" title="Toggle tentative">?</button>
                     </form>
+                    <?php if ($sessionIsPast): ?>
+                        <form method="POST"
+                              action="<?= route('sessions.participants.noshow', ['id' => $hexId]) ?>"
+                              hx-post="<?= route('sessions.participants.noshow', ['id' => $hexId]) ?>"
+                              hx-target="#participant-manager"
+                              hx-swap="outerHTML"
+                              class="form-inline">
+                            <?= csrf_field() ?>
+                            <input type="hidden" name="pid" value="<?= $p['id'] ?>">
+                            <button type="submit" class="btn-icon"
+                                    title="<?= $isNoShow ? 'Undo no-show' : 'Mark as a no-show' ?>"><?= $isNoShow ? '&#8617;' : '&#8709;' ?></button>
+                        </form>
+                    <?php endif; ?>
                     <form method="POST"
                           action="<?= route('sessions.participants.remove', ['id' => $hexId]) ?>"
                           hx-post="<?= route('sessions.participants.remove', ['id' => $hexId]) ?>"

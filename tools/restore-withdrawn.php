@@ -90,23 +90,31 @@ if ($artworkId > 0) {
     $params[] = $artworkId;
 }
 
-$stmt = $pdo->prepare($sql . " ORDER BY id ASC");
-$stmt->execute($params);
-$artworks = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-if (empty($artworks)) {
-    echo "Nothing to restore (no 'private' artwork found for this user).\n";
-    exit(0);
-}
-
 $uploadDir    = LDR_ROOT . '/public/assets/uploads';
 $withdrawnDir = LDR_ROOT . '/storage/withdrawn/' . $userId;
 
 // Same lock the image worker holds, for the same reason withdrawal takes it:
 // a run in flight writes into the public tree at four separate points.
+//
+// Acquired BEFORE reading the candidates. Reading first and locking second
+// leaves a window where an artwork selected as 'private' is deleted while we
+// wait - and we would then move its archived files back into public view. The
+// conditional UPDATE afterwards cannot undo that exposure, because the files
+// are already being served.
 $locked = \App\Services\ImageLock::acquire();
 if (!$locked) {
-    fwrite(STDERR, "WARNING: could not acquire the image lock; a process_images run may be active.\n");
+    fwrite(STDERR, "Could not acquire the image lock; a process_images run may be active. Try again shortly.\n");
+    exit(1);
+}
+
+$stmt = $pdo->prepare($sql . " ORDER BY id ASC");
+$stmt->execute($params);
+$artworks = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+if (empty($artworks)) {
+    \App\Services\ImageLock::release();
+    echo "Nothing to restore (no 'private' artwork found for this user).\n";
+    exit(0);
 }
 
 $restored = 0;
@@ -119,6 +127,17 @@ try {
         $paths = [];
         foreach (['file_path', 'web_path', 'thumbnail_path'] as $col) {
             if (!empty($artwork[$col])) $paths[] = $artwork[$col];
+        }
+
+        // Re-check under the lock. 'private' means archived and restorable;
+        // 'removed' means deleted and must stay deleted. The two must never be
+        // conflated, and the state can have changed since the list was built.
+        $current = $pdo->prepare("SELECT visibility FROM ld_artworks WHERE id = ?");
+        $current->execute([$id]);
+        if ($current->fetchColumn() !== 'private') {
+            echo "  SKIP  #{$id}: no longer private - leaving it alone\n";
+            $missing++;
+            continue;
         }
 
         $movable = [];
@@ -169,9 +188,7 @@ try {
         }
     }
 } finally {
-    if ($locked) {
-        \App\Services\ImageLock::release();
-    }
+    \App\Services\ImageLock::release();
 }
 
 echo str_repeat('-', 68) . "\n";

@@ -24,17 +24,32 @@ RewriteEngine On
 # non-redirect status codes. The page has to come from ErrorDocument, and the
 # error document itself has to be excluded or its subrequest re-enters the rule.
 #
-# The bypass is deliberately narrow — a GET, to _health, carrying the token.
-# A bare token check would exempt every route and method, writes included, which
-# during a migration is precisely what this gate exists to prevent. Replace
-# CHANGE_ME with a real secret; keep it in this file on the server only.
+# The health-check bypass is matched against THE_REQUEST rather than
+# REQUEST_URI, for two reasons.
+#
+# THE_REQUEST is the verbatim original request line — "GET /randburg/_health?
+# maint=TOKEN HTTP/1.1" — and rewriting never touches it. REQUEST_URI does get
+# touched: the routing rules below rewrite /randburg/_health to
+# randburg/public/index.php with [L], mod_rewrite re-runs the ruleset against
+# the new URI, and a REQUEST_URI test for the health path would fail that second
+# pass and 503 the very check meant to prove the deploy worked.
+#
+# It also folds method, path and token into a single condition, so the bypass is
+# narrow by construction: a GET, to _health, carrying the token. A bare token
+# check would exempt every route and every method, writes included, which during
+# a migration is exactly what this gate exists to prevent.
+#
+# REDIRECT_STATUS is empty only on the initial external request, so the whole
+# block is skipped during internal re-processing in any case.
+#
+# Replace CHANGE_ME with a real secret. Keep it in this file on the server only,
+# never in git.
 ErrorDocument 503 /maintenance.html
 
+RewriteCond %{ENV:REDIRECT_STATUS} ^$
 RewriteCond %{DOCUMENT_ROOT}/maintenance.flag -f
 RewriteCond %{REQUEST_URI} !^/maintenance\.html$
-RewriteCond %{REQUEST_METHOD} !=GET [OR]
-RewriteCond %{REQUEST_URI} !^/randburg/_health$ [OR]
-RewriteCond %{QUERY_STRING} !(^|&)maint=CHANGE_ME
+RewriteCond %{THE_REQUEST} !^GET\s/randburg/_health\?maint=CHANGE_ME\s
 RewriteRule ^ - [R=503,L]
 
 # --- Normal routing ---------------------------------------------------------

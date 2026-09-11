@@ -32,6 +32,13 @@
         </div>
     </div>
 
+    <?php if (($noShows ?? null) !== null && $noShows > 0): ?>
+        <p class="text-muted text-sm">
+            Missed sessions: <?= (int) $noShows ?>
+            <em>(only you and they see this)</em>
+        </p>
+    <?php endif; ?>
+
     <!-- Claimed Artworks -->
     <?php if (!empty($artworks)): ?>
         <h3>Artworks</h3>

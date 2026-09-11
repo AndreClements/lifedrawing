@@ -202,6 +202,17 @@ foreach ($artworks as $artwork) {
         if (!$thumbOk) {
             logLine("  FAIL #{$id}: thumbnail generation failed from both web and original");
             logLine("    And-Yet: Web display was generated OK but thumbnail failed — unusual. Check GD memory or the generated WebP file.");
+
+            // Remove the web image we just wrote. The database only learns about
+            // both paths once BOTH succeed, so leaving this behind creates a
+            // real, publicly served file that no row points at - which consent
+            // withdrawal would have no way to find, and would move everything
+            // else while reporting success.
+            if (is_file($webDest)) {
+                @unlink($webDest);
+                logLine("    Removed the orphaned web image so nothing unreferenced stays public.");
+            }
+
             $failed++;
             continue;
         }

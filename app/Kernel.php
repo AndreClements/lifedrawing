@@ -183,6 +183,13 @@ final class Kernel
         });
 
         // Notification service (email alerts, opt-in)
+        // Keeps ld_sitter_queue in step with who is actually booked as a model,
+        // and owns the single classification routine shared by the live sweep
+        // and tools/fix-sitter-queue.php.
+        $this->container->singleton('sitterQueue', function (Container $c) {
+            return new \App\Services\SitterQueueService($c->get('db'));
+        });
+
         $this->container->singleton('notifications', function (Container $c) {
             return new \App\Services\NotificationService($c->get('mail'), $c->get('db'));
         });

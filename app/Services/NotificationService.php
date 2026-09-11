@@ -193,6 +193,156 @@ final class NotificationService
     }
 
     /**
+     * Operational: someone booked a place at a session.
+     *
+     * Fired from BOTH join paths — SessionController::join() and the
+     * register-with-intent path in AuthController. They are separate code, and
+     * missing the second would silence exactly the bookings André most wants to
+     * hear about: the ones from people who have only just signed up.
+     */
+    public function sessionJoined(int $sessionId, int $userId, string $role): void
+    {
+        $facilitators = $this->facilitators($userId);
+        if (empty($facilitators)) return;
+
+        $session = $this->db->fetch("SELECT * FROM ld_sessions WHERE id = ?", [$sessionId]);
+        if (!$session) return;
+
+        $user = $this->db->fetch("SELECT display_name FROM users WHERE id = ?", [$userId]);
+        $name = $user['display_name'] ?? 'Someone';
+        $title = session_title($session);
+        $date = format_date($session['session_date']);
+        $link = $this->baseUrl . route('sessions.show', ['id' => hex_id($sessionId, $title)]);
+
+        $artists = (int) $this->db->fetchColumn(
+            "SELECT COUNT(*) FROM ld_session_participants WHERE session_id = ? AND role = 'artist'",
+            [$sessionId]
+        );
+
+        foreach ($facilitators as $fac) {
+            $this->enqueue(
+                (int) $fac['id'],
+                $fac['display_name'],
+                $fac['email'],
+                'sessionJoined',
+                "Booking: {$name} for {$title}",
+                "{$name} booked a place as {$role}.
+
+{$title}
+{$date}
+Artists now booked: {$artists}",
+                $sessionId,
+                "View the session: {$link}",
+                null,
+                'session',
+                $sessionId
+            );
+        }
+    }
+
+    /**
+     * Operational: someone cancelled their own booking.
+     *
+     * The other half of the loop. Without it a cancellation is silent and the
+     * only clue is a number that quietly went down. $lateNotice flags a
+     * cancellation inside 48 hours, which is the case worth seeing at a glance.
+     */
+    public function sessionLeft(int $sessionId, int $userId, string $role, bool $lateNotice): void
+    {
+        $facilitators = $this->facilitators($userId);
+        if (empty($facilitators)) return;
+
+        $session = $this->db->fetch("SELECT * FROM ld_sessions WHERE id = ?", [$sessionId]);
+        if (!$session) return;
+
+        $user = $this->db->fetch("SELECT display_name FROM users WHERE id = ?", [$userId]);
+        $name = $user['display_name'] ?? 'Someone';
+        $title = session_title($session);
+        $date = format_date($session['session_date']);
+        $link = $this->baseUrl . route('sessions.show', ['id' => hex_id($sessionId, $title)]);
+
+        $artists = (int) $this->db->fetchColumn(
+            "SELECT COUNT(*) FROM ld_session_participants WHERE session_id = ? AND role = 'artist'",
+            [$sessionId]
+        );
+
+        $late = $lateNotice
+            ? "
+
+This is inside 48 hours of the session."
+            : '';
+
+        foreach ($facilitators as $fac) {
+            $this->enqueue(
+                (int) $fac['id'],
+                $fac['display_name'],
+                $fac['email'],
+                'sessionLeft',
+                "Cancellation: {$name} for {$title}",
+                "{$name} cancelled their {$role} booking.
+
+{$title}
+{$date}
+Artists still booked: {$artists}{$late}",
+                $sessionId,
+                "View the session: {$link}",
+                null,
+                'session',
+                $sessionId
+            );
+        }
+    }
+
+    /**
+     * Operational: a new account was created.
+     *
+     * Plain registrations only. Claiming a stub already sends stubClaimed, and
+     * two emails about one person arriving reads as a bug.
+     */
+    public function userRegistered(int $userId): void
+    {
+        $facilitators = $this->facilitators($userId);
+        if (empty($facilitators)) return;
+
+        $user = $this->db->fetch("SELECT display_name, email FROM users WHERE id = ?", [$userId]);
+        if (!$user) return;
+
+        $profileLink = $this->baseUrl . route('profiles.show', ['id' => hex_id($userId)]);
+
+        foreach ($facilitators as $fac) {
+            $this->enqueue(
+                (int) $fac['id'],
+                $fac['display_name'],
+                $fac['email'],
+                'userRegistered',
+                "New member: {$user['display_name']}",
+                "{$user['display_name']} ({$user['email']}) has registered.
+
+"
+                    . "They did not claim an existing stub account, so if they have been to "
+                    . "sessions before, their history may need merging.",
+                null,
+                "View their profile: {$profileLink}",
+                null,
+                'user',
+                $userId
+            );
+        }
+    }
+
+    /** Facilitator recipients for operational mail, excluding one user. */
+    private function facilitators(int $excludeUserId): array
+    {
+        return $this->db->fetchAll(
+            "SELECT id, email, display_name FROM users
+             WHERE role IN ('admin', 'facilitator') AND id != ?
+               AND email NOT LIKE '%.stub@local'
+               AND consent_state != 'withdrawn'",
+            [$excludeUserId]
+        );
+    }
+
+    /**
      * Operational: stub account claimed during registration.
      * Notifies facilitators of the provenance change.
      */

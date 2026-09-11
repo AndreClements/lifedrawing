@@ -160,6 +160,39 @@ ssh -i ~/.ssh/dreamhost_ldr ldrusr@69.163.140.7 'rm ~/lifedrawing.andresclements
 - After the gate comes down, withdraw consent on a test account and **fetch its image URL
   directly**. It must 404. The database column alone has never proved anything.
 
+### Bookings and sitter-queue release — extra steps
+
+Ship with automatic sitter-queue completion **off**, sweep the backlog, then turn it on.
+
+The 30-day notification cutoff is not enough on its own: a sitter stuck from *last* week is
+inside that window, so the first facilitator page load after deploy would email them. Hence
+the flag.
+
+1. Deploy with `APP_SITTER_AUTO_COMPLETE` unset (it defaults to off).
+2. Dry-run the repair and read the whole table before applying:
+
+   ```bash
+   php tools/fix-sitter-queue.php
+   ```
+
+   Spot-check two or three sitters against their actual session history. Completion accepts a
+   past booking that is not marked `no_show`; it deliberately does **not** require
+   `attendance = 'attended'`, because nothing writes that for a web booking and requiring it
+   would strand the whole backlog.
+
+3. Apply, then run it again. The second run must propose nothing but "leave alone" — that is
+   the idempotence check.
+
+   ```bash
+   php tools/fix-sitter-queue.php --execute
+   php tools/fix-sitter-queue.php
+   ```
+
+4. Set `APP_SITTER_AUTO_COMPLETE=true` in `.env` so the live sweep takes over.
+
+The repair sends no email at all: `sitterSessionCompleted()` delivers immediately rather than
+queueing, so replaying months of history would blast old sitters with thank-you notes.
+
 ## Creating Sessions (incl. off-pattern)
 
 Regular sessions are created through the web form. **Off-pattern sessions** (external venue,

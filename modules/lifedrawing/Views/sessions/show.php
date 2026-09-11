@@ -40,19 +40,13 @@
                     <span class="badge-cancelled">Cancelled</span>
                 <?php endif; ?>
             <?php endif; ?>
-            <?php if ($session['status'] !== 'cancelled' && $session['session_date'] >= date('Y-m-d')): ?>
-                <?php if (app('auth')->isLoggedIn()): ?>
-                    <form method="POST" action="<?= route('sessions.join', ['id' => hex_id((int) $session['id'], session_title($session))]) ?>" class="form-inline"
-                          hx-post="<?= route('sessions.join', ['id' => hex_id((int) $session['id'], session_title($session))]) ?>"
-                          hx-swap="outerHTML">
-                        <?= csrf_field() ?>
-                        <input type="hidden" name="role" value="artist">
-                        <button type="submit" class="btn btn-outline">Join as Artist</button>
-                    </form>
-                <?php else: ?>
-                    <a href="<?= route('auth.register') ?>?intent=join_session&session_id=<?= hex_id((int) $session['id'], session_title($session)) ?>&role=artist" class="btn btn-outline">Join as Artist</a>
-                <?php endif; ?>
-            <?php endif; ?>
+            <?php
+            // One shared control for join and cancel. This page used never to
+            // check whether you had already joined, so it offered "Join as
+            // Artist" to people who were already booked, while the listing
+            // cards got it right. Now both include the same partial.
+            include __DIR__ . '/_join_control.php';
+            ?>
         </div>
     </div>
 

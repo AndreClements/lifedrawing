@@ -54,10 +54,41 @@ document.addEventListener('click', function(e) {
     if (form) htmx.trigger(form, 'submit');
 });
 
-/* Confirm dialog for destructive actions (CSP-safe, no inline handlers) */
+/* Confirm dialog for destructive actions (CSP-safe, no inline handlers)
+ *
+ * Two handlers, because one is not enough.
+ *
+ * The document-level 'submit' listener below works for ordinary forms, but it
+ * CANNOT stop an HTMX request. HTMX binds its handler on the form element, so
+ * it fires during the target phase, before the event bubbles up to document —
+ * by the time this runs, the request is already away and preventDefault() does
+ * nothing. Every .confirm-action form used to be a plain POST, which is why
+ * that was never visible.
+ *
+ * So HTMX-driven forms go through htmx:confirm instead, reading the same
+ * data-confirm attribute. One convention, correct for both.
+ */
+document.addEventListener('htmx:confirm', function(e) {
+    var el = e.detail.elt;
+    if (!el || !el.closest('.confirm-action')) return;
+
+    var message = el.closest('.confirm-action').getAttribute('data-confirm') || 'Are you sure?';
+
+    e.preventDefault();                       // hold the request
+    if (confirm(message)) {
+        e.detail.issueRequest();              // let it go
+    }
+});
+
 document.addEventListener('submit', function(e) {
     var form = e.target.closest('.confirm-action');
     if (!form) return;
+    // Already handled by htmx:confirm above — asking twice is worse than not
+    // asking, because people learn to click through the first one.
+    if (form.hasAttribute('hx-post') || form.hasAttribute('hx-get')
+        || form.hasAttribute('hx-delete') || form.hasAttribute('hx-put')) {
+        return;
+    }
     var message = form.getAttribute('data-confirm') || 'Are you sure?';
     if (!confirm(message)) {
         e.preventDefault();

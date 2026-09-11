@@ -33,7 +33,8 @@ final class StatsService
             "SELECT COUNT(DISTINCT sp.session_id)
              FROM ld_session_participants sp
              JOIN ld_sessions s ON s.id = sp.session_id
-             WHERE sp.user_id = ? AND s.session_date <= ?",
+             WHERE sp.user_id = ? AND s.session_date <= ?
+               AND sp.attendance != 'no_show'",
             [$userId, $today]
         );
 
@@ -54,7 +55,8 @@ final class StatsService
             "SELECT MAX(s.session_date)
              FROM ld_sessions s
              JOIN ld_session_participants sp ON sp.session_id = s.id
-             WHERE sp.user_id = ? AND s.session_date <= ?",
+             WHERE sp.user_id = ? AND s.session_date <= ?
+               AND sp.attendance != 'no_show'",
             [$userId, $today]
         );
 
@@ -104,7 +106,12 @@ final class StatsService
      * Calculate weekly streaks.
      *
      * A streak is consecutive ISO weeks where the user attended at least one
-     * session that has already taken place. Future bookings do not count.
+     * session that has already taken place. Future bookings do not count, and
+     * neither does a session they were marked a no-show for.
+     *
+     * The rule is "not marked no_show", NOT "attendance = 'attended'". Nothing
+     * has ever written 'attended' for a web booking, so requiring it would wipe
+     * the attendance history of everyone who booked through the site.
      * Current streak counts backwards from the most recent week with activity.
      * If the most recent activity was more than 2 weeks ago, current streak resets to 0.
      *
@@ -118,6 +125,7 @@ final class StatsService
              FROM ld_sessions s
              JOIN ld_session_participants sp ON sp.session_id = s.id
              WHERE sp.user_id = ? AND s.session_date <= ?
+               AND sp.attendance != 'no_show'
              ORDER BY yw DESC",
             [$userId, date('Y-m-d')]
         );
@@ -254,11 +262,33 @@ final class StatsService
                      WHERE a2.session_id = s.id AND c.claimant_id = ? AND c.status = 'approved') as my_claimed
              FROM ld_sessions s
              JOIN ld_session_participants sp ON sp.session_id = s.id
-             WHERE sp.user_id = ?
+             WHERE sp.user_id = ? AND s.session_date <= ?
              GROUP BY s.id
              ORDER BY s.session_date DESC
              LIMIT 10",
-            [$userId, $userId]
+            [$userId, $userId, date('Y-m-d')]
+        );
+
+        // Sessions they have booked but not yet been to. These used to sort to
+        // the top of the list above, which is headed "Recent Sessions" - so a
+        // booking for next month read as the most recent thing they had done.
+        $upcoming = $this->db->fetchAll(
+            "SELECT s.id, s.title, s.session_date, s.start_time, s.venue, s.status,
+                    GROUP_CONCAT(sp.role ORDER BY sp.role SEPARATOR ', ') as role
+             FROM ld_sessions s
+             JOIN ld_session_participants sp ON sp.session_id = s.id
+             WHERE sp.user_id = ? AND s.session_date >= ?
+             GROUP BY s.id
+             ORDER BY s.session_date ASC",
+            [$userId, date('Y-m-d')]
+        );
+
+        // Shown only to this person and to the facilitator. It is a fact, not a
+        // reprimand, and it never appears on a public profile.
+        $noShows = (int) $this->db->fetchColumn(
+            "SELECT COUNT(*) FROM ld_session_participants
+             WHERE user_id = ? AND attendance = 'no_show'",
+            [$userId]
         );
 
         // Weekly activity for the last 12 weeks (heatmap data)
@@ -307,6 +337,8 @@ final class StatsService
         return [
             'stats' => $stats,
             'timeline' => $timeline,
+            'upcoming' => $upcoming,
+            'noShows' => $noShows,
             'weekGrid' => $weekGrid,
             'roles' => $roles,
             'milestones' => $milestones,

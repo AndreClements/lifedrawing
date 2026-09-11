@@ -47,13 +47,19 @@ final class GalleryController extends BaseController
         // Check if current user already has claims on this artwork
         $userClaims = [];
         if ($this->auth->isLoggedIn()) {
+            // The id comes along now, because the Undo control needs something
+            // to post to. Still filtered to pending/approved: a withdrawn or
+            // rejected row must read as unclaimed so the claim button returns.
             $rows = $this->db->fetchAll(
-                "SELECT claim_type, status FROM ld_claims
+                "SELECT id, claim_type, status FROM ld_claims
                  WHERE artwork_id = ? AND claimant_id = ? AND status IN ('pending', 'approved')",
                 [$id, $this->userId()]
             );
             foreach ($rows as $row) {
-                $userClaims[$row['claim_type']] = $row['status'];
+                $userClaims[$row['claim_type']] = [
+                    'id'     => (int) $row['id'],
+                    'status' => $row['status'],
+                ];
             }
         }
 
@@ -392,15 +398,51 @@ final class GalleryController extends BaseController
         // write fresh derivatives back into the public tree after the unlink.
         $locked = \App\Services\ImageLock::acquire();
 
+        if (!$locked) {
+            // Refuse rather than race. Deleting unlocked can miss derivatives
+            // the worker writes while we work, leaving files public for an
+            // artwork the page now reports as deleted.
+            return Response::error(
+                'The image processor is busy. Try again in a moment.',
+                503
+            );
+        }
+
         try {
-            // Remove physical files
+            // Re-read INSIDE the lock. The row read before acquiring may be
+            // stale: the worker could have written web/thumbnail paths while we
+            // were waiting for it to finish, and those files would survive.
+            $artwork = $this->table('ld_artworks')->where('id', '=', $id)->first();
+            if (!$artwork) {
+                return Response::notFound('Artwork not found.');
+            }
+
             $uploadDir = app('upload')->uploadDir;
+
+            // Derivative names the worker writes beside the original, whether or
+            // not the row records them - a run that made the web image but
+            // failed on the thumbnail leaves an unreferenced public file.
+            $targets = [];
             foreach (['file_path', 'web_path', 'thumbnail_path'] as $col) {
                 if (!empty($artwork[$col])) {
-                    $fullPath = $uploadDir . '/' . $artwork[$col];
-                    if (is_file($fullPath)) {
-                        @unlink($fullPath);
+                    $targets[] = $artwork[$col];
+                }
+            }
+            if (!empty($artwork['file_path'])) {
+                $dir  = dirname($artwork['file_path']);
+                $stem = pathinfo(basename($artwork['file_path']), PATHINFO_FILENAME);
+                $dir  = ($dir === '.' || $dir === '') ? '' : $dir . '/';
+                foreach ([$dir . 'web_' . $stem . '.webp', $dir . 'thumb_' . $stem . '.webp'] as $sibling) {
+                    if (!in_array($sibling, $targets, true)) {
+                        $targets[] = $sibling;
                     }
+                }
+            }
+
+            foreach ($targets as $rel) {
+                $fullPath = $uploadDir . '/' . $rel;
+                if (is_file($fullPath)) {
+                    @unlink($fullPath);
                 }
             }
 
@@ -409,9 +451,7 @@ final class GalleryController extends BaseController
                 ->where('id', '=', $id)
                 ->update(['visibility' => 'removed']);
         } finally {
-            if ($locked) {
-                \App\Services\ImageLock::release();
-            }
+            \App\Services\ImageLock::release();
         }
 
         // Cancel mail that would otherwise arrive minutes later pointing at a

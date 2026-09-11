@@ -5,7 +5,18 @@
         </div>
     <?php else: ?>
         <div class="queue-list">
+            <?php $seenScheduled = false; ?>
             <?php foreach ($entries as $entry): ?>
+                <?php
+                // Entries are ordered waiting-first, so the boundary happens
+                // once. People still waiting stay at the top, where you can see
+                // who is actually next, and booked sitters sink below a divider
+                // rather than staying interleaved by request date.
+                if (!$seenScheduled && $entry['status'] === 'scheduled'):
+                    $seenScheduled = true;
+                ?>
+                    <h4 class="queue-divider">Scheduled</h4>
+                <?php endif; ?>
                 <div class="queue-entry<?= $entry['status'] === 'scheduled' ? ' queue-scheduled' : '' ?>">
                     <div class="queue-entry-info">
                         <strong>
@@ -83,8 +94,8 @@
                                   class="form-inline">
                                 <?= csrf_field() ?>
                                 <?php if (!empty($upcomingSessions)): ?>
-                                    <select name="session_id" class="input-sm">
-                                        <option value="0">No specific session</option>
+                                    <select name="session_id" class="input-sm" required>
+                                        <option value="">Which session?</option>
                                         <?php foreach ($upcomingSessions as $s): ?>
                                             <option value="<?= $s['id'] ?>">
                                                 <?= date('D j M', strtotime($s['session_date'])) ?>

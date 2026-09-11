@@ -154,6 +154,12 @@ abstract class BaseController
         return null;
     }
 
+    /** Render a partial (no layout wrapper) — for HTMX fragment responses. */
+    protected function partial(string $view, array $data = []): Response
+    {
+        return Response::html($this->view->render($view, $data));
+    }
+
     /** Require a specific role — return 403 if not authorized. */
     protected function requireRole(string ...$roles): ?Response
     {

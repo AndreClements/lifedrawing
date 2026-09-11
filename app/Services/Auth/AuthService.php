@@ -397,6 +397,44 @@ final class AuthService
         $withdrawnDir = LDR_ROOT . '/storage/withdrawn/' . $userId;
         $moved = 0;
         $paths = [];
+        $remaining = [];
+
+        // Without the lock, ABORT the file move rather than racing the worker.
+        //
+        // Proceeding unlocked was the earlier behaviour and it was wrong: a run
+        // already in flight rewrites the original in place and writes
+        // derivatives, so it can recreate a file moments after we verify it
+        // gone. A withdrawal that cannot be made safe must report that, not
+        // press on and claim success.
+        //
+        // The consent state has already changed above, so every read path is
+        // gated either way; this is only about the files on disk.
+        if (!$locked) {
+            error_log("Consent withdrawal for user {$userId}: could not acquire the image lock; files left in place.");
+
+            $rows = $this->db->fetchAll(
+                "SELECT file_path, web_path, thumbnail_path FROM ld_artworks
+                 WHERE uploaded_by = ? AND visibility != 'removed'",
+                [$userId]
+            );
+            foreach ($rows as $row) {
+                foreach (['file_path', 'web_path', 'thumbnail_path'] as $col) {
+                    if (!empty($row[$col]) && is_file($uploadDir . '/' . $row[$col])) {
+                        $remaining[] = $row[$col];
+                    }
+                }
+            }
+
+            $this->db->execute(
+                "UPDATE ld_artworks SET visibility = 'private'
+                 WHERE uploaded_by = ? AND visibility != 'removed'",
+                [$userId]
+            );
+
+            $this->reportIncompleteWithdrawal($userId, $remaining);
+
+            return ['complete' => false, 'moved' => 0, 'remaining' => $remaining, 'locked' => false];
+        }
 
         try {
             // NOT already-removed artwork. The original statement swept those up
@@ -413,6 +451,19 @@ final class AuthService
                 foreach (['file_path', 'web_path', 'thumbnail_path'] as $col) {
                     if (!empty($artwork[$col])) {
                         $paths[] = $artwork[$col];
+                    }
+                }
+
+                // Derivatives the database does not know about.
+                //
+                // process_images.php writes the web image BEFORE the thumbnail
+                // but records both paths only once both succeed. A thumbnail
+                // failure therefore leaves a real, public web_*.webp with no row
+                // pointing at it. Moving only database-listed paths would leave
+                // that file served and still report success.
+                foreach ($this->derivativeSiblings($artwork['file_path'] ?? '') as $sibling) {
+                    if (!in_array($sibling, $paths, true)) {
+                        $paths[] = $sibling;
                     }
                 }
             }
@@ -441,18 +492,17 @@ final class AuthService
                     $moved++;
                 }
             }
-        } finally {
-            if ($locked) {
-                \App\Services\ImageLock::release();
-            }
-        }
 
-        // Verify, do not assume. This is the check that actually means anything.
-        $remaining = [];
-        foreach ($paths as $rel) {
-            if (is_file($uploadDir . '/' . $rel)) {
-                $remaining[] = $rel;
+            // Verify INSIDE the lock, before releasing it. Verifying afterwards
+            // leaves a gap in which the worker can put a file back, and the
+            // check would have already passed.
+            foreach ($paths as $rel) {
+                if (is_file($uploadDir . '/' . $rel)) {
+                    $remaining[] = $rel;
+                }
             }
+        } finally {
+            \App\Services\ImageLock::release();
         }
 
         $complete = ($remaining === []);
@@ -465,22 +515,15 @@ final class AuthService
         );
 
         if (!$complete) {
-            error_log(
-                "Consent withdrawal INCOMPLETE for user {$userId}; still public: "
-                . implode(', ', $remaining)
-            );
-            try {
-                app('notifications')->withdrawalIncomplete($userId, $remaining);
-            } catch (\Throwable $e) {
-                error_log('withdrawalIncomplete notify failed: ' . $e->getMessage());
-            }
+            $this->reportIncompleteWithdrawal($userId, $remaining);
         }
 
         // And-Yet: This hides artworks uploaded BY the user, but not artworks
-        // depicting the user as a model (uploaded by facilitators, claimed by artists).
-        // A model-takedown flow — where the model can flag artworks from sessions
-        // they modelled for — is a post-beta feature. For now, model takedowns
-        // are handled manually by the facilitator. (Risk lens: Botha, non-economic.)
+        // depicting the user as a model (uploaded by facilitators, claimed by
+        // artists). A model-takedown flow — where the model can flag artworks
+        // from sessions they modelled for — is a post-beta feature. For now,
+        // model takedowns are handled manually by the facilitator.
+        // (Risk lens: Botha, non-economic.)
 
         return [
             'complete'  => $complete,
@@ -488,6 +531,42 @@ final class AuthService
             'remaining' => $remaining,
             'locked'    => $locked,
         ];
+    }
+
+    /**
+     * Derivative filenames process_images.php would have written beside an
+     * original, whether or not the database ever recorded them.
+     *
+     * @return list<string>
+     */
+    private function derivativeSiblings(string $filePath): array
+    {
+        if ($filePath === '') {
+            return [];
+        }
+
+        $dir  = dirname($filePath);
+        $stem = pathinfo(basename($filePath), PATHINFO_FILENAME);
+        $dir  = ($dir === '.' || $dir === '') ? '' : $dir . '/';
+
+        return [
+            $dir . 'web_' . $stem . '.webp',
+            $dir . 'thumb_' . $stem . '.webp',
+        ];
+    }
+
+    /** Tell the facilitator, and say so out loud in the log. */
+    private function reportIncompleteWithdrawal(int $userId, array $remaining): void
+    {
+        error_log(
+            "Consent withdrawal INCOMPLETE for user {$userId}; still public: "
+            . implode(', ', $remaining)
+        );
+        try {
+            app('notifications')->withdrawalIncomplete($userId, $remaining);
+        } catch (\Throwable $e) {
+            error_log('withdrawalIncomplete notify failed: ' . $e->getMessage());
+        }
     }
 
     public function consentState(): ConsentState

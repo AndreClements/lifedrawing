@@ -53,19 +53,41 @@ final class ClaimController extends BaseController
             ->where('claim_type', '=', $claimType)
             ->first();
 
-        if ($existing) {
+        // The old guard matched on ANY status, so once a row existed in any
+        // state it blocked this person forever - and answered "Already claimed",
+        // which was the wrong thing to say about a claim they had withdrawn.
+        //
+        // A pending withdrawal deletes its row, so the only survivors that can
+        // block are 'withdrawn' and 'rejected'. Those are resurrected, because
+        // uk_artwork_claimant_type forbids inserting a second row alongside them.
+        if ($existing && in_array($existing['status'], ['pending', 'approved'], true)) {
             if ($request->isHtmx()) {
-                return Response::html('<span class="badge badge-muted">Already claimed</span>');
+                return $this->partial('gallery._claim_control', [
+                    'artwork'   => $artwork,
+                    'claimType' => $claimType,
+                    'status'    => $existing['status'],
+                    'claimId'   => (int) $existing['id'],
+                ]);
             }
-            return Response::redirect(route('sessions.show', ['id' => hex_id((int) $artwork['session_id'])]));
+            return Response::redirect(route('artworks.show', ['id' => hex_id($artworkId)]));
         }
 
-        $claimId = (int) $this->table('ld_claims')->insert([
-            'artwork_id' => $artworkId,
-            'claimant_id' => $this->userId(),
-            'claim_type' => $claimType,
-            'status' => 'pending',
-        ]);
+        if ($existing) {
+            $claimId = (int) $existing['id'];
+            $this->db->execute(
+                "UPDATE ld_claims
+                 SET status = 'pending', approved_by = NULL, resolved_at = NULL, claimed_at = NOW()
+                 WHERE id = ?",
+                [$claimId]
+            );
+        } else {
+            $claimId = (int) $this->table('ld_claims')->insert([
+                'artwork_id' => $artworkId,
+                'claimant_id' => $this->userId(),
+                'claim_type' => $claimType,
+                'status' => 'pending',
+            ]);
+        }
 
         $this->provenance->log(
             $this->userId(),
@@ -78,10 +100,97 @@ final class ClaimController extends BaseController
         app('notifications')->claimSubmitted($artworkId, $this->userId(), $claimType, $claimId);
 
         if ($request->isHtmx()) {
-            return Response::html('<span class="badge badge-pending">Claim pending</span>');
+            return $this->partial('gallery._claim_control', [
+                'artwork'   => $artwork,
+                'claimType' => $claimType,
+                'status'    => 'pending',
+                'claimId'   => $claimId,
+            ]);
         }
 
-        return Response::redirect(route('sessions.show', ['id' => hex_id((int) $artwork['session_id'])]));
+        return Response::redirect(route('artworks.show', ['id' => hex_id($artworkId)]));
+    }
+
+    /**
+     * POST /claims/{id}/withdraw - the claimant takes back their own claim.
+     *
+     * Two outcomes, because the two cases are genuinely different:
+     *
+     *   pending  - never established attribution, so the row simply ceases to
+     *              be, and its queued facilitator alert is cancelled with it.
+     *   approved - carries an approval history worth keeping, so it becomes
+     *              'withdrawn' rather than disappearing.
+     *
+     * In both cases the status condition lives INSIDE the DML, never in a
+     * preceding read. Otherwise an approval landing in the same moment could
+     * cause an approved claim to be silently deleted.
+     */
+    public function withdraw(Request $request): Response
+    {
+        if ($redirect = $this->requireAuth()) return $redirect;
+
+        $claimId = from_hex($request->param('id'));
+
+        $claim = $this->table('ld_claims')->where('id', '=', $claimId)->first();
+        if (!$claim) {
+            return Response::notFound('Claim not found.');
+        }
+
+        // The claimant's own action, so this is ownership - not the facilitator
+        // IDOR rule that resolve() uses.
+        if ((int) $claim['claimant_id'] !== $this->userId()) {
+            return Response::forbidden('You can only withdraw your own claims.');
+        }
+
+        $artworkId = (int) $claim['artwork_id'];
+        $artwork = $this->table('ld_artworks')->where('id', '=', $artworkId)->first();
+
+        $previous = $claim['status'];
+        $done = false;
+
+        if ($previous === 'pending') {
+            $done = $this->db->execute(
+                "DELETE FROM ld_claims WHERE id = ? AND claimant_id = ? AND status = 'pending'",
+                [$claimId, $this->userId()]
+            ) > 0;
+
+            if ($done) {
+                // Claim then un-claim inside the digest window should not page
+                // the facilitator about a claim that no longer exists.
+                app('notifications')->cancelQueued('claim', $claimId);
+            }
+        } elseif ($previous === 'approved') {
+            $done = $this->db->execute(
+                "UPDATE ld_claims SET status = 'withdrawn', resolved_at = NOW()
+                 WHERE id = ? AND claimant_id = ? AND status = 'approved'",
+                [$claimId, $this->userId()]
+            ) > 0;
+        }
+
+        if ($done) {
+            $this->provenance->log(
+                $this->userId(),
+                'claim.withdraw',
+                'artwork',
+                $artworkId,
+                ['claim_id' => $claimId, 'previous_status' => $previous]
+            );
+
+            // ld_artist_stats is a cached table. The derived read paths correct
+            // themselves, but the cached totals do not.
+            app('stats')->refreshUser($this->userId());
+        }
+
+        if ($request->isHtmx()) {
+            return $this->partial('gallery._claim_control', [
+                'artwork'   => $artwork,
+                'claimType' => $claim['claim_type'],
+                'status'    => null,
+                'claimId'   => null,
+            ]);
+        }
+
+        return Response::redirect(route('artworks.show', ['id' => hex_id($artworkId)]));
     }
 
     /** Approve or reject a claim (facilitator+). */

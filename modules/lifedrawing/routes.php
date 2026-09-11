@@ -49,6 +49,17 @@ $router->post('/sessions/{id}/participants/quick-add-stub', [SessionController::
 $router->post('/sessions/{id}/participants/remove', [SessionController::class, 'removeParticipant'], 'sessions.participants.remove');
 $router->post('/sessions/{id}/participants/tentative', [SessionController::class, 'toggleTentative'], 'sessions.participants.tentative');
 $router->post('/sessions/{id}/cancel',     [SessionController::class, 'cancel'], 'sessions.cancel');
+$router->post('/sessions/{id}/participants/no-show', [SessionController::class, 'toggleNoShow'], 'sessions.participants.noshow');
+
+// --- Undoing your own actions ---
+// These sit OUTSIDE the consent-gated group deliberately. Claiming a stub
+// resets consent_state to 'pending' (AuthService::claimStub), and stub accounts
+// are exactly the ones carrying years of participation — so someone registering
+// that way lands with existing bookings and a pending state, and ConsentGate
+// would bounce them off their own cancel button. Undoing must never be harder
+// than doing. Auth is enforced in the controllers.
+$router->post('/sessions/{id}/leave',      [SessionController::class, 'leave'], 'sessions.leave');
+$router->post('/claims/{id}/withdraw',     [ClaimController::class, 'withdraw'], 'claims.withdraw');
 $router->get('/schedule/whatsapp',         [SessionController::class, 'whatsappSchedule'], 'schedule.whatsapp');
 $router->post('/claims/resolve-all',        [ClaimController::class, 'resolveAll'], 'claims.resolveAll');
 $router->post('/claims/{id}/resolve',      [ClaimController::class, 'resolve'], 'claims.resolve');

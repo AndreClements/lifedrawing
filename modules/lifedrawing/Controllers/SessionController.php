@@ -169,6 +169,7 @@ final class SessionController extends BaseController
         $participantCount = count($participants);
         $artworkCount = count($artworks);
         $modelClaimContext = $this->sessionModelClaimContext($id);
+        $joinedRoles = $this->joinedRoles($id, $this->userId());
         $sessionDesc = 'Life drawing session on ' . format_date($session['session_date'])
             . ' at ' . $session['venue'] . '. '
             . $participantCount . ' participant' . ($participantCount !== 1 ? 's' : '')
@@ -227,6 +228,7 @@ final class SessionController extends BaseController
             'artworks' => $artworks,
             'sessionHasKnownModel' => $modelClaimContext['sessionHasKnownModel'],
             'isSessionModel' => $modelClaimContext['isSessionModel'],
+            'joinedRoles' => $joinedRoles,
         ], session_title($session), [
             'meta_description' => $sessionDesc,
             'json_ld' => $eventJsonLd . $breadcrumbs,
@@ -305,12 +307,6 @@ final class SessionController extends BaseController
         }
 
         return Response::redirect(route('sessions.show', ['id' => hex_id((int) $id, $title)]));
-    }
-
-    /** Render a partial (no layout wrapper) — for HTMX fragment responses. */
-    private function partial(string $view, array $data = []): Response
-    {
-        return Response::html($this->view->render($view, $data));
     }
 
     /** Verify the current user can manage this session's participants.
@@ -433,6 +429,10 @@ final class SessionController extends BaseController
                 'tentative' => $tentative ? 1 : 0,
             ]);
 
+            if ($role === 'model') {
+                app('sitterQueue')->onModelAdded($userId, $sessionId, $this->userId());
+            }
+
             $this->provenance->log(
                 $this->userId(),
                 'participant.quick_add_stub',
@@ -499,6 +499,13 @@ final class SessionController extends BaseController
             );
 
             app('stats')->refreshUser($userId);
+
+            // THE fix for "sitters never leave the queue": this is the path the
+            // facilitator actually uses to book a sitter, and it never touched
+            // ld_sitter_queue.
+            if ($role === 'model') {
+                app('sitterQueue')->onModelAdded($userId, $sessionId, $this->userId());
+            }
         }
 
         $participants = $this->getParticipants($sessionId, true);
@@ -547,6 +554,10 @@ final class SessionController extends BaseController
             );
 
             app('stats')->refreshUser((int) $participant['user_id']);
+
+            if ($participant['role'] === 'model') {
+                app('sitterQueue')->onModelRemoved((int) $participant['user_id'], $sessionId, $this->userId());
+            }
         }
 
         $participants = $this->getParticipants($sessionId, true);
@@ -661,6 +672,26 @@ final class SessionController extends BaseController
             }
         }
 
+        // Everything below has to happen BEFORE the delete.
+        //
+        // scheduled_session_id is ON DELETE SET NULL, so a deleted session
+        // silently orphans a sitter's queue entry — which is the exact bug this
+        // release exists to fix, recreated by the cleanup path.
+        $participants = $this->db->fetchAll(
+            "SELECT user_id, role FROM ld_session_participants WHERE session_id = ?",
+            [$sessionId]
+        );
+
+        foreach ($participants as $p) {
+            if ($p['role'] === 'model') {
+                app('sitterQueue')->onModelRemoved((int) $p['user_id'], $sessionId, $this->userId());
+            }
+        }
+
+        // Queued mail about this session would otherwise arrive minutes later
+        // pointing at a page that no longer resolves.
+        app('notifications')->cancelQueued('session', $sessionId);
+
         $this->provenance->log(
             $this->userId(),
             'session.cancel',
@@ -671,6 +702,13 @@ final class SessionController extends BaseController
 
         // Delete session — cascades to participants, artworks, claims, comments
         $this->db->execute("DELETE FROM ld_sessions WHERE id = ?", [$sessionId]);
+
+        // The cascade removed participation rows and any claims on this
+        // session's artwork, but nothing here refreshed anyone. Counts and
+        // streaks used to stay wrong until the 2am stats cron caught up.
+        foreach ($participants as $p) {
+            app('stats')->refreshUser((int) $p['user_id']);
+        }
 
         return Response::redirect(route('sessions.index'));
     }
@@ -727,12 +765,175 @@ final class SessionController extends BaseController
 
             // Refresh stats after joining
             app('stats')->refreshUser($this->userId());
+
+            if ($role === 'model') {
+                app('sitterQueue')->onModelAdded($this->userId(), $sessionId, $this->userId());
+            }
+
+            app('notifications')->sessionJoined($sessionId, $this->userId(), $role);
         }
 
         if ($request->isHtmx()) {
-            return Response::html('<span class="badge">Joined as ' . e($role) . '</span>');
+            return $this->partial('sessions._join_control', [
+                'session'     => $session,
+                'joinedRoles' => $this->joinedRoles($sessionId, $this->userId()),
+            ]);
         }
 
-        return Response::redirect(route('sessions.show', ['id' => $sessionId]));
+        return Response::redirect(route('sessions.show', ['id' => hex_id($sessionId, session_title($session))]));
+    }
+
+    /**
+     * POST /sessions/{id}/leave - cancel your own booking.
+     *
+     * Auth only, deliberately outside ConsentGate: see the note in routes.php.
+     */
+    public function leave(Request $request): Response
+    {
+        if ($redirect = $this->requireAuth()) return $redirect;
+
+        $sessionId = from_hex($request->param('id'));
+        $role = $request->input('role', 'artist');
+
+        if (!in_array($role, ['artist', 'model', 'observer'], true)) {
+            $role = 'artist';
+        }
+
+        $session = $this->table('ld_sessions')->where('id', '=', $sessionId)->first();
+        if (!$session) {
+            return Response::notFound('Session not found.');
+        }
+
+        // PHP's date, never CURDATE(): production MySQL runs about nine hours
+        // behind SAST, so between midnight and 09:00 it still reads yesterday.
+        //
+        // Refusing to leave a past session is not merely caution. Nothing marks
+        // attendance separately for a web booking, so deleting a past
+        // participation row would rewrite history rather than cancel a booking.
+        if ($session['session_date'] < date('Y-m-d')) {
+            $message = 'That session has already happened.';
+            if ($request->isHtmx()) {
+                return Response::html('<span class="card-badge">' . e($message) . '</span>');
+            }
+            return Response::redirect(route('sessions.show', ['id' => hex_id($sessionId, session_title($session))]));
+        }
+
+        $participant = $this->db->fetch(
+            "SELECT * FROM ld_session_participants
+             WHERE session_id = ? AND user_id = ? AND role = ?",
+            [$sessionId, $this->userId(), $role]
+        );
+
+        // Not booked? Say nothing and move on, the same way join() treats a
+        // duplicate. An error here would only ever confuse a double-click.
+        if ($participant && $participant['role'] !== 'facilitator') {
+            $lateNotice = is_late_cancel($session);
+
+            $this->db->execute(
+                "DELETE FROM ld_session_participants WHERE id = ?",
+                [(int) $participant['id']]
+            );
+
+            $this->provenance->log(
+                $this->userId(),
+                'session.leave',
+                'session',
+                $sessionId,
+                ['role' => $role, 'late_notice' => $lateNotice]
+            );
+
+            app('stats')->refreshUser($this->userId());
+
+            if ($role === 'model') {
+                app('sitterQueue')->onModelRemoved($this->userId(), $sessionId, $this->userId());
+            }
+
+            app('notifications')->sessionLeft($sessionId, $this->userId(), $role, $lateNotice);
+        }
+
+        if ($request->isHtmx()) {
+            return $this->partial('sessions._join_control', [
+                'session'     => $session,
+                'joinedRoles' => $this->joinedRoles($sessionId, $this->userId()),
+            ]);
+        }
+
+        return Response::redirect(route('sessions.show', ['id' => hex_id($sessionId, session_title($session))]));
+    }
+
+    /**
+     * POST /sessions/{id}/participants/no-show - facilitator marks a booking as
+     * not honoured, or takes the mark off again.
+     *
+     * Modelled on toggleTentative, which is the same shape of action.
+     */
+    public function toggleNoShow(Request $request): Response
+    {
+        if ($redirect = $this->requireAuth()) return $redirect;
+        if ($redirect = $this->requireRole('admin', 'facilitator')) return $redirect;
+
+        $sessionId = from_hex($request->param('id'));
+        $session = $this->table('ld_sessions')->where('id', '=', $sessionId)->first();
+        if (!$session) return Response::notFound('Session not found.');
+        if ($redirect = $this->requireFacilitatorOf($session)) return $redirect;
+
+        // Enforced here, not only by hiding the button. The view condition is a
+        // convenience; this is the guard.
+        if ($session['session_date'] >= date('Y-m-d')) {
+            return Response::forbidden('A no-show can only be recorded after the session.');
+        }
+
+        $pid = (int) $request->input('pid', 0);
+        $participant = $this->db->fetch(
+            "SELECT * FROM ld_session_participants WHERE id = ? AND session_id = ?",
+            [$pid, $sessionId]
+        );
+
+        if ($participant) {
+            // Un-marking must restore what the row was before, not flatten it to
+            // 'booked'. The legacy `attended` column is that record - without
+            // this, one click quietly destroys a backfilled attendance.
+            $next = $participant['attendance'] === 'no_show'
+                ? ((int) $participant['attended'] === 1 ? 'attended' : 'booked')
+                : 'no_show';
+
+            $this->db->execute(
+                "UPDATE ld_session_participants SET attendance = ? WHERE id = ?",
+                [$next, $pid]
+            );
+
+            $this->provenance->log(
+                $this->userId(),
+                'participant.attendance',
+                'session',
+                $sessionId,
+                ['participant' => $participant['user_id'], 'from' => $participant['attendance'], 'to' => $next]
+            );
+
+            app('stats')->refreshUser((int) $participant['user_id']);
+        }
+
+        $participants = $this->getParticipants($sessionId, true);
+
+        if ($request->isHtmx()) {
+            return $this->partial('sessions._participant_manager', [
+                'session' => $session,
+                'participants' => $participants,
+            ]);
+        }
+
+        return Response::redirect(route('sessions.show', ['id' => hex_id($sessionId, session_title($session))]));
+    }
+
+    /** Roles the given user already holds on a session. */
+    private function joinedRoles(int $sessionId, ?int $userId): array
+    {
+        if (!$userId) return [];
+
+        $rows = $this->db->fetchAll(
+            "SELECT role FROM ld_session_participants WHERE session_id = ? AND user_id = ?",
+            [$sessionId, $userId]
+        );
+        return array_column($rows, 'role');
     }
 }

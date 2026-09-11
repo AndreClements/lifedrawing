@@ -110,7 +110,11 @@ final class AuthController extends BaseController
 
                 app('notifications')->stubClaimed($claimStubId, $name, $email, $previousName, $sessionCount);
             } else {
-                $this->auth->register($name, $email, $password);
+                $newUserId = $this->auth->register($name, $email, $password);
+                // Plain registrations only. A stub claim already sends
+                // stubClaimed, and two emails about one person arriving reads
+                // as a bug rather than as thoroughness.
+                app('notifications')->userRegistered($newUserId);
             }
             $this->auth->attempt($email, $password);
 
@@ -376,6 +380,15 @@ final class AuthController extends BaseController
                         $this->provenance->log($userId, 'session.join', 'session_participant', $sessionId, [
                             'role' => $role, 'via' => 'intent',
                         ]);
+
+                        // Separate code from SessionController::join(), and easy
+                        // to miss. Without these two lines a booking made during
+                        // sign-up is silent, and a sitter booked this way stays
+                        // 'waiting' forever — the original bug, reproduced.
+                        if ($role === 'model') {
+                            app('sitterQueue')->onModelAdded($userId, $sessionId, $userId);
+                        }
+                        app('notifications')->sessionJoined($sessionId, $userId, $role);
                     }
                     return Response::redirect(route('sessions.show', ['id' => hex_id($sessionId, session_title($session))]));
                 }

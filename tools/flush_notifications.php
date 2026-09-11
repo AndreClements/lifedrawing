@@ -84,6 +84,9 @@ const TYPE_LABELS = [
     'stubClaimed'       => 'STUB CLAIMED',
     'sitterQueueJoined' => 'SITTER QUEUE',
     'artworkCommented'  => 'NEW COMMENT',
+    'sessionJoined'     => 'NEW BOOKING',
+    'sessionLeft'       => 'BOOKING CANCELLED',
+    'userRegistered'    => 'NEW MEMBER',
 ];
 
 // --- Find recipients ready to flush ---
