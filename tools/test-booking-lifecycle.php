@@ -84,7 +84,7 @@ function req(string $method, string $path, array $post = []): array
         [], []
     );
     $response = $kernel->handle($request);
-    return ['status' => $response->getStatus()];
+    return ['status' => $response->getStatus(), 'body' => $response->getBody()];
 }
 
 function actAs(int $userId, string $role = 'participant', string $consent = 'granted'): void
@@ -337,6 +337,34 @@ actAs($otherId);
 $forbidden = req('POST', '/claims/' . hex_id((int) $claim2['id']) . '/withdraw');
 check("you cannot withdraw someone else's claim", $forbidden['status'] === 403,
     "status {$forbidden['status']}");
+
+// Withdrawing something already withdrawn writes nothing. The response must
+// show the real state rather than "unclaimed", which would offer a claim button
+// for a claim that still exists and imply the withdrawal had just worked.
+actAs($artistId);
+$repeat = req('POST', '/claims/' . hex_id((int) $claim2['id']) . '/withdraw');
+check('a withdrawal that changes nothing does not report success',
+    !str_contains($repeat['body'], "That's mine"),
+    'it rendered the claim button, telling the person an unchanged claim was undone');
+
+echo "\n4b. The facilitator can see a no-show count\n";
+
+$db->execute("UPDATE ld_session_participants SET attendance = 'no_show'
+              WHERE session_id = ? AND user_id = ? AND role = 'artist'", [$past, $artistId]);
+
+actAs($facilitatorId, 'facilitator');
+$profilePage = req('GET', '/profile/' . hex_id($artistId));
+check('the count reaches the facilitator view',
+    str_contains($profilePage['body'], 'Missed sessions: 1'),
+    'the query read $profile[id], which is the view key, not the variable in scope');
+
+actAs($otherId);
+$publicProfile = req('GET', '/profile/' . hex_id($artistId));
+check('and never appears for anyone else',
+    !str_contains($publicProfile['body'], 'Missed sessions'));
+
+$db->execute("UPDATE ld_session_participants SET attendance = 'booked'
+              WHERE session_id = ? AND user_id = ? AND role = 'artist'", [$past, $artistId]);
 
 // --- 5. Sitter queue linkage ---------------------------------------------
 

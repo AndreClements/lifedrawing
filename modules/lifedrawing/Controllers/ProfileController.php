@@ -135,7 +135,7 @@ final class ProfileController extends BaseController
         $noShows = app('auth')->hasRole('admin', 'facilitator')
             ? (int) $this->db->fetchColumn(
                 "SELECT COUNT(*) FROM ld_session_participants WHERE user_id = ? AND attendance = 'no_show'",
-                [(int) $profile['id']]
+                [$id]
             )
             : null;
 

@@ -182,11 +182,26 @@ final class ClaimController extends BaseController
         }
 
         if ($request->isHtmx()) {
+            // Render what is actually there, not what we hoped to do.
+            //
+            // $done is false when the conditional DELETE/UPDATE matched nothing:
+            // the claim had already been rejected, already withdrawn, or changed
+            // underneath us. Rendering 'unclaimed' in that case would show a
+            // claim button for a claim that still exists, and tell the person
+            // their withdrawal worked when it did not.
+            $current = $done
+                ? null
+                : $this->table('ld_claims')->where('id', '=', $claimId)->first();
+
             return $this->partial('gallery._claim_control', [
                 'artwork'   => $artwork,
                 'claimType' => $claim['claim_type'],
-                'status'    => null,
-                'claimId'   => null,
+                'status'    => $current && in_array($current['status'], ['pending', 'approved'], true)
+                    ? $current['status']
+                    : null,
+                'claimId'   => $current && in_array($current['status'], ['pending', 'approved'], true)
+                    ? (int) $current['id']
+                    : null,
             ]);
         }
 

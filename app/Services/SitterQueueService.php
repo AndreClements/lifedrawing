@@ -44,23 +44,28 @@ final class SitterQueueService
      */
     public function onModelAdded(int $userId, int $sessionId, ?int $actorId = null): void
     {
-        $entry = $this->activeEntry($userId);
-        if (!$entry) {
-            return;
-        }
+        // Same locking protocol as apply(). A path that reads unlocked and then
+        // writes conditionally reintroduces the race for every other path:
+        // two requests can read the same active entry and both act on it.
+        $this->db->transaction(function () use ($userId, $sessionId, $actorId) {
+            $entry = $this->activeEntry($userId, true);
+            if (!$entry) {
+                return;
+            }
 
-        $affected = $this->db->execute(
-            "UPDATE ld_sitter_queue
-             SET status = 'scheduled', scheduled_session_id = ?, resolved_at = NOW(), resolved_by = ?
-             WHERE id = ? AND status IN ('waiting', 'scheduled')",
-            [$sessionId, $actorId, (int) $entry['id']]
-        );
+            $affected = $this->db->execute(
+                "UPDATE ld_sitter_queue
+                 SET status = 'scheduled', scheduled_session_id = ?, resolved_at = NOW(), resolved_by = ?
+                 WHERE id = ? AND status IN ('waiting', 'scheduled')",
+                [$sessionId, $actorId, (int) $entry['id']]
+            );
 
-        if ($affected > 0) {
-            $this->log($actorId, 'sitter_queue.schedule', (int) $entry['id'], [
-                'user_id' => $userId, 'session_id' => $sessionId, 'via' => 'participant',
-            ]);
-        }
+            if ($affected > 0) {
+                $this->log($actorId, 'sitter_queue.schedule', (int) $entry['id'], [
+                    'user_id' => $userId, 'session_id' => $sessionId, 'via' => 'participant',
+                ]);
+            }
+        });
     }
 
     /**
@@ -76,37 +81,43 @@ final class SitterQueueService
      */
     public function onModelRemoved(int $userId, int $sessionId, ?int $actorId = null): void
     {
-        $entry = $this->activeEntry($userId);
-        if (!$entry) {
-            return;
-        }
+        // Locked, for a specific reason: the "are they still booked elsewhere?"
+        // read decides between repointing and requeueing. Read it unlocked and a
+        // booking added concurrently is missed, and a sitter who IS still booked
+        // gets dropped back into the waiting list.
+        $this->db->transaction(function () use ($userId, $sessionId, $actorId) {
+            $entry = $this->activeEntry($userId, true);
+            if (!$entry) {
+                return;
+            }
 
-        $other = $this->earliestFutureBooking($userId, $sessionId);
+            $other = $this->earliestFutureBooking($userId, $sessionId, true);
 
-        if ($other !== null) {
-            $this->db->execute(
-                "UPDATE ld_sitter_queue SET scheduled_session_id = ?
+            if ($other !== null) {
+                $this->db->execute(
+                    "UPDATE ld_sitter_queue SET scheduled_session_id = ?
+                     WHERE id = ? AND status = 'scheduled'",
+                    [$other, (int) $entry['id']]
+                );
+                $this->log($actorId, 'sitter_queue.reschedule', (int) $entry['id'], [
+                    'user_id' => $userId, 'from_session' => $sessionId, 'to_session' => $other,
+                ]);
+                return;
+            }
+
+            $affected = $this->db->execute(
+                "UPDATE ld_sitter_queue
+                 SET status = 'waiting', scheduled_session_id = NULL, resolved_at = NULL, resolved_by = NULL
                  WHERE id = ? AND status = 'scheduled'",
-                [$other, (int) $entry['id']]
+                [(int) $entry['id']]
             );
-            $this->log($actorId, 'sitter_queue.reschedule', (int) $entry['id'], [
-                'user_id' => $userId, 'from_session' => $sessionId, 'to_session' => $other,
-            ]);
-            return;
-        }
 
-        $affected = $this->db->execute(
-            "UPDATE ld_sitter_queue
-             SET status = 'waiting', scheduled_session_id = NULL, resolved_at = NULL, resolved_by = NULL
-             WHERE id = ? AND status = 'scheduled'",
-            [(int) $entry['id']]
-        );
-
-        if ($affected > 0) {
-            $this->log($actorId, 'sitter_queue.unschedule', (int) $entry['id'], [
-                'user_id' => $userId, 'session_id' => $sessionId,
-            ]);
-        }
+            if ($affected > 0) {
+                $this->log($actorId, 'sitter_queue.unschedule', (int) $entry['id'], [
+                    'user_id' => $userId, 'session_id' => $sessionId,
+                ]);
+            }
+        });
     }
 
     // --- Classification ----------------------------------------------------
@@ -353,12 +364,13 @@ final class SitterQueueService
     // --- Helpers -----------------------------------------------------------
 
     /** The one active queue entry for a user, if any. */
-    public function activeEntry(int $userId): ?array
+    public function activeEntry(int $userId, bool $forUpdate = false): ?array
     {
         $row = $this->db->fetch(
             "SELECT * FROM ld_sitter_queue
              WHERE user_id = ? AND status IN ('waiting', 'scheduled')
-             ORDER BY requested_at ASC LIMIT 1",
+             ORDER BY requested_at ASC LIMIT 1"
+            . ($forUpdate ? ' FOR UPDATE' : ''),
             [$userId]
         );
         return $row ?: null;
