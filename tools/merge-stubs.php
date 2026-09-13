@@ -32,6 +32,13 @@ if (file_exists(LDR_ROOT . '/.env')) {
     }
 }
 
+// StatsService uses PHP date('Y-m-d') for its 'today' cutoffs, and the refresh below
+// builds it directly rather than booting the Kernel — so it never inherits the app
+// timezone. The database server runs ~9h behind SAST, so between midnight and 09:00
+// this tool and the live site would disagree about what day it is. Same fix as
+// refresh-stats.php and fix-sitter-queue.php.
+date_default_timezone_set('Africa/Johannesburg');
+
 $dryRun = in_array('--dry-run', $argv, true);
 
 $config = require LDR_ROOT . '/config/database.php';
@@ -44,18 +51,19 @@ $pdo = new PDO(
 
 // ──────────────────────────────────────────────
 // Merge list: [real_id, stub_id, description]
-// Verified via check-users.php on 2026-02-19
 // ──────────────────────────────────────────────
+// The 2026-02-19 batch (Heinrich, Nicole, Michelle, Yamilah, Elana, Luci, Berenice,
+// Bron, Shane) has run and those stubs are gone; see git history for that list.
+//
+// Xavier, verified on prod 2026-09-13: the facilitator books him through the stub
+// (#26, 91 bookings back to 2022-01-22) while he registered his own account (#295,
+// xavier@glh.co.za, 9 approved claims from sessions 279 and 282). Stats show the split
+// exactly — #26 has 88 sessions and 0 artworks, #295 has 0 sessions and 9 artworks.
+// Sessions 292/293/294 are booked on both and dedupe below. Checked and empty on #26:
+// artworks.uploaded_by, claims.approved_by, sessions.facilitator_id, sitter_queue
+// (both columns), remember_tokens, notification_queue.
 $merges = [
-    [227, 52,  'Heinrich Meyer ← Heinrich (31 sessions)'],
-    [234, 32,  'Nicole Fabry ← Nicole (54 sessions)'],
-    [239, 190, 'Michelle Laubscher-Jäger ← Michelle (7 sessions)'],
-    [232, 205, 'Yamilah Jasmin ← Yamilah (3 sessions)'],
-    [236, 53,  'Elana ← Elana (3 sessions)'],
-    [238, 105, 'Luci ← Lucia (3 sessions)'],
-    [235, 213, 'Berenice Egan ← Berenice (1 session)'],
-    [237, 200, 'Bron Schultz ← Bron (1 session)'],
-    [240, 92,  'Shane David Grace ← Shane (1 session)'],
+    [295, 26, 'Xavier <- Xavier stub (91 bookings, 2022-01-22 to 2026-09-27)'],
 ];
 
 echo ($dryRun ? "[DRY RUN] " : "") . "Merging " . count($merges) . " stub accounts...\n\n";
