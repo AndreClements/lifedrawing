@@ -32,6 +32,9 @@ $router->get('/gallery',           [GalleryController::class, 'index'], 'gallery
 $router->get('/artworks/{id}',    [GalleryController::class, 'show'], 'artworks.show');
 $router->get('/claims/pending',    [ClaimController::class, 'pending'], 'claims.pending');
 $router->get('/artists',           [ProfileController::class, 'artists'], 'profiles.artists');
+// Static segments, and /artists takes no parameter, so there is nothing to shadow.
+$router->get('/artists/streaks',      [ProfileController::class, 'streaks'], 'profiles.streaks');
+$router->get('/artists/superstreaks', [ProfileController::class, 'superstreaks'], 'profiles.superstreaks');
 $router->get('/sitters',           [ProfileController::class, 'sitters'], 'profiles.sitters');
 $router->get('/profile/edit',      [ProfileController::class, 'edit'], 'profiles.edit');
 $router->get('/profile/{id}',      [ProfileController::class, 'show'], 'profiles.show');

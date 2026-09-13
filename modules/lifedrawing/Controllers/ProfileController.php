@@ -15,6 +15,65 @@ use App\Response;
  */
 final class ProfileController extends BaseController
 {
+    /** Artists ranked by their best run of consecutive weekends the venue ran. */
+    public function streaks(Request $request): Response
+    {
+        return $this->renderRanking(
+            'streak',
+            'Streaks',
+            'streaks_lead',
+            'Artists ranked by consecutive weekends attended at Life Drawing Randburg.'
+        );
+    }
+
+    /** Artists ranked by their best run of consecutive sessions held. */
+    public function superstreaks(Request $request): Response
+    {
+        return $this->renderRanking(
+            'superstreak',
+            'Superstreaks',
+            'superstreaks_lead',
+            'Artists ranked by consecutive sessions attended at Life Drawing Randburg.'
+        );
+    }
+
+    /**
+     * Shared ranking page for streaks and superstreaks.
+     *
+     * Same consent rules as every other listing: only 'granted' profiles appear at all,
+     * and the view renders names through profile_name(), so a visitor who cannot see
+     * names gets pseudonyms or 'Participant'. Only people who actually have a run are
+     * listed — a leaderboard of everyone who ever attended once is not a leaderboard.
+     */
+    private function renderRanking(string $kind, string $title, string $leadKey, string $metaDescription): Response
+    {
+        $best  = $kind === 'streak' ? 'longest_streak' : 'longest_superstreak';
+        $count = $kind === 'streak' ? 'streak_count' : 'superstreak_count';
+        $curr  = $kind === 'streak' ? 'current_streak' : 'current_superstreak';
+
+        $rows = $this->db->fetchAll(
+            "SELECT u.id, u.display_name, u.pseudonym, u.avatar_path,
+                    COALESCE(s.total_sessions, 0) as total_sessions,
+                    COALESCE(s.{$best}, 0)  as best_run,
+                    COALESCE(s.{$count}, 0) as run_count,
+                    COALESCE(s.{$curr}, 0)  as current_run
+             FROM users u
+             JOIN ld_artist_stats s ON u.id = s.user_id
+             WHERE u.consent_state = 'granted'
+               AND s.{$count} > 0
+             ORDER BY s.{$best} DESC, s.{$count} DESC, u.display_name ASC"
+        );
+
+        return $this->render('profile.ranking', [
+            'rows'    => $rows,
+            'kind'    => $kind,
+            'heading' => $title,
+            'leadKey' => $leadKey,
+        ], $title, [
+            'meta_description' => $metaDescription,
+        ]);
+    }
+
     /** List all artists with public profiles. */
     public function artists(Request $request): Response
     {
@@ -26,7 +85,6 @@ final class ProfileController extends BaseController
              FROM users u
              LEFT JOIN ld_artist_stats s ON u.id = s.user_id
              WHERE u.consent_state = 'granted'
-               AND u.role NOT IN ('admin', 'facilitator')
                AND (SELECT COUNT(*) FROM ld_session_participants sp WHERE sp.user_id = u.id) > 0
              ORDER BY s.total_sessions DESC, u.display_name ASC"
         );

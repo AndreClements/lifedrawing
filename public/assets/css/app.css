@@ -2243,3 +2243,94 @@ form.search-result-create button.btn-link-inline:hover {
 .consent-withdraw h2 {
     font-size: 1.1rem;
 }
+
+/* === Nav dropdown === */
+/* <details> rather than JS: script-src 'self' blocks inline handlers, and this
+   works on touch where a :hover menu would not. */
+.nav-dropdown {
+    position: relative;
+    display: inline-block;
+}
+
+.nav-dropdown > summary {
+    font-family: var(--font-ui);
+    font-size: 0.9rem;
+    color: var(--color-text-muted);
+    cursor: pointer;
+    list-style: none;
+    transition: color 0.2s;
+}
+
+.nav-dropdown > summary::-webkit-details-marker { display: none; }
+.nav-dropdown > summary::after { content: " \25BE"; }
+
+.nav-dropdown > summary:hover,
+.nav-dropdown > summary.active,
+.nav-dropdown[open] > summary {
+    color: var(--color-text);
+}
+
+.nav-dropdown-menu {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    z-index: 20;
+    min-width: 11rem;
+    margin-top: var(--space-xs);
+    padding: var(--space-xs) 0;
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+    display: flex;
+    flex-direction: column;
+}
+
+.nav-dropdown-menu a {
+    padding: var(--space-xs) var(--space-md);
+    white-space: nowrap;
+}
+
+/* The nav wraps to a column on narrow screens, where an absolutely positioned
+   menu would overlap the links below it. */
+@media (max-width: 640px) {
+    .nav-dropdown-menu {
+        position: static;
+        border: 0;
+        box-shadow: none;
+        padding-left: var(--space-md);
+    }
+}
+
+/* === Ranking tables (streaks, superstreaks) === */
+.table-scroll { overflow-x: auto; }
+
+.ranking-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: var(--font-ui);
+    font-size: 0.9rem;
+}
+
+.ranking-table th,
+.ranking-table td {
+    padding: var(--space-sm) var(--space-md);
+    text-align: left;
+    border-bottom: 1px solid var(--color-border);
+}
+
+.ranking-table th {
+    font-weight: 600;
+    color: var(--color-text-muted);
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.ranking-table td.rank {
+    color: var(--color-text-muted);
+    font-variant-numeric: tabular-nums;
+    width: 3rem;
+}
+
+.ranking-table tbody tr:hover { background: var(--color-surface, transparent); }

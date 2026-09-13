@@ -77,7 +77,15 @@ $twitterCard = !empty($og_image) ? 'summary_large_image' : 'summary';
             <div class="nav-links">
                 <a href="<?= route('sessions.index') ?>"<?= active_if('/sessions') ?>>Sessions</a>
                 <a href="<?= route('gallery.index') ?>"<?= active_if('/gallery') ?>>Gallery</a>
-                <a href="<?= route('profiles.artists') ?>"<?= active_if('/artists') ?>>Artists</a>
+                <?php // <details> rather than JS: script-src 'self' blocks inline handlers. ?>
+                <details class="nav-dropdown">
+                    <summary<?= active_if('/artists') ?>>Artists</summary>
+                    <div class="nav-dropdown-menu">
+                        <a href="<?= route('profiles.artists') ?>">All artists</a>
+                        <a href="<?= route('profiles.streaks') ?>">Streaks</a>
+                        <a href="<?= route('profiles.superstreaks') ?>">Superstreaks</a>
+                    </div>
+                </details>
                 <a href="<?= route('profiles.sitters') ?>"<?= active_if('/sitters') ?>>Sitters</a>
                 <a href="<?= route('pages.faq') ?>"<?= active_if('/faq') ?>>FAQ</a>
                 <a href="<?= route('pose.index') ?>"<?= active_if('/pose') ?>>Pose</a>

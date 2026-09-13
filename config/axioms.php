@@ -19,6 +19,8 @@ return [
     'dashboard_lead'    => 'Practice made visible.',
     'artists_lead'      => 'Sometimes you draw, sometimes you model, sometimes you watch.',
     'sitters_lead'      => 'The body teaches the hand.',
+    'streaks_lead'      => 'Returning is its own kind of practice.',
+    'superstreaks_lead' => 'Some weekends you give the whole of it.',
     'consent_opening'   => 'Life Drawing Randburg is a practice of <strong>witnessing</strong>.',
     'philosophy'        => 'The circulation of roles feels very true to what we do here. Sometimes you draw, sometimes you model, sometimes you watch. Each position teaches something the others cannot.',
     'footer'            => 'Life Drawing Randburg &mdash; a practice of witnessing.',
