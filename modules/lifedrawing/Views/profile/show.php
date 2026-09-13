@@ -80,8 +80,9 @@
             </div>
             <p class="text-muted text-sm">
                 Streaks count weekends we meet. Superstreaks count consecutive sessions.
-                Two or more in a row makes a run, and each unbroken run counts once
-                &mdash; which is why a current run of one is not counted yet.
+                Every run starts at one; runs of two or more count towards
+                <em>Runs so far</em>. The average covers completed runs of two or more,
+                so the current run is left out until it ends.
                 <?php if ($st['current'] === 0 && $su['current'] === 0): ?>
                     <?= $isOwn ? 'Your next visit starts a new run.' : 'The next visit starts a new run.' ?>
                 <?php endif; ?>
