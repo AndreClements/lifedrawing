@@ -7,13 +7,16 @@
 --
 -- Two measures now, and they answer different questions:
 --
---   streak       consecutive WEEKENDS THE VENUE RAN that the person attended. Skipping
---                a weekend the venue was closed costs nothing, so this survives the
---                schedule changing cadence. Regularity.
+--   streak       a run of WEEKENDS THE VENUE RAN where the person attended at least one
+--                session. Skipping a weekend the venue was closed costs nothing, so this
+--                survives the schedule changing cadence. Regularity.
 --
---   superstreak  consecutive SESSIONS, in the order they were held. A Friday/Saturday/
---                Sunday weekend attended in full is 3. Missing any session held breaks
---                it. Intensity.
+--   superstreak  a run of consecutive SESSIONS, in the order they were held. Coming to
+--                all of a Friday/Saturday/Sunday weekend makes ONE run of length 3 --
+--                the length is in sessions, not weekends, and three in a row need not
+--                sit inside a single weekend. Missing a session ends it. Intensity.
+--
+-- Each has a LENGTH (longest_*) and a COUNT (*_count) and they are different numbers.
 --
 -- Counts as well as bests: a run of 2 or more counts as one streak, so the number of
 -- times someone has strung a run together is visible, not just their record. The

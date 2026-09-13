@@ -20,7 +20,7 @@
                         <span><?= $artist['total_artworks'] ?> artwork<?= $artist['total_artworks'] != 1 ? 's' : '' ?></span>
                         <?php if ($artist['current_streak'] > 0): ?>
                             &middot;
-                            <span><?= (int) $artist["current_streak"] ?> streak</span>
+                            <span><?= (int) $artist["current_streak"] ?> weekend<?= (int) $artist["current_streak"] === 1 ? "" : "s" ?> in a row</span>
                         <?php endif; ?>
                     </div>
                 </a>

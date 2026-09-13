@@ -18,13 +18,14 @@ $isSuper = ($kind ?? 'streak') === 'superstreak';
 
     <p class="text-muted text-sm">
         <?php if ($isSuper): ?>
-            A <strong>superstreak</strong> is consecutive sessions, in the order they were
-            held &mdash; a Friday, Saturday and Sunday attended in full counts as three.
-            Missing any session that ran breaks it.
+            A <strong>superstreak</strong> is an unbroken run of two or more sessions you
+            attend. Coming on Friday, Saturday and Sunday makes one superstreak spanning
+            three sessions. Each consecutive session extends that same run; missing a
+            session ends it, and your next visit starts a new one.
         <?php else: ?>
-            A <strong>streak</strong> is consecutive weekends the studio ran that you came
-            to. Weekends with no session cost nothing, so a fortnight off between sessions
-            keeps a streak alive. Two or more in a row counts as one streak.
+            A <strong>streak</strong> is a run of two or more weekends when you attend at
+            least one session each time. We count only the weekends we meet, so gaps in
+            the programme don't interrupt your streak.
         <?php endif; ?>
     </p>
 
@@ -40,18 +41,20 @@ $isSuper = ($kind ?? 'streak') === 'superstreak';
 
     <?php if (empty($rows ?? [])): ?>
         <div class="empty-state">
-            <p>Nobody has a <?= $isSuper ? 'superstreak' : 'streak' ?> yet. Come to two in a row and you will.</p>
+            <?php // Not "nobody has one" — the list only shows consented public profiles. ?>
+            <p>No <?= $isSuper ? 'superstreaks' : 'streaks' ?> to show yet.</p>
         </div>
     <?php else: ?>
         <div class="table-scroll">
             <table class="ranking-table">
                 <thead>
+                    <?php // Length and count are different numbers, so each header says which. ?>
                     <tr>
                         <th scope="col">#</th>
                         <th scope="col">Artist</th>
-                        <th scope="col">Best</th>
-                        <th scope="col"><?= $isSuper ? 'Superstreaks' : 'Streaks' ?></th>
-                        <th scope="col">Sessions</th>
+                        <th scope="col">Longest run (<?= $isSuper ? 'sessions' : 'weekends' ?>)</th>
+                        <th scope="col"><?= $isSuper ? 'Superstreaks' : 'Streaks' ?> so far</th>
+                        <th scope="col">Total sessions</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -72,7 +75,9 @@ $isSuper = ($kind ?? 'streak') === 'superstreak';
                                     <?= profile_name($row) ?>
                                 </a>
                                 <?php if ((int) $row['current_run'] > 1): ?>
-                                    <span class="badge badge-success">on <?= (int) $row["current_run"] ?> now</span>
+                                    <span class="badge badge-success">Current:
+                                        <?= (int) $row['current_run'] ?>
+                                        <?= $isSuper ? 'sessions' : 'weekends' ?></span>
                                 <?php endif; ?>
                             </td>
                             <td><strong><?= (int) $row['best_run'] ?></strong></td>

@@ -123,11 +123,17 @@ final class StatsService
      *
      * Two measures, because regularity and intensity are different things:
      *
-     *   streak       consecutive WEEKENDS THE VENUE RAN that this person attended.
-     *                Weeks with no session cost nothing, so it does not punish anyone
-     *                for the schedule's own gaps.
-     *   superstreak  consecutive SESSIONS, in the order they were held. A Fri/Sat/Sun
-     *                weekend attended in full is 3; missing any session held breaks it.
+     *   streak       a run of WEEKENDS THE VENUE RAN where this person attended at least
+     *                one session. Weeks with no session cost nothing, so it does not
+     *                punish anyone for the schedule's own gaps.
+     *   superstreak  a run of consecutive SESSIONS, in the order they were held. Coming
+     *                to all of a Fri/Sat/Sun weekend makes ONE run of length 3 — the
+     *                length is counted in sessions, not in weekends, and three in a row
+     *                need not sit inside a single weekend. Missing a session ends the run.
+     *
+     * Both return a LENGTH (how long the best run was) and a COUNT (how many runs of at
+     * least STREAK_MIN_RUN there have been). They are different numbers; anything that
+     * displays them has to say which it is showing.
      *
      * The old measure counted consecutive ISO calendar weeks, which the fortnightly
      * schedule made unreachable — 245 of 250 people sat on 1 — and it did arithmetic on
@@ -509,10 +515,15 @@ final class StatsService
             ];
         }
 
-        // Streak milestones — consecutive weekends the venue ran. The old labels named
-        // calendar spans ("Monthly Regular") that a fortnightly schedule made wrong, so
-        // they now name the run itself.
-        $streakThresholds = [2 => 'First Streak', 4 => 'Four in a Row', 8 => 'Eight in a Row', 12 => 'Twelve in a Row'];
+        // Streak milestones — consecutive weekends we met. Labels name the run and its
+        // unit: the old ones named calendar spans ("Monthly Regular") that a fortnightly
+        // schedule made untrue, and a bare "Four in a Row" does not say four of what.
+        $streakThresholds = [
+            2  => 'Two Weekends in a Row',
+            4  => 'Four Weekends in a Row',
+            8  => 'Eight Weekends in a Row',
+            12 => 'Twelve Weekends in a Row',
+        ];
         foreach ($streakThresholds as $threshold => $label) {
             $milestones[] = [
                 'label' => $label,
@@ -522,10 +533,16 @@ final class StatsService
             ];
         }
 
-        // Superstreak milestones — consecutive sessions held, so a full Fri/Sat/Sun
-        // weekend is 3. Harder than a streak, and deliberately scaled lower.
+        // Superstreak milestones — consecutive sessions. Counted in sessions, not
+        // weekends: three in a row need not be one Fri/Sat/Sun, and six need not be two,
+        // so labelling them "Whole Weekend" claimed something the number cannot show.
         $super = (int) ($stats['longest_superstreak'] ?? 0);
-        $superThresholds = [2 => 'First Superstreak', 3 => 'Whole Weekend', 6 => 'Two Weekends Whole', 10 => 'Ten Straight'];
+        $superThresholds = [
+            2  => 'Two Sessions in a Row',
+            3  => 'Three Sessions in a Row',
+            6  => 'Six Sessions in a Row',
+            10 => 'Ten Sessions in a Row',
+        ];
         foreach ($superThresholds as $threshold => $label) {
             $milestones[] = [
                 'label' => $label,

@@ -24,31 +24,30 @@
         </div>
         <div class="stat">
             <span class="stat-value"><?= (int) ($profile['current_streak'] ?? 0) ?></span>
-            <span class="stat-label">Current Streak</span>
+            <span class="stat-label">Current streak (weekends)</span>
         </div>
         <div class="stat">
             <span class="stat-value"><?= (int) ($profile['longest_streak'] ?? 0) ?></span>
-            <span class="stat-label">Best Streak</span>
+            <span class="stat-label">Longest streak (weekends)</span>
         </div>
         <div class="stat">
             <span class="stat-value"><?= (int) ($profile['longest_superstreak'] ?? 0) ?></span>
-            <span class="stat-label">Best Superstreak</span>
+            <span class="stat-label">Longest superstreak (sessions)</span>
         </div>
     </div>
 
     <?php
-    // Counts, not just records: how often someone has strung a run together says
-    // more about a habit than a single best ever did.
+    // How many runs someone has put together, which is a different number from how
+    // long the best one was. Say which is which, or the two read as one figure.
     $streakCount = (int) ($profile['streak_count'] ?? 0);
     $superCount  = (int) ($profile['superstreak_count'] ?? 0);
     ?>
     <?php if ($streakCount > 0 || $superCount > 0): ?>
         <p class="text-muted text-sm">
             <?= $streakCount ?> streak<?= $streakCount === 1 ? '' : 's' ?>
-            (consecutive weekends attended)
-            &middot;
+            so far &mdash; runs of two or more weekends attended.
             <?= $superCount ?> superstreak<?= $superCount === 1 ? '' : 's' ?>
-            (consecutive sessions, so a whole weekend counts as three)
+            &mdash; runs of two or more consecutive sessions.
         </p>
     <?php endif; ?>
 
