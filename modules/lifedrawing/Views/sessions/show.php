@@ -88,14 +88,26 @@
             </div>
         <?php else: ?>
             <?php
-            // Group artworks by batch (pose_duration + pose_label)
+            // Group consecutive artworks that share a pose. Keying the batches by
+            // duration+label merged poses that only happen to last the same time: a
+            // session with three separate 20 min poses collapsed into one block of 21,
+            // and because a keyed batch sits where its FIRST image fell, the 1 hr pose
+            // then rendered after work made an hour later. $artworks arrives ordered by
+            // pose_index, so grouping by runs keeps the session in the order it happened.
             $batches = [];
+            $lastKey = null;
             foreach ($artworks as $artwork) {
                 $key = ($artwork['pose_duration'] ?? '') . '|' . ($artwork['pose_label'] ?? '');
-                $batches[$key][] = $artwork;
+                if ($key !== $lastKey) {
+                    $batches[] = [];
+                    $lastKey = $key;
+                }
+                $batches[array_key_last($batches)][] = $artwork;
             }
+            // Two runs can only differ by their metadata, so more than one batch always
+            // means there is something worth labelling.
             $hasBatchMetadata = count($batches) > 1
-                || (count($batches) === 1 && array_key_first($batches) !== '|');
+                || (count($batches) === 1 && $lastKey !== '|');
             ?>
 
             <?php foreach ($batches as $batchKey => $batchArtworks): ?>
