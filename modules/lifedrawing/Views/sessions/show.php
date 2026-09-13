@@ -88,26 +88,36 @@
             </div>
         <?php else: ?>
             <?php
-            // Group consecutive artworks that share a pose. Keying the batches by
-            // duration+label merged poses that only happen to last the same time: a
-            // session with three separate 20 min poses collapsed into one block of 21,
-            // and because a keyed batch sits where its FIRST image fell, the 1 hr pose
-            // then rendered after work made an hour later. $artworks arrives ordered by
-            // pose_index, so grouping by runs keeps the session in the order it happened.
+            // Group consecutive artworks into the poses they were made during.
+            //
+            // pose_number (migration 022) is the real answer: one pose, one number,
+            // set per import directory. Where it is missing — older uploads, or a web
+            // upload that carried no pose information — fall back to runs of matching
+            // duration+label, which is the best the data supports.
+            //
+            // Never key the batches on duration+label: a keyed batch merges two poses
+            // that only happen to last the same time, and renders where its FIRST image
+            // fell, so a 1 hr pose could appear after drawings made an hour later.
             $batches = [];
             $lastKey = null;
             foreach ($artworks as $artwork) {
-                $key = ($artwork['pose_duration'] ?? '') . '|' . ($artwork['pose_label'] ?? '');
+                // ?? null, not just null-check: this view has to survive being deployed
+                // ahead of migration 022, where a.* simply has no pose_number.
+                $key = ($artwork['pose_number'] ?? null) !== null
+                    ? 'n' . $artwork['pose_number']
+                    : ($artwork['pose_duration'] ?? '') . '|' . ($artwork['pose_label'] ?? '');
                 if ($key !== $lastKey) {
                     $batches[] = [];
                     $lastKey = $key;
                 }
                 $batches[array_key_last($batches)][] = $artwork;
             }
-            // Two runs can only differ by their metadata, so more than one batch always
-            // means there is something worth labelling.
+            // More than one batch always means a pose boundary worth labelling. With a
+            // single batch, only label it if it actually carries pose information.
+            $firstSample = $batches[0][0] ?? null;
             $hasBatchMetadata = count($batches) > 1
-                || (count($batches) === 1 && $lastKey !== '|');
+                || ($firstSample !== null
+                    && (($firstSample['pose_duration'] ?? '') !== '' || ($firstSample['pose_label'] ?? '') !== ''));
             ?>
 
             <?php foreach ($batches as $batchKey => $batchArtworks): ?>

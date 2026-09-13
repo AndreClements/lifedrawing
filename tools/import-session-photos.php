@@ -126,6 +126,14 @@ $poseIndex = (int) $pdo->query(
     "SELECT COALESCE(MAX(pose_index), 0) AS m FROM ld_artworks WHERE session_id = " . $sessionId
 )->fetch(PDO::FETCH_ASSOC)['m'];
 
+// --- This run's pose number ---
+// One --dir is one pose, so every row written here shares a number. Without it two
+// poses of the same length, back to back and unlabelled, are indistinguishable in the
+// data and the session page renders them as a single block.
+$poseNumber = 1 + (int) $pdo->query(
+    "SELECT COALESCE(MAX(pose_number), 0) AS m FROM ld_artworks WHERE session_id = " . $sessionId
+)->fetch(PDO::FETCH_ASSOC)['m'];
+
 // --- Walk source files (chronological by filename) ---
 $allowed = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp'];
 $files = glob($dir . '/*') ?: [];
@@ -219,10 +227,10 @@ foreach ($files as $src) {
 
     try {
         $ins = $pdo->prepare(
-            "INSERT INTO ld_artworks (session_id, uploaded_by, file_path, visibility, media_type, pose_index, pose_duration, pose_label, created_at)
-             VALUES (?, ?, ?, 'public', 'photograph', ?, ?, ?, NOW())"
+            "INSERT INTO ld_artworks (session_id, uploaded_by, file_path, visibility, media_type, pose_index, pose_number, pose_duration, pose_label, created_at)
+             VALUES (?, ?, ?, 'public', 'photograph', ?, ?, ?, ?, NOW())"
         );
-        $ins->execute([$sessionId, $uploader, $rel, $nextIndex, $poseDuration, $poseLabel]);
+        $ins->execute([$sessionId, $uploader, $rel, $nextIndex, $poseNumber, $poseDuration, $poseLabel]);
         $artworkId = (int) $pdo->lastInsertId();
 
         // Provenance — mirror GalleryController's 'artwork.upload', plus orig name for rerun-safety
