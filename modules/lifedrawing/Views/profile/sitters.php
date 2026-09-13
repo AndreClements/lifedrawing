@@ -20,7 +20,7 @@
                         <span><?= $sitter['total_sessions'] ?> session<?= $sitter['total_sessions'] != 1 ? 's' : '' ?> total</span>
                         <?php if ($sitter['current_streak'] > 0): ?>
                             &middot;
-                            <span><?= $sitter['current_streak'] ?>w streak</span>
+                            <span><?= (int) $sitter["current_streak"] ?> streak</span>
                         <?php endif; ?>
                     </div>
                     <?php if (app('auth')->hasRole('admin', 'facilitator') && !empty($sitter['whatsapp_number'])): ?>

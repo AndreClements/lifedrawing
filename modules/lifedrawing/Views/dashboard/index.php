@@ -36,17 +36,24 @@ $memberSince = $stats['member_since'] ?? null;
             </div>
         </div>
         <div class="stat-card accent">
-            <span class="stat-card-value"><?= (int) ($stats['current_streak'] ?? 0) ?>w</span>
+            <span class="stat-card-value"><?= (int) ($stats['current_streak'] ?? 0) ?></span>
             <span class="stat-card-label">Current Streak</span>
             <div class="stat-card-detail">
-                Consecutive weeks attended
+                Consecutive weekends attended
             </div>
         </div>
         <div class="stat-card">
-            <span class="stat-card-value"><?= (int) ($stats['longest_streak'] ?? 0) ?>w</span>
+            <span class="stat-card-value"><?= (int) ($stats['longest_streak'] ?? 0) ?></span>
             <span class="stat-card-label">Best Streak</span>
             <div class="stat-card-detail">
-                Your personal record
+                <?= (int) ($stats['streak_count'] ?? 0) ?> streak<?= (int) ($stats['streak_count'] ?? 0) === 1 ? '' : 's' ?> so far
+            </div>
+        </div>
+        <div class="stat-card">
+            <span class="stat-card-value"><?= (int) ($stats['longest_superstreak'] ?? 0) ?></span>
+            <span class="stat-card-label">Best Superstreak</span>
+            <div class="stat-card-detail">
+                Consecutive sessions &mdash; a whole weekend is three
             </div>
         </div>
     </div>

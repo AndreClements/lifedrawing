@@ -23,14 +23,34 @@
             <span class="stat-label">Artworks</span>
         </div>
         <div class="stat">
-            <span class="stat-value"><?= $profile['current_streak'] ?></span>
-            <span class="stat-label">Week Streak</span>
+            <span class="stat-value"><?= (int) ($profile['current_streak'] ?? 0) ?></span>
+            <span class="stat-label">Current Streak</span>
         </div>
         <div class="stat">
-            <span class="stat-value"><?= $profile['longest_streak'] ?></span>
+            <span class="stat-value"><?= (int) ($profile['longest_streak'] ?? 0) ?></span>
             <span class="stat-label">Best Streak</span>
         </div>
+        <div class="stat">
+            <span class="stat-value"><?= (int) ($profile['longest_superstreak'] ?? 0) ?></span>
+            <span class="stat-label">Best Superstreak</span>
+        </div>
     </div>
+
+    <?php
+    // Counts, not just records: how often someone has strung a run together says
+    // more about a habit than a single best ever did.
+    $streakCount = (int) ($profile['streak_count'] ?? 0);
+    $superCount  = (int) ($profile['superstreak_count'] ?? 0);
+    ?>
+    <?php if ($streakCount > 0 || $superCount > 0): ?>
+        <p class="text-muted text-sm">
+            <?= $streakCount ?> streak<?= $streakCount === 1 ? '' : 's' ?>
+            (consecutive weekends attended)
+            &middot;
+            <?= $superCount ?> superstreak<?= $superCount === 1 ? '' : 's' ?>
+            (consecutive sessions, so a whole weekend counts as three)
+        </p>
+    <?php endif; ?>
 
     <?php if (($noShows ?? null) !== null && $noShows > 0): ?>
         <p class="text-muted text-sm">

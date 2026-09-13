@@ -26,6 +26,7 @@ final class ProfileController extends BaseController
              FROM users u
              LEFT JOIN ld_artist_stats s ON u.id = s.user_id
              WHERE u.consent_state = 'granted'
+               AND u.role NOT IN ('admin', 'facilitator')
                AND (SELECT COUNT(*) FROM ld_session_participants sp WHERE sp.user_id = u.id) > 0
              ORDER BY s.total_sessions DESC, u.display_name ASC"
         );
@@ -73,6 +74,10 @@ final class ProfileController extends BaseController
                     COALESCE(s.total_artworks, 0) as total_artworks,
                     COALESCE(s.current_streak, 0) as current_streak,
                     COALESCE(s.longest_streak, 0) as longest_streak,
+                    COALESCE(s.streak_count, 0) as streak_count,
+                    COALESCE(s.current_superstreak, 0) as current_superstreak,
+                    COALESCE(s.longest_superstreak, 0) as longest_superstreak,
+                    COALESCE(s.superstreak_count, 0) as superstreak_count,
                     s.media_explored, s.last_session_date
              FROM users u
              LEFT JOIN ld_artist_stats s ON u.id = s.user_id

@@ -17,6 +17,15 @@ use App\Database\QueryBuilder;
  */
 final class StatsService
 {
+    /** A run of this many or more counts as one streak. Meant to be adjustable. */
+    private const STREAK_MIN_RUN = 2;
+
+    /** @var array<string,int>|null */
+    private ?array $weekendOrder = null;
+
+    /** @var array<int,int>|null */
+    private ?array $sessionOrder = null;
+
     public function __construct(
         private readonly Connection $db,
     ) {}
@@ -60,8 +69,10 @@ final class StatsService
             [$userId, $today]
         );
 
-        // Calculate streaks from session dates
-        [$current, $longest] = $this->calculateStreaks($userId);
+        // Streaks (consecutive weekends the venue ran) and superstreaks (consecutive
+        // sessions held) — regularity and intensity, counted separately.
+        [$current, $longest, $streakCount, $superCurrent, $superLongest, $superCount]
+            = $this->calculateStreaks($userId);
 
         // Media explored (from caption keywords and claim metadata)
         $media = $this->extractMedia($userId);
@@ -76,16 +87,21 @@ final class StatsService
             $this->db->execute(
                 "UPDATE ld_artist_stats
                  SET total_sessions = ?, total_artworks = ?, current_streak = ?,
-                     longest_streak = ?, last_session_date = ?, media_explored = ?
+                     longest_streak = ?, streak_count = ?, current_superstreak = ?,
+                     longest_superstreak = ?, superstreak_count = ?,
+                     last_session_date = ?, media_explored = ?
                  WHERE user_id = ?",
-                [$totalSessions, $totalArtworks, $current, $longest, $lastDate, json_encode($media), $userId]
+                [$totalSessions, $totalArtworks, $current, $longest, $streakCount,
+                 $superCurrent, $superLongest, $superCount, $lastDate, json_encode($media), $userId]
             );
         } else {
             $this->db->execute(
                 "INSERT INTO ld_artist_stats (user_id, total_sessions, total_artworks,
-                     current_streak, longest_streak, last_session_date, media_explored)
-                 VALUES (?, ?, ?, ?, ?, ?, ?)",
-                [$userId, $totalSessions, $totalArtworks, $current, $longest, $lastDate, json_encode($media)]
+                     current_streak, longest_streak, streak_count, current_superstreak,
+                     longest_superstreak, superstreak_count, last_session_date, media_explored)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                [$userId, $totalSessions, $totalArtworks, $current, $longest, $streakCount,
+                 $superCurrent, $superLongest, $superCount, $lastDate, json_encode($media)]
             );
         }
     }
@@ -103,93 +119,169 @@ final class StatsService
     }
 
     /**
-     * Calculate weekly streaks.
+     * Calculate streaks and superstreaks.
      *
-     * A streak is consecutive ISO weeks where the user attended at least one
-     * session that has already taken place. Future bookings do not count, and
-     * neither does a session they were marked a no-show for.
+     * Two measures, because regularity and intensity are different things:
      *
-     * The rule is "not marked no_show", NOT "attendance = 'attended'". Nothing
-     * has ever written 'attended' for a web booking, so requiring it would wipe
-     * the attendance history of everyone who booked through the site.
-     * Current streak counts backwards from the most recent week with activity.
-     * If the most recent activity was more than 2 weeks ago, current streak resets to 0.
+     *   streak       consecutive WEEKENDS THE VENUE RAN that this person attended.
+     *                Weeks with no session cost nothing, so it does not punish anyone
+     *                for the schedule's own gaps.
+     *   superstreak  consecutive SESSIONS, in the order they were held. A Fri/Sat/Sun
+     *                weekend attended in full is 3; missing any session held breaks it.
      *
-     * @return array{0: int, 1: int} [current_streak, longest_streak]
+     * The old measure counted consecutive ISO calendar weeks, which the fortnightly
+     * schedule made unreachable — 245 of 250 people sat on 1 — and it did arithmetic on
+     * YEARWEEK values as `year * 52 + week`, which silently under-counts across a
+     * 53-week ISO year (2026 is one: 2026-12-28 to 2027-01-04 came out as 0, not 1).
+     * Indexing into the venue's own list of weekends removes both problems at once:
+     * nothing here does arithmetic on week numbers.
+     *
+     * The rule is "not marked no_show", NOT "attendance = 'attended'". Nothing has ever
+     * written 'attended' for a web booking, so requiring it would wipe the attendance
+     * history of everyone who booked through the site.
+     *
+     * @return array{0:int,1:int,2:int,3:int,4:int,5:int}
+     *         [streakCurrent, streakLongest, streakCount,
+     *          superCurrent, superLongest, superCount]
      */
     private function calculateStreaks(int $userId): array
     {
-        // Get distinct session weeks (YEARWEEK gives YYYYWW format)
-        $weeks = $this->db->fetchAll(
-            "SELECT DISTINCT YEARWEEK(s.session_date, 1) as yw
+        $weekendAt = $this->weekendOrder();
+        $sessionAt = $this->sessionOrder();
+
+        if ($weekendAt === [] || $sessionAt === []) {
+            return [0, 0, 0, 0, 0, 0];
+        }
+
+        $attended = $this->db->fetchAll(
+            "SELECT s.id, YEARWEEK(s.session_date, 1) AS yw
              FROM ld_sessions s
              JOIN ld_session_participants sp ON sp.session_id = s.id
              WHERE sp.user_id = ? AND s.session_date <= ?
-               AND sp.attendance != 'no_show'
-             ORDER BY yw DESC",
+               AND sp.attendance != 'no_show'",
             [$userId, date('Y-m-d')]
         );
 
-        if (empty($weeks)) {
-            return [0, 0];
-        }
-
-        $weekNumbers = array_map(fn($w) => (int) $w['yw'], $weeks);
-
-        // Current week in same YEARWEEK format
-        $currentYw = (int) date('oW');  // ISO year + week (e.g. 202607)
-
-        // Check if most recent activity is within the last 2 weeks
-        $mostRecent = $weekNumbers[0];
-        $gapFromNow = $this->weekDistance($mostRecent, $currentYw);
-        $currentStreak = 0;
-
-        if ($gapFromNow <= 1) {
-            // Count consecutive weeks backwards from most recent
-            $currentStreak = 1;
-            for ($i = 1; $i < count($weekNumbers); $i++) {
-                $gap = $this->weekDistance($weekNumbers[$i], $weekNumbers[$i - 1]);
-                if ($gap === 1) {
-                    $currentStreak++;
-                } else {
-                    break;
-                }
+        $weekendIdx = [];
+        $sessionIdx = [];
+        foreach ($attended as $row) {
+            $yw = (string) $row['yw'];
+            $id = (int) $row['id'];
+            if (isset($weekendAt[$yw])) {
+                $weekendIdx[] = $weekendAt[$yw];
+            }
+            if (isset($sessionAt[$id])) {
+                $sessionIdx[] = $sessionAt[$id];
             }
         }
 
-        // Longest streak: find the longest run of consecutive weeks
-        $longestStreak = 1;
-        $runLength = 1;
-        for ($i = 1; $i < count($weekNumbers); $i++) {
-            $gap = $this->weekDistance($weekNumbers[$i], $weekNumbers[$i - 1]);
-            if ($gap === 1) {
-                $runLength++;
-                $longestStreak = max($longestStreak, $runLength);
-            } else {
-                $runLength = 1;
-            }
-        }
-        $longestStreak = max($longestStreak, $currentStreak);
+        [$sc, $sl, $sn] = self::runsOf($weekendIdx, count($weekendAt) - 1);
+        [$pc, $pl, $pn] = self::runsOf($sessionIdx, count($sessionAt) - 1);
 
-        return [$currentStreak, $longestStreak];
+        return [$sc, $sl, $sn, $pc, $pl, $pn];
     }
 
     /**
-     * Calculate the distance in weeks between two YEARWEEK values.
-     * Handles year boundaries correctly.
+     * Longest run, number of qualifying runs, and whether a run is still live.
+     *
+     * Bests are raw run lengths; only the COUNT applies STREAK_MIN_RUN. That way
+     * adjusting the threshold needs a refresh, not a migration, and the stored numbers
+     * never have to be reinterpreted.
+     *
+     * A run is only "current" if it reaches the most recent opportunity there was — the
+     * latest weekend the venue ran, or the latest session held. Otherwise it is over,
+     * however recently it ended.
+     *
+     * @param list<int> $positions
+     * @return array{0:int,1:int,2:int} [current, longest, count]
      */
-    private function weekDistance(int $earlier, int $later): int
+    private static function runsOf(array $positions, int $lastPossible): array
     {
-        $yearA = intdiv($earlier, 100);
-        $weekA = $earlier % 100;
-        $yearB = intdiv($later, 100);
-        $weekB = $later % 100;
+        $positions = array_values(array_unique($positions));
+        sort($positions);
 
-        // Convert to absolute week number (approximate, good enough for streak detection)
-        $absA = $yearA * 52 + $weekA;
-        $absB = $yearB * 52 + $weekB;
+        $n = count($positions);
+        if ($n === 0) {
+            return [0, 0, 0];
+        }
 
-        return $absB - $absA;
+        $longest = 1;
+        $run = 1;
+        $count = 0;
+
+        for ($i = 1; $i < $n; $i++) {
+            if ($positions[$i] === $positions[$i - 1] + 1) {
+                $run++;
+                continue;
+            }
+            if ($run >= self::STREAK_MIN_RUN) {
+                $count++;
+            }
+            $longest = max($longest, $run);
+            $run = 1;
+        }
+
+        $longest = max($longest, $run);
+        if ($run >= self::STREAK_MIN_RUN) {
+            $count++;
+        }
+
+        $current = ($positions[$n - 1] === $lastPossible) ? $run : 0;
+
+        return [$current, $longest, $count];
+    }
+
+    /**
+     * Every weekend the venue ran something, oldest first: YEARWEEK => position.
+     *
+     * Memoised per instance because refreshAll() asks once per user and the answer
+     * cannot change inside a single run.
+     *
+     * @return array<string,int>
+     */
+    private function weekendOrder(): array
+    {
+        if ($this->weekendOrder !== null) {
+            return $this->weekendOrder;
+        }
+
+        $rows = $this->db->fetchAll(
+            "SELECT DISTINCT YEARWEEK(session_date, 1) AS yw
+             FROM ld_sessions WHERE session_date <= ? ORDER BY yw ASC",
+            [date('Y-m-d')]
+        );
+
+        $order = [];
+        foreach ($rows as $i => $row) {
+            $order[(string) $row['yw']] = $i;
+        }
+
+        return $this->weekendOrder = $order;
+    }
+
+    /**
+     * Every session already held, oldest first: session id => position.
+     *
+     * @return array<int,int>
+     */
+    private function sessionOrder(): array
+    {
+        if ($this->sessionOrder !== null) {
+            return $this->sessionOrder;
+        }
+
+        $rows = $this->db->fetchAll(
+            "SELECT id FROM ld_sessions WHERE session_date <= ?
+             ORDER BY session_date ASC, id ASC",
+            [date('Y-m-d')]
+        );
+
+        $order = [];
+        foreach ($rows as $i => $row) {
+            $order[(int) $row['id']] = $i;
+        }
+
+        return $this->sessionOrder = $order;
     }
 
     /**
@@ -417,13 +509,28 @@ final class StatsService
             ];
         }
 
-        // Streak milestones
-        $streakThresholds = [2 => 'First Streak', 4 => 'Monthly Regular', 8 => 'Two Months Strong', 12 => 'Quarterly Anchor'];
+        // Streak milestones — consecutive weekends the venue ran. The old labels named
+        // calendar spans ("Monthly Regular") that a fortnightly schedule made wrong, so
+        // they now name the run itself.
+        $streakThresholds = [2 => 'First Streak', 4 => 'Four in a Row', 8 => 'Eight in a Row', 12 => 'Twelve in a Row'];
         foreach ($streakThresholds as $threshold => $label) {
             $milestones[] = [
                 'label' => $label,
                 'achieved' => $streak >= $threshold,
                 'progress' => min(100, (int) ($streak / $threshold * 100)),
+                'category' => 'streaks',
+            ];
+        }
+
+        // Superstreak milestones — consecutive sessions held, so a full Fri/Sat/Sun
+        // weekend is 3. Harder than a streak, and deliberately scaled lower.
+        $super = (int) ($stats['longest_superstreak'] ?? 0);
+        $superThresholds = [2 => 'First Superstreak', 3 => 'Whole Weekend', 6 => 'Two Weekends Whole', 10 => 'Ten Straight'];
+        foreach ($superThresholds as $threshold => $label) {
+            $milestones[] = [
+                'label' => $label,
+                'achieved' => $super >= $threshold,
+                'progress' => min(100, (int) ($super / $threshold * 100)),
                 'category' => 'streaks',
             ];
         }
