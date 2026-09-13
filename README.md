@@ -56,10 +56,24 @@ If you've worked with Laravel, you'll recognise some of the bones:
 | Concept | Implementation |
 |---|---|
 | **CARDS** (Competence, Autonomy, Relatedness, Dignity, Safety) | No quality rankings. Opt-in claims. Session-centric design. `DignityException` halts objectifying operations. CSRF + prepared statements + image validation. |
-| **Consent state machine** | `pending → granted → withdrawn` on every user. `ConsentGate` middleware enforces before data operations. Withdrawal hides but doesn't delete (provenance preserved). |
+| **Consent state machine** | `pending → granted → withdrawn` on every user. `ConsentGate` reads the state from the database, not the browser session, so a withdrawal on one device takes effect on every other. Withdrawal hides but never deletes: files move out of the web root into `storage/withdrawn/`, and it reports itself incomplete rather than claiming success if any file could not be moved. |
 | **Provenance logging** | Every significant action recorded in `provenance_log` with who/what/when/context JSON. Every artwork traces back to session → uploader → claimant. |
 | **Parametric authorship** | "Govern via slope, not policing." Claiming is frictionless; uploading requires facilitator role. Default visibility is `public` — consent happens in the room, not in software gates. Stats reward attendance, not output volume. |
 | **Try-catch-AND-YET** | `AppException` carries an `andYet` field — honest self-critique logged alongside the error. "This halts the claim but doesn't notify the claimant why." |
+
+**Enforcement lives where the request lands.** Hiding a row is not the same as
+withholding a file. `.htaccess` serves anything that exists under
+`public/assets/uploads/` without PHP running at all, so consent withdrawal moves
+those files out of the tree and then *verifies* they are gone before reporting
+success. Because `tools/process_images.php` writes into that same tree at four
+points in a run — it rewrites the original in place for EXIF rotation and the
+10MP cap before writing derivatives — withdrawal, artwork deletion and
+restoration all take the lock that worker already holds (`App\Services\ImageLock`,
+over `storage/process_images.lock`). Without it a worker can recreate a file
+moments after it was checked. `artwork_public_paths()` in `app/helpers.php` is the
+single definition of what belongs to an artwork, derivative names included, since
+a run that made the web image but failed on the thumbnail leaves a real public
+file no database row points at.
 
 **Module system.** Each "table" (community space) is a self-contained module with its own controllers, views, migrations, and routes, registered via a `module.php` manifest. The life drawing module mounts at root `/` because it IS the site for now. Future modules (pottery circle, music jam) get their own URL prefix and follow the same contract.
 
@@ -91,7 +105,8 @@ lifedrawing/
 │   ├── Database/               # Connection, Migration, QueryBuilder
 │   ├── Middleware/              # CSRF, Auth, ConsentGate, RateLimiting, SecurityHeaders
 │   ├── Exceptions/             # AppException, DignityException, ConsentException
-│   ├── Services/               # Auth, Upload, ImageProcessor, Provenance, Stats, Mail, Notification
+│   ├── Services/               # Auth, Upload, ImageProcessor, Provenance, Stats, Mail,
+│   │                           # Notification, SitterQueue, ImageLock
 │   └── View/                   # Template engine + helpers
 │
 ├── modules/
@@ -101,7 +116,7 @@ lifedrawing/
 │       ├── Models/             # Data models
 │       ├── Repositories/       # Data access layer
 │       ├── Views/              # PHP templates with layouts
-│       └── migrations/         # Module-specific SQL (19 migrations)
+│       └── migrations/         # Module-specific SQL (21 migrations)
 │
 ├── config/                     # app.php, database.php, auth.php, axioms.php, mail.php
 ├── database/                   # Core migrations (6) + seeds
@@ -287,15 +302,26 @@ Live at: `https://lifedrawing.andresclements.com/randburg`
 ### Cron
 
 ```bash
-# Process uploaded images (EXIF rotation, WebP conversion, thumbnails) — every 2 min with flock
-*/2 * * * * flock -n /tmp/ldr-images.lock php ~/lifedrawing.andresclements.com/randburg/tools/process_images.php >> ~/lifedrawing.andresclements.com/randburg/storage/logs/cron.log 2>&1
+# Process uploaded images (EXIF rotation, WebP conversion, thumbnails) — every 2 min
+*/2 * * * * /usr/bin/php ~/lifedrawing.andresclements.com/randburg/tools/process_images.php --limit=20 >> ~/lifedrawing.andresclements.com/randburg/storage/logs/process_images.log 2>&1
 
-# Flush notification queue (digest batching, 5-min window) — every 2 min with flock
-*/2 * * * * flock -n ~/lifedrawing.andresclements.com/randburg/storage/flush_notifications.lock php ~/lifedrawing.andresclements.com/randburg/tools/flush_notifications.php >> ~/lifedrawing.andresclements.com/randburg/storage/logs/cron.log 2>&1
-
-# Refresh artist stats daily at 2am
-0 2 * * * php ~/lifedrawing.andresclements.com/randburg/tools/refresh-stats.php >> ~/lifedrawing.andresclements.com/randburg/storage/logs/cron.log 2>&1
+# Flush notification queue (digest batching, 5-min window) — every 2 min
+*/2 * * * * /usr/bin/php ~/lifedrawing.andresclements.com/randburg/tools/flush_notifications.php >> ~/lifedrawing.andresclements.com/randburg/storage/logs/flush_notifications.log 2>&1
 ```
+
+No external `flock` wrapper: both tools take their own lock internally
+(`storage/process_images.lock`, `storage/flush_notifications.lock`). The image
+lock is shared with consent withdrawal, artwork deletion and restoration, which
+all need the worker to stand still while they move files.
+
+`--limit=20` bounds each run. A permanently failing image would otherwise occupy
+the batch and starve newer uploads, so `process_images.php` stamps `processed_at`
+on rows whose source file has gone missing rather than rescanning them forever.
+
+**`refresh-stats.php` is not scheduled.** Earlier versions of this file listed a
+2am entry for it; production has never had one. Statistics are refreshed inline
+on every mutation that changes them, so the cron was redundant. Run it by hand
+after a bulk import or a data repair.
 
 ### Environment
 
@@ -305,11 +331,39 @@ For production, set in `.env`:
 APP_ENV=production
 APP_URL=https://lifedrawing.andresclements.com/randburg
 APP_BASE_PATH=/randburg
+
+# Community WhatsApp group. config/app.php carries the real invite as its
+# default, so this is only needed to point elsewhere.
+APP_WHATSAPP_URL=https://chat.whatsapp.com/DIuJ2yPbjpG350Ovjxj1Hx
+
+# Sitter-queue auto-completion. Ship a new database with this OFF, sweep the
+# backlog with tools/fix-sitter-queue.php, then turn it on.
+APP_SITTER_AUTO_COMPLETE=true
 ```
 
 `APP_BASE_PATH` tells `Request::capture()` how to strip the URL prefix — needed when the app lives in a subdirectory and `.htaccess` hides `/public` from URLs.
 
 Ensure `storage/` directories are writable by the web server and HTTPS is enforced.
+
+### Maintenance window
+
+Deploys that carry a migration need web traffic stopped, not just cron paused: a
+request landing between the code arriving and the migration running hits new code
+against a missing column, and re-running a backfill repairs data but never the
+requests that already failed.
+
+The gate is a flag file. Apache answers from a static page, so PHP never runs:
+
+```bash
+touch ~/lifedrawing.andresclements.com/maintenance.flag   # gate up
+rm    ~/lifedrawing.andresclements.com/maintenance.flag   # gate down
+```
+
+The rule lives in this repository's root `.htaccess` — **not** the document
+root's. Apache does not inherit rewrite rules from a parent directory's
+`.htaccess`, and `.htaccess` here turns `RewriteEngine` on, so anything written
+in `~/lifedrawing.andresclements.com/.htaccess` is silently ignored for every
+request to the app. Full runbook in [deploy/README.md](deploy/README.md).
 
 ## Lessons Learned
 
@@ -318,6 +372,29 @@ Ensure `storage/` directories are writable by the web server and HTTPS is enforc
 The consent simplification was the project's defining architectural decision. Instead of building elaborate permission systems, the code recognises that consent happens face-to-face in the drawing room. Software records the outcome, not the process. This extends everywhere: parametric authorship (govern via slope, not policing), name privacy (presence is the threshold, not permission), stats that reward showing up (not output quality). The best ethical decisions were subtractions — removing code that overstepped into human territory.
 
 **Honest errors scale.** The And-Yet pattern started as a field on exceptions but became a design posture across the entire system. The consent withdrawal code doesn't pretend to handle model likeness takedowns — it confesses the gap, names the risk (Botha, non-economic), and ships anyway. That honesty makes the system more trustworthy, not less.
+
+**A record is not an enforcement.** Consent withdrawal set a `visibility` column
+for months and looked complete. It was not: `.htaccess` hands existing files
+straight to Apache, so the image stayed fetchable at its direct URL no matter
+what the database said. The same shape appeared twice more — a booking endpoint
+that trusted the view to hide its own button, and a sitter queue whose "scheduled"
+state was never written by the screen the facilitator actually used. Each time,
+the fix was to ask what the software *does*, not what it *stores*.
+
+**Verify with a positive signal.** An unchanged log proves nothing, because a
+successful request logs nothing either. Testing the maintenance gate meant adding
+a marker that appends a line on every request and confirming it did not grow.
+That marker also caused the only outage of the deploy: placed above
+`declare(strict_types=1)`, which must be the first statement in the file, it took
+the site down for two minutes. The lesson survived the embarrassment — the
+absence of evidence is not evidence, and a check you have not seen fail is not a
+check.
+
+**Rule order is a design decision.** The sitter queue's classifier asked "is this
+person booked in future?" before "did a sitting actually happen?". Both questions
+were right; the order was wrong, and it silently starved completion for anyone
+booked months ahead. Nothing failed, nothing logged, the queue simply stopped
+being true.
 
 **Small codebases surface bugs.** Every bug — hex_id misuse, PSR-4 case sensitivity, CSP blocking inline scripts, HEREDOC ternary incompatibility — was visible and fixable because the code was small enough to read. The Router is ~200 lines. The Container is ~80. The whole kernel reads in an afternoon.
 

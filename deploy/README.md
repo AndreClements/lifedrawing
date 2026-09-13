@@ -47,15 +47,43 @@ Host: Dreamhost shared hosting, user `ldrusr`, PHP 8.2
 Configure via Dreamhost panel (Goodies > Cron Jobs) or `crontab -e`:
 
 ```bash
-# Process uploaded images (EXIF rotation, WebP conversion, thumbnails) — every 2 min with flock
-*/2 * * * * flock -n /tmp/ldr-images.lock php ~/lifedrawing.andresclements.com/randburg/tools/process_images.php >> ~/lifedrawing.andresclements.com/randburg/storage/logs/cron.log 2>&1
+# Process uploaded images (EXIF rotation, WebP conversion, thumbnails) — every 2 min
+*/2 * * * * /usr/bin/php ~/lifedrawing.andresclements.com/randburg/tools/process_images.php --limit=20 >> ~/lifedrawing.andresclements.com/randburg/storage/logs/process_images.log 2>&1
 
-# Flush notification queue (digest batching, 5-min window) — every 2 min with flock
-*/2 * * * * flock -n ~/lifedrawing.andresclements.com/randburg/storage/flush_notifications.lock php ~/lifedrawing.andresclements.com/randburg/tools/flush_notifications.php >> ~/lifedrawing.andresclements.com/randburg/storage/logs/cron.log 2>&1
-
-# Refresh artist stats daily at 2am
-0 2 * * * php ~/lifedrawing.andresclements.com/randburg/tools/refresh-stats.php >> ~/lifedrawing.andresclements.com/randburg/storage/logs/cron.log 2>&1
+# Flush notification queue (digest batching, 5-min window) — every 2 min
+*/2 * * * * /usr/bin/php ~/lifedrawing.andresclements.com/randburg/tools/flush_notifications.php >> ~/lifedrawing.andresclements.com/randburg/storage/logs/flush_notifications.log 2>&1
 ```
+
+No external `flock` wrapper: both tools take their own lock internally
+(`storage/process_images.lock`, `storage/flush_notifications.lock`). The image
+lock is shared with consent withdrawal, artwork deletion and restoration, which
+all need the worker to stand still while they move files.
+
+`--limit=20` bounds each run. A permanently failing image would otherwise occupy
+the batch and starve newer uploads, so `process_images.php` stamps `processed_at`
+on rows whose source file has gone missing rather than rescanning them forever.
+
+**`refresh-stats.php` is not scheduled.** Earlier versions of this file listed a
+2am entry for it; production has never had one. Statistics are refreshed inline
+on every mutation that changes them, so the cron was redundant. Run it by hand
+after a bulk import or a data repair.
+
+**Pausing them for a deploy.** Back up first, comment out, and wait for anything
+already running — commenting a line does not stop a process mid-batch:
+
+```bash
+crontab -l > ~/crontab.backup-deploy.txt
+sed 's/^\*/#DEPLOYPAUSE */' ~/crontab.backup-deploy.txt | crontab -
+
+# drained when both report FREE and no worker is listed
+pgrep -fa 'tools/(process_images|flush_notifications)'
+flock -n storage/process_images.lock -c 'echo image lock FREE'
+flock -n storage/flush_notifications.lock -c 'echo notification lock FREE'
+
+# afterwards
+crontab ~/crontab.backup-deploy.txt
+```
+
 
 ## Mail Configuration
 
