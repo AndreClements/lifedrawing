@@ -319,6 +319,13 @@ The three columns ship in migration `019_add_session_listing_flags.sql`, so a no
 
 Backfill a whole session's drawings from photos taken on the facilitator's phone.
 
+The importer depends on `App\Services\Upload\JpegTrailer`. Production installs with
+`--optimize-autoloader`, which builds a static classmap, so after any change that adds a class
+you must `git pull && ~/bin/composer install --no-dev --optimize-autoloader` on prod *before*
+importing — otherwise the import fatals on a missing class with files already copied. Confirm with
+`php -r 'require "vendor/autoload.php"; var_dump(class_exists("App\\Services\\Upload\\JpegTrailer"));'`
+and `php tools/test-jpeg-trailer.php`.
+
 1. **Stage locally** (Windows) — phone connected via USB in file-transfer mode:
    ```powershell
    # Edit the session→date map at the top of the script, then:
@@ -326,21 +333,45 @@ Backfill a whole session's drawings from photos taken on the facilitator's phone
    ```
    Stage one pose per subdirectory (e.g. `272/1`, `272/2`) if tagging durations. Poses split on
    timestamp gaps of more than ~5 minutes between consecutive shots.
+
+   Only `.jpg`/`.jpeg`/`.png` are copied. Anything else shot that day is listed and left on the
+   phone — and because the delete list is built from staged filenames, it also stays there until
+   you deal with it deliberately.
 2. **Review** — prune any non-artwork shots from the staged folders. Check orientation from
    contact sheets rendered *with EXIF applied*, not from raw thumbnails: most shots carry a
    correct `Orientation` tag that `ImageProcessor` honours. A rotation done in Windows File
    Explorer rewrites the tag only (same byte size, lossless) and imports correctly — but it also
    means the staged set can change after you copy or transfer it, so re-diff by hash before the
    real import if anything was touched.
+2.5. **Strip JPEG trailers** — before the `_backup` copy, before the transfer:
+   ```bash
+   php tools/strip-jpeg-trailers.php --dir=storage/photo-import/272           # report only
+   php tools/strip-jpeg-trailers.php --dir=storage/photo-import/272 --strip
+   ```
+   Samsung hides payloads after the JPEG's end-of-image marker: Motion Photo appends a short
+   video *with room audio*, Live Focus appends a complete second photograph of the room. Both
+   pass `finfo` and `getimagesize`, and originals are served statically out of
+   `public/assets/uploads/`, so they would be publishable. Truncating at EOI is lossless —
+   dimensions, EXIF and decoded pixels are all verified before anything is replaced.
+
+   Strip **before** copying to `_backup/{id}/`, so the two sides stay byte-identical and a later
+   hash diff can only mean an Explorer rotation. Never strip an existing `_backup/` retroactively:
+   `storage/instagram/posted-ledger.json` is keyed on `sha1_file()` of the staged source, so
+   re-hashing those files makes the already-posted guard fail open.
+
+   `import-session-photos.php` strips as a backstop too, so a missed run cannot publish a
+   payload — but it runs after the files have already crossed the wire.
 3. **Transfer + import**:
    ```bash
    ssh -i ~/.ssh/dreamhost_ldr ldrusr@69.163.140.7 'mkdir -p ~/photo-import/272'
    scp -i ~/.ssh/dreamhost_ldr -r storage/photo-import/272/* ldrusr@69.163.140.7:~/photo-import/272/
 
-   # Verify the transfer — rollup hashes must match (raw byte totals won't; du counts dirs):
-   find storage/photo-import/272 -name '*.jpg' | sort | xargs sha1sum | awk '{print $1}' | sha1sum
+   # Verify the transfer — rollup hashes must match (raw byte totals won't; du counts dirs).
+   # Note -type f, not -name '*.jpg': scp -r copies everything in the directory, so a filter
+   # here would let a non-JPEG fail to transfer while the hashes still matched.
+   find storage/photo-import/272 -type f | sort | xargs sha1sum | awk '{print $1}' | sha1sum
    ssh -i ~/.ssh/dreamhost_ldr ldrusr@69.163.140.7 \
-     'find ~/photo-import/272 -name "*.jpg" | sort | xargs sha1sum | awk "{print \$1}" | sha1sum'
+     'find ~/photo-import/272 -type f | sort | xargs sha1sum | awk "{print \$1}" | sha1sum'
 
    # Dry-run first, then real import (per pose directory, in order; --pose-duration optional):
    ssh -i ~/.ssh/dreamhost_ldr ldrusr@69.163.140.7 'cd ~/lifedrawing.andresclements.com/randburg && \
@@ -349,11 +380,15 @@ Backfill a whole session's drawings from photos taken on the facilitator's phone
    Under `--dry-run` the reported `pose_index` restarts at 1 for every directory, because nothing
    is written between invocations. On the real run the indexes continue from `MAX+1` as intended —
    import the pose directories in order and they come out chronological.
-4. **Process + clean up**:
+4. **Process + verify + clean up**:
    ```bash
    ssh -i ~/.ssh/dreamhost_ldr ldrusr@69.163.140.7 'cd ~/lifedrawing.andresclements.com/randburg && \
-     php tools/process_images.php --limit=200 && rm -rf ~/photo-import/272'
+     php tools/process_images.php --limit=200 && \
+     php tools/audit-public-trailers.php --session=272 && rm -rf ~/photo-import/272'
    ```
+   The audit must report zero bytes past EOI for the session before the staging copy goes. Run it
+   without `--session` occasionally as well: that reports pre-existing uploads from before the
+   importer stripped trailers, which is a finding to raise rather than a release gate.
 5. **Clear the phone** (optional, after verifying the import) — build `storage/photo-import/phone-delete-list.txt` from prod `artwork.upload` provenance (`orig` filenames for the imported sessions), then:
    ```powershell
    pwsh tools/unstage-phone-photos.ps1            # dry-run: shows what matches, deletes nothing
@@ -365,6 +400,7 @@ Backfill a whole session's drawings from photos taken on the facilitator's phone
    before the import has run), the delete list can't come from prod provenance yet, so replace
    that safety basis with a verified second copy:
    ```bash
+   # Strip trailers FIRST (step 2.5), so the backup and the staged set stay byte-identical.
    mkdir -p storage/photo-import/_backup/282
    cp storage/photo-import/282/*.jpg storage/photo-import/_backup/282/
    # verify file-by-file with sha1_file() — not count, not total bytes — then build the list:

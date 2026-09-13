@@ -202,6 +202,15 @@ caption. The idea travels; the terminology stays home.
 `storage/instagram/posted-ledger.json`. On render, the tool warns if a chosen image is already in
 the ledger — so we don't repost the same drawing.
 
+**The ledger key is the staged file's bytes, so strip trailers before a session's first
+`--scaffold` — and never retroactively.** `tools/strip-jpeg-trailers.php` removes the Samsung
+payload hidden past a JPEG's EOI marker, which changes the file's `sha1_file()`. Run it on the
+staging directory *before* copying to `_backup/{id}/` and before rendering any slides, and every
+ledger entry written afterwards matches. Run it over a `_backup/` whose images are already posted
+and every one of those entries silently stops matching: the `ALREADY POSTED` warning goes quiet and
+the repost guard fails open, which is the worst way for a safety check to break. Existing backups
+(282, 284, 285, 288) are archival and never served — leave them as they are.
+
 **This is repost-detection, not yet a model→post trace.** Production doesn't persist the source
 hash, and `process_images.php` rewrites uploaded originals, so a hash taken on prod later won't
 match. To trace which posts a withdrawn model appears in — the documented model-takedown gap in

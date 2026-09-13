@@ -2,6 +2,26 @@
 # Read-only on the phone; copies Camera photos by date prefix into
 # storage\photo-import\{sessionId}\ for review before upload.
 # Verifies each copied file exists with a byte size matching the source.
+#
+# Copies images only. The date prefix alone used to match anything shot that day,
+# which is how 147 MB of video from 2026-06-06 ended up in staging. Non-image files
+# are listed rather than passed over silently: the phone delete-list is built from
+# staged .jpg names, so anything not staged also never gets deleted off the phone.
+#
+# Staged JPEGs still need tools\strip-jpeg-trailers.php run over them before import --
+# Samsung hides a video (Motion Photo) or a second photograph (Live Focus) after the
+# JPEG's end-of-image marker, and nothing else in the pipeline looks for it.
+#
+# Stages every session in $map by default. Pass -Ids to stage only some of them --
+# older sessions whose artwork is already imported can still have non-artwork strays
+# left on the phone, and re-staging those resurrects photos that were pruned on purpose.
+#
+#   powershell -ExecutionPolicy Bypass -File tools\stage-phone-photos.ps1            # all
+#   powershell -ExecutionPolicy Bypass -File tools\stage-phone-photos.ps1 -Ids 288   # one
+
+param(
+  [int[]]$Ids
+)
 
 $ErrorActionPreference = 'Stop'
 
@@ -16,8 +36,15 @@ $map = @(
   @{ id = 279; date = '20260719' },
   @{ id = 282; date = '20260802' },
   @{ id = 284; date = '20260815' },
-  @{ id = 285; date = '20260816' }
+  @{ id = 285; date = '20260816' },
+  @{ id = 288; date = '20260830' },
+  @{ id = 291; date = '20260913' }
 )
+
+if ($Ids) {
+  $map = @($map | Where-Object { $Ids -contains $_.id })
+  if ($map.Count -eq 0) { throw "No session in the map matches -Ids $($Ids -join ', ')" }
+}
 
 $base = 'c:\xampp\htdocs\lifedrawing\storage\photo-import'
 
@@ -34,13 +61,24 @@ foreach ($m in $map) {
   New-Item -ItemType Directory -Force -Path $dest | Out-Null
   $destFolder = $shell.Namespace($dest)
 
-  $items = @($allCamera | Where-Object { $_.Name.StartsWith($m.date) })
+  $dated   = @($allCamera | Where-Object { $_.Name.StartsWith($m.date) })
+  $items   = @($dated | Where-Object { $_.Name -match '\.(jpg|jpeg|png)$' })
+  $skipped = @($dated | Where-Object { $_.Name -notmatch '\.(jpg|jpeg|png)$' })
 
   # source name -> size in bytes (System.Size = property index 0x300...; use ExtendedProperty)
   $srcSizes = @{}
   foreach ($it in $items) { $srcSizes[$it.Name] = [int64]$it.ExtendedProperty('System.Size') }
 
   Write-Host ("Session {0} ({1}): {2} source photos -> {3}" -f $m.id, $m.date, $items.Count, $dest)
+
+  if ($skipped.Count -gt 0) {
+    Write-Host ("  -> NOT staged, {0} non-image file(s) shot the same day:" -f $skipped.Count) -ForegroundColor Yellow
+    foreach ($s in $skipped) {
+      $sz = [int64]$s.ExtendedProperty('System.Size')
+      Write-Host ("     {0}  {1:N0} bytes" -f $s.Name, $sz) -ForegroundColor Yellow
+    }
+    Write-Host "     These stay on the phone and will NOT enter phone-delete-list.txt." -ForegroundColor Yellow
+  }
 
   foreach ($it in $items) {
     $target = Join-Path $dest $it.Name

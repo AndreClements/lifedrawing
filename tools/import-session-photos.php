@@ -7,6 +7,9 @@ declare(strict_types=1);
  *
  * Mirrors the web upload path (GalleryController::upload + UploadService):
  *   - validates real MIME type (finfo, not extension) + image integrity (getimagesize)
+ *   - strips anything appended past a JPEG's EOI marker (App\Services\Upload\JpegTrailer)
+ *     so a Motion Photo's video or a Live Focus second frame can never be published,
+ *     recording what was removed in provenance
  *   - inserts ld_artworks rows with derivatives left NULL so tools/process_images.php
  *     generates web/thumb WebP and stamps processed_at on its next run
  *   - writes an 'artwork.upload' provenance record per image
@@ -42,6 +45,8 @@ if (file_exists($envFile)) {
 }
 
 require LDR_ROOT . '/vendor/autoload.php';
+
+use App\Services\Upload\JpegTrailer;
 
 // --- Parse args ---
 $sessionId = null; $dir = null; $dryRun = false; $uploader = null;
@@ -127,7 +132,7 @@ $files = glob($dir . '/*') ?: [];
 sort($files);
 
 $finfo = new finfo(FILEINFO_MIME_TYPE);
-$imported = 0; $skipDup = 0; $skipInvalid = 0; $failed = 0;
+$imported = 0; $skipDup = 0; $skipInvalid = 0; $failed = 0; $stripped = 0;
 $seenHash = [];
 
 foreach ($files as $src) {
@@ -144,8 +149,43 @@ foreach ($files as $src) {
     // Validate image integrity
     if (@getimagesize($src) === false) { echo "SKIP corrupt/not-an-image: $bn\n"; $skipInvalid++; continue; }
 
-    // Secondary dedup by content hash
-    $h = sha1_file($src);
+    // Strip anything appended after the JPEG's end-of-image marker.
+    //
+    // Phone cameras hide payloads there, and finfo + getimagesize both wave them
+    // through: Samsung Motion Photo appends a short video WITH ROOM AUDIO, Live Focus
+    // appends a complete second photograph. Originals are served statically out of
+    // public/assets/uploads/, and every gallery template falls back to file_path until
+    // process_images.php has built the derivatives — so for the first couple of minutes
+    // the session page publishes the original itself. Nothing downstream catches this.
+    //
+    // Every trailer goes, not only the ones classify() calls a carrier. That keeps "no
+    // bytes past EOI in the public tree" an invariant this line enforces, rather than a
+    // property of whichever heuristic ran. The retained bytes are a byte-identical
+    // prefix of the source either way.
+    $bytes = null; $trailerBytes = 0; $trailerBlocks = [];
+    if ($mime === 'image/jpeg') {
+        $raw = @file_get_contents($src);
+        if ($raw === false) { echo "FAIL unreadable: $bn\n"; $failed++; continue; }
+
+        $strip = JpegTrailer::stripBytes($raw);
+        if (!$strip['ok']) {
+            // A JPEG the marker walk cannot parse is a different problem; reshaping it
+            // blind is not this tool's call.
+            echo "SKIP unparseable JPEG ({$strip['error']}): $bn\n"; $skipInvalid++; continue;
+        }
+        if ($strip['tail_bytes'] > 0) {
+            $bytes         = $strip['bytes'];
+            $trailerBytes  = $strip['tail_bytes'];
+            $trailerBlocks = array_column($strip['blocks'], 'name');
+        }
+        unset($raw, $strip);
+    }
+
+    // Secondary dedup by content hash — of the bytes that will actually be written, not
+    // of the source. $existingHash is built from files already on disk (already
+    // stripped), so hashing the unstripped source would never match and every rerun
+    // would re-import the whole session.
+    $h = $bytes !== null ? sha1($bytes) : sha1_file($src);
     if (isset($existingHash[$h])) { echo "SKIP dup-content (on disk as {$existingHash[$h]}): $bn\n"; $skipDup++; continue; }
     if (isset($seenHash[$h]))     { echo "SKIP dup-content (same as {$seenHash[$h]} this run): $bn\n"; $skipDup++; continue; }
 
@@ -160,14 +200,22 @@ foreach ($files as $src) {
         ? '  [' . trim(($poseLabel ?? '') . ' ' . ($poseDuration !== null ? "($poseDuration)" : '')) . ']'
         : '';
 
+    $trailerNote = $trailerBytes > 0
+        ? '  [stripped ' . number_format($trailerBytes) . 'B trailer: ' . implode(', ', $trailerBlocks) . ']'
+        : '';
+
     if ($dryRun) {
-        echo "DRY would import: $bn  ->  $rel  (pose_index=$nextIndex)$poseInfo\n";
+        echo "DRY would import: $bn  ->  $rel  (pose_index=$nextIndex)$poseInfo$trailerNote\n";
         $poseIndex = $nextIndex; $seenHash[$h] = $bn; $imported++;
+        if ($trailerBytes > 0) $stripped++;
         continue;
     }
 
-    // Copy first; only insert if the file is safely in place (orphan-safe).
-    if (!@copy($src, $dest)) { echo "FAIL copy: $bn\n"; $failed++; continue; }
+    // Write first; only insert if the file is safely in place (orphan-safe).
+    $placed = $bytes !== null
+        ? @file_put_contents($dest, $bytes) === strlen($bytes)
+        : @copy($src, $dest);
+    if (!$placed) { echo "FAIL copy: $bn\n"; $failed++; continue; }
 
     try {
         $ins = $pdo->prepare(
@@ -182,18 +230,22 @@ foreach ($files as $src) {
             "INSERT INTO provenance_log (user_id, action, entity_type, entity_id, context, ip_address)
              VALUES (?, 'artwork.upload', 'artwork', ?, ?, 'cli-import')"
         );
-        $prov->execute([
-            $uploader,
-            $artworkId,
-            json_encode(['session_id' => $sessionId, 'file' => $rel, 'orig' => $bn, 'source' => 'phone-import']),
-        ]);
+        // Record the strip in provenance — this is how we later prove what reached prod.
+        $context = ['session_id' => $sessionId, 'file' => $rel, 'orig' => $bn, 'source' => 'phone-import'];
+        if ($trailerBytes > 0) {
+            $context['trailer_stripped'] = $trailerBytes;
+            $context['trailer_blocks']   = $trailerBlocks;
+        }
+
+        $prov->execute([$uploader, $artworkId, json_encode($context)]);
 
         $poseIndex = $nextIndex;
         $seenHash[$h] = $bn;
         $existingHash[$h] = $name;
         $importedOrig[$bn] = true;
         $imported++;
-        echo "OK  $bn  ->  $rel  (artwork_id=$artworkId, pose_index=$nextIndex)$poseInfo\n";
+        if ($trailerBytes > 0) $stripped++;
+        echo "OK  $bn  ->  $rel  (artwork_id=$artworkId, pose_index=$nextIndex)$poseInfo$trailerNote\n";
     } catch (\Throwable $e) {
         @unlink($dest); // roll back the copied file so no orphan remains
         $failed++;
@@ -202,5 +254,6 @@ foreach ($files as $src) {
 }
 
 echo "\nSession $sessionId: imported=$imported  dup-skipped=$skipDup  invalid-skipped=$skipInvalid  failed=$failed"
+   . ($stripped > 0 ? "  trailers-stripped=$stripped" : "")
    . ($dryRun ? "  (DRY RUN — nothing written)" : "") . "\n";
 echo $dryRun ? "" : "Next: run `php tools/process_images.php` to generate WebP derivatives.\n";
