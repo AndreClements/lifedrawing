@@ -13,7 +13,8 @@ use App\Database\QueryBuilder;
  * Computes engagement metrics for artists. Tracks attendance, not talent.
  * The slope rewards showing up, not producing volume.
  *
- * Streak logic: consecutive ISO weeks with at least one session attended.
+ * Streak logic: a run of weekends the venue ran where at least one session was attended.
+ * Superstreak logic: a run of consecutive sessions held. See calculateStreaks().
  */
 final class StatsService
 {
@@ -181,60 +182,156 @@ final class StatsService
             }
         }
 
-        [$sc, $sl, $sn] = self::runsOf($weekendIdx, count($weekendAt) - 1);
-        [$pc, $pl, $pn] = self::runsOf($sessionIdx, count($sessionAt) - 1);
+        [$sc, $sl, $sn] = self::summarise(self::runLengths($weekendIdx, count($weekendAt) - 1));
+        [$pc, $pl, $pn] = self::summarise(self::runLengths($sessionIdx, count($sessionAt) - 1));
 
         return [$sc, $sl, $sn, $pc, $pl, $pn];
     }
 
     /**
-     * Longest run, number of qualifying runs, and whether a run is still live.
+     * Every run length, in order, plus whether the last one is still live.
      *
-     * Bests are raw run lengths; only the COUNT applies STREAK_MIN_RUN. That way
-     * adjusting the threshold needs a refresh, not a migration, and the stored numbers
-     * never have to be reinterpreted.
+     * Returns raw lengths including 1s — the STREAK_MIN_RUN threshold is applied by
+     * callers, so adjusting it never means reinterpreting anything already computed.
      *
      * A run is only "current" if it reaches the most recent opportunity there was — the
      * latest weekend the venue ran, or the latest session held. Otherwise it is over,
      * however recently it ended.
      *
      * @param list<int> $positions
-     * @return array{0:int,1:int,2:int} [current, longest, count]
+     * @return array{runs: list<int>, current: int}
      */
-    private static function runsOf(array $positions, int $lastPossible): array
+    private static function runLengths(array $positions, int $lastPossible): array
     {
         $positions = array_values(array_unique($positions));
         sort($positions);
 
         $n = count($positions);
         if ($n === 0) {
-            return [0, 0, 0];
+            return ['runs' => [], 'current' => 0];
         }
 
-        $longest = 1;
+        $runs = [];
         $run = 1;
-        $count = 0;
-
         for ($i = 1; $i < $n; $i++) {
             if ($positions[$i] === $positions[$i - 1] + 1) {
                 $run++;
                 continue;
             }
-            if ($run >= self::STREAK_MIN_RUN) {
-                $count++;
-            }
-            $longest = max($longest, $run);
+            $runs[] = $run;
             $run = 1;
         }
+        $runs[] = $run;
 
-        $longest = max($longest, $run);
-        if ($run >= self::STREAK_MIN_RUN) {
-            $count++;
+        return [
+            'runs'    => $runs,
+            'current' => ($positions[$n - 1] === $lastPossible) ? $run : 0,
+        ];
+    }
+
+    /**
+     * Summarise run lengths the way the stats table stores them.
+     *
+     * @param array{runs: list<int>, current: int} $lengths
+     * @return array{0:int,1:int,2:int} [current, longest, count]
+     */
+    private static function summarise(array $lengths): array
+    {
+        $runs = $lengths['runs'];
+        if ($runs === []) {
+            return [0, 0, 0];
         }
 
-        $current = ($positions[$n - 1] === $lastPossible) ? $run : 0;
+        $qualifying = array_filter($runs, static fn(int $r): bool => $r >= self::STREAK_MIN_RUN);
 
-        return [$current, $longest, $count];
+        return [$lengths['current'], max($runs), count($qualifying)];
+    }
+
+    /**
+     * The run lengths behind someone's streak numbers, for their profile page.
+     *
+     * Computed live rather than stored: it is three cheap queries on a page nobody
+     * hammers, and it means any further stat is arithmetic over these arrays instead of
+     * another column. Averages cover only runs that qualify as a streak — averaging in
+     * every single unrepeated visit would drag every number towards 1 and say nothing.
+     *
+     * @return array{
+     *     streak: array{runs: list<int>, longest: int, count: int, current: int, average: float|null, completed: int},
+     *     superstreak: array{runs: list<int>, longest: int, count: int, current: int, average: float|null, completed: int}
+     * }
+     */
+    public function runBreakdown(int $userId): array
+    {
+        $weekendAt = $this->weekendOrder();
+        $sessionAt = $this->sessionOrder();
+
+        $empty = ['runs' => [], 'longest' => 0, 'count' => 0, 'current' => 0, 'average' => null, 'completed' => 0];
+        if ($weekendAt === [] || $sessionAt === []) {
+            return ['streak' => $empty, 'superstreak' => $empty];
+        }
+
+        $attended = $this->db->fetchAll(
+            "SELECT s.id, YEARWEEK(s.session_date, 1) AS yw
+             FROM ld_sessions s
+             JOIN ld_session_participants sp ON sp.session_id = s.id
+             WHERE sp.user_id = ? AND s.session_date <= ?
+               AND sp.attendance != 'no_show'",
+            [$userId, date('Y-m-d')]
+        );
+
+        $weekendIdx = [];
+        $sessionIdx = [];
+        foreach ($attended as $row) {
+            $yw = (string) $row['yw'];
+            $id = (int) $row['id'];
+            if (isset($weekendAt[$yw])) {
+                $weekendIdx[] = $weekendAt[$yw];
+            }
+            if (isset($sessionAt[$id])) {
+                $sessionIdx[] = $sessionAt[$id];
+            }
+        }
+
+        return [
+            'streak'      => self::describe(self::runLengths($weekendIdx, count($weekendAt) - 1)),
+            'superstreak' => self::describe(self::runLengths($sessionIdx, count($sessionAt) - 1)),
+        ];
+    }
+
+    /**
+     * The average covers COMPLETED runs only, with the live one held out.
+     *
+     * A run in progress is still growing. Averaging it in would drop someone's average
+     * the moment they start again after a gap — punishing exactly the behaviour the
+     * statistic exists to encourage. Null until there is a completed run to average, so
+     * the page can print a dash rather than a misleading zero.
+     *
+     * @param array{runs: list<int>, current: int} $lengths
+     * @return array{runs: list<int>, longest: int, count: int, current: int,
+     *               average: float|null, completed: int}
+     */
+    private static function describe(array $lengths): array
+    {
+        $runs    = $lengths['runs'];
+        $current = $lengths['current'];
+
+        $completed = $runs;
+        if ($current > 0 && $completed !== []) {
+            array_pop($completed); // the trailing run is the live one
+        }
+
+        $qualifies = static fn(int $r): bool => $r >= self::STREAK_MIN_RUN;
+        $counted   = array_values(array_filter($runs, $qualifies));
+        $done      = array_values(array_filter($completed, $qualifies));
+
+        return [
+            'runs'      => $runs,
+            'longest'   => $runs === [] ? 0 : max($runs),
+            'count'     => count($counted),
+            'current'   => $current,
+            'average'   => $done === [] ? null : array_sum($done) / count($done),
+            'completed' => count($done),
+        ];
     }
 
     /**

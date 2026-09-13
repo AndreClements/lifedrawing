@@ -2334,3 +2334,44 @@ form.search-result-create button.btn-link-inline:hover {
 }
 
 .ranking-table tbody tr:hover { background: var(--color-surface, transparent); }
+
+/* === Practice runs (profile) === */
+.practice-runs {
+    margin: var(--space-lg) 0;
+}
+
+.practice-runs h2 {
+    font-size: 1.05rem;
+    margin-bottom: var(--space-sm);
+}
+
+.runs-table {
+    border-collapse: collapse;
+    font-family: var(--font-ui);
+    font-size: 0.9rem;
+}
+
+.runs-table th,
+.runs-table td {
+    padding: var(--space-xs) var(--space-md);
+    text-align: left;
+    border-bottom: 1px solid var(--color-border);
+    white-space: nowrap;
+}
+
+.runs-table thead th {
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--color-text-muted);
+}
+
+/* Row labels carry the meaning; the numbers should read as the answer. */
+.runs-table tbody th {
+    font-weight: 400;
+    color: var(--color-text-muted);
+}
+
+.runs-table tbody td {
+    font-variant-numeric: tabular-nums;
+}

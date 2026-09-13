@@ -61,7 +61,10 @@ Microcopy uses "you" and "your". Claim buttons are first-person and colloquial.
 
 - "Your Practice" (not "Dashboard")
 - "Your growing body of work" (not "Claimed Artworks: 12")
-- "Consecutive weeks attended" (not "Streak count")
+- "Weekends in a row you have attended" (not "Streak count")
+- Say which number it is. A run's *length* and the *count* of runs are different figures,
+  so name the unit: "Longest run (weekends)", "Runs so far", "Current: 3 sessions".
+  Coming to a whole Fri/Sat/Sun weekend is **one** superstreak of length three.
 - "That's mine" / "That's me" (not "Claim artwork" / "Claim likeness")
 - "Welcome back." (login greeting)
 

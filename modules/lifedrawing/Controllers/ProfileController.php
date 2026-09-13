@@ -202,11 +202,17 @@ final class ProfileController extends BaseController
             )
             : null;
 
+        // Run lengths behind the streak numbers. Computed live rather than stored: it is
+        // three cheap queries on a page nobody hammers, and it keeps any further stat to
+        // arithmetic over these arrays instead of another column.
+        $runs = app('stats')->runBreakdown($id);
+
         return $this->render('profile.show', [
             'noShows' => $noShows,
             'profile' => $user,
             'artworks' => $artworks,
             'sessions' => $sessions,
+            'runs' => $runs,
         ], $user['display_name'], [
             'meta_description' => $profileDesc,
             'json_ld' => $breadcrumbs,
