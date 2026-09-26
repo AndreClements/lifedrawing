@@ -186,29 +186,40 @@ final class SitterQueueService
         // Evidence must match THIS request: classifying on "was ever a model on
         // a past session" would close an entry opened last week on the strength
         // of a sitting from two years ago.
+        //
+        // And it must match to the TIME, not the date. Comparing dates alone let
+        // a sitting close an entry opened that same evening, after it had ended:
+        // a sitter added to the queue once they had sat dropped straight back
+        // out, and an auto-rejoin completed against the very session that had
+        // just closed the previous entry, then rejoined, on every sweep until
+        // midnight. The sitting has to START after they asked. A request made
+        // during or after one is a request for the next.
         if ($status === 'waiting') {
             $since = $entry['requested_at'] ?? null;
             if ($since !== null) {
-                $past = $this->db->fetch(
+                // The date filter only narrows the rows; the real test is below.
+                $sittings = $this->db->fetchAll(
                     "SELECT s.id, s.session_date, s.start_time, s.duration_minutes
                      FROM ld_session_participants sp
                      JOIN ld_sessions s ON s.id = sp.session_id
                      WHERE sp.user_id = ? AND sp.role = 'model'
                        AND s.session_date >= DATE(?)
                        AND sp.attendance != 'no_show'
-                     ORDER BY s.session_date DESC
-                     LIMIT 1" . ($forUpdate ? ' FOR UPDATE' : ''),
+                     ORDER BY s.session_date DESC, s.start_time DESC" . ($forUpdate ? ' FOR UPDATE' : ''),
                     [$userId, $since]
                 );
 
                 // NOTE: accepts attendance 'booked'. Requiring 'attended' would
                 // strand the whole backlog, because nothing writes that column
                 // for a booking made through the site.
-                if ($past && $this->sessionIsOver($past)) {
-                    return [
-                        'action' => 'complete', 'expect_status' => 'waiting',
-                        'session_id' => (int) $past['id'], 'reason' => 'sat since joining the queue',
-                    ];
+                $askedAt = strtotime((string) $since);
+                foreach ($sittings as $past) {
+                    if ($this->sessionIsOver($past) && session_starts_at($past) >= $askedAt) {
+                        return [
+                            'action' => 'complete', 'expect_status' => 'waiting',
+                            'session_id' => (int) $past['id'], 'reason' => 'sat since joining the queue',
+                        ];
+                    }
                 }
             }
         }
@@ -447,10 +458,17 @@ final class SitterQueueService
         return $row ?: null;
     }
 
-    /** Earliest session (today or later) where this user is booked as a model. */
+    /**
+     * Earliest session, not yet finished, where this user is booked as a model.
+     *
+     * "Today or later" by date was wrong once today's session had ended: it
+     * still counted as upcoming, so a sitter who joined the queue that evening
+     * was rescheduled onto the sitting they had just done, and completed out of
+     * the queue by the next sweep.
+     */
     private function earliestFutureBooking(int $userId, ?int $excludeSessionId, bool $forUpdate = false): ?int
     {
-        $sql = "SELECT s.id
+        $sql = "SELECT s.id, s.session_date, s.start_time, s.duration_minutes
                 FROM ld_session_participants sp
                 JOIN ld_sessions s ON s.id = sp.session_id
                 WHERE sp.user_id = ? AND sp.role = 'model' AND s.session_date >= ?";
@@ -461,13 +479,17 @@ final class SitterQueueService
             $params[] = $excludeSessionId;
         }
 
-        $sql .= " ORDER BY s.session_date ASC LIMIT 1";
+        $sql .= " ORDER BY s.session_date ASC, s.start_time ASC";
         if ($forUpdate) {
             $sql .= " FOR UPDATE";
         }
 
-        $row = $this->db->fetch($sql, $params);
-        return $row ? (int) $row['id'] : null;
+        foreach ($this->db->fetchAll($sql, $params) as $row) {
+            if (!$this->sessionIsOver($row)) {
+                return (int) $row['id'];
+            }
+        }
+        return null;
     }
 
     private function wasNoShow(int $userId, int $sessionId, bool $forUpdate = false): bool

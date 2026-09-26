@@ -575,6 +575,59 @@ check('three further sweeps do not multiply it', $active === 1,
 
 $db->execute("UPDATE users SET sitter_auto_rejoin = 0 WHERE id = ?", [$sitterId]);
 
+echo "\n9. A sitting that finished earlier today\n";
+
+// Both rules used to compare DATES. Once today's session had ended it still
+// counted as "upcoming" (so a waiting entry was rescheduled onto it) and as
+// "sat since asking" for an entry opened that evening (so it was completed).
+// Either way a sitter added to the queue after sitting dropped straight out.
+if (time() < strtotime('today 00:05')) {
+    echo "  SKIP  before 00:05 the fixture session cannot have finished yet\n";
+} else {
+    $db->execute("DELETE FROM ld_sitter_queue WHERE user_id = ?", [$sitterId]);
+    $db->execute("DELETE FROM ld_session_participants WHERE user_id = ? AND role = 'model'", [$sitterId]);
+
+    $today = $mkSession('todayFinished', date('Y-m-d'));
+    $cleanupSessions[] = $today;
+    $db->execute("UPDATE ld_sessions SET start_time = '00:00:00', duration_minutes = 1 WHERE id = ?", [$today]);
+    $db->execute("INSERT INTO ld_session_participants (session_id, user_id, role) VALUES (?, ?, 'model')",
+        [$today, $sitterId]);
+
+    $waiting = function (string $requestedAt) use ($db, $sitterId) {
+        $db->execute("DELETE FROM ld_sitter_queue WHERE user_id = ?", [$sitterId]);
+        $db->execute("INSERT INTO ld_sitter_queue (user_id, status, requested_at) VALUES (?, 'waiting', ?)",
+            [$sitterId, $requestedAt]);
+        return $db->fetch("SELECT * FROM ld_sitter_queue WHERE id = ?", [(int) $db->lastInsertId()]);
+    };
+
+    $d = $queue->classify($waiting(date('Y-m-d H:i:s')));
+    check('joining the queue after sitting today leaves them waiting', $d['action'] === 'skip',
+        "got {$d['action']}: {$d['reason']} — the finished sitting was counted against the new request");
+
+    $d = $queue->classify($waiting(date('Y-m-d H:i:s', strtotime('-1 day'))));
+    check('a request from before today\'s sitting is still completed by it', $d['action'] === 'complete',
+        "got {$d['action']}: {$d['reason']}");
+
+    // The same-day auto-rejoin loop: completing on the day of the sitting
+    // rejoins with requested_at = now, which the date rule matched again.
+    $db->execute("UPDATE users SET sitter_auto_rejoin = 1 WHERE id = ?", [$sitterId]);
+    $db->execute("DELETE FROM ld_sitter_queue WHERE user_id = ?", [$sitterId]);
+    $db->execute(
+        "INSERT INTO ld_sitter_queue (user_id, status, scheduled_session_id, requested_at)
+         VALUES (?, 'scheduled', ?, ?)",
+        [$sitterId, $today, date('Y-m-d H:i:s', strtotime('-1 day'))]
+    );
+    $queue->apply((int) $db->lastInsertId(), null, false);
+    for ($i = 0; $i < 3; $i++) {
+        $queue->sweep(null);
+    }
+    $rows = $db->fetchAll("SELECT status FROM ld_sitter_queue WHERE user_id = ? ORDER BY id", [$sitterId]);
+    $statuses = implode(',', array_column($rows, 'status'));
+    check('a same-day auto-rejoin completes once and then stays waiting', $statuses === 'completed,waiting',
+        "got {$statuses}");
+    $db->execute("UPDATE users SET sitter_auto_rejoin = 0 WHERE id = ?", [$sitterId]);
+}
+
 // --- Teardown -------------------------------------------------------------
 
 echo "\nTeardown\n";
