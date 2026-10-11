@@ -66,7 +66,7 @@ foreach ($argv as $arg) {
 if ($targetSession) {
     $session = $pdo->prepare(
         "SELECT id, title, session_date, subtitle, model_sex
-         FROM ld_sessions WHERE id = ?"
+         FROM ld_sessions WHERE id = ? AND status <> 'cancelled'"
     );
     $session->execute([$targetSession]);
     $session = $session->fetch(PDO::FETCH_ASSOC);
@@ -74,7 +74,7 @@ if ($targetSession) {
     $date = $targetDate ?? date('Y-m-d', strtotime('-1 day'));
     $session = $pdo->prepare(
         "SELECT id, title, session_date, subtitle, model_sex
-         FROM ld_sessions WHERE session_date = ? LIMIT 1"
+         FROM ld_sessions WHERE session_date = ? AND status <> 'cancelled' LIMIT 1"
     );
     $session->execute([$date]);
     $session = $session->fetch(PDO::FETCH_ASSOC);

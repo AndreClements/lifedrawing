@@ -26,7 +26,7 @@ final class GalleryController extends BaseController
              FROM ld_artworks a
              JOIN ld_sessions s ON a.session_id = s.id
              JOIN users u ON a.uploaded_by = u.id
-             WHERE a.id = ? AND a.visibility IN ('claimed', 'public')",
+             WHERE a.id = ? AND a.visibility IN ('claimed', 'public') AND s.status <> 'cancelled'",
             [$id]
         );
 
@@ -139,7 +139,7 @@ final class GalleryController extends BaseController
              FROM ld_artworks a
              JOIN ld_sessions s ON a.session_id = s.id
              JOIN users u ON a.uploaded_by = u.id
-             WHERE a.visibility IN ('claimed', 'public')
+             WHERE a.visibility IN ('claimed', 'public') AND s.status <> 'cancelled'
              " . ($sessionId ? "AND a.session_id = ?" : "") . "
              ORDER BY s.session_date DESC, a.pose_index ASC
              LIMIT 60",
@@ -149,6 +149,7 @@ final class GalleryController extends BaseController
         // Get available sessions for filter
         $sessions = $this->table('ld_sessions')
             ->select('id', 'title', 'session_date')
+            ->where('status', '<>', 'cancelled')
             ->orderBy('session_date', 'DESC')
             ->limit(50)
             ->get();
@@ -168,203 +169,71 @@ final class GalleryController extends BaseController
     {
         if ($redirect = $this->requireAuth()) return $redirect;
         if ($redirect = $this->requireRole('admin', 'facilitator')) return $redirect;
-
-        $sessionId = from_hex($request->param('id'));
-        $session = $this->table('ld_sessions')->where('id', '=', $sessionId)->first();
-
-        if (!$session) {
-            return Response::notFound('Session not found.');
-        }
-
-        // IDOR check: only this session's facilitator (or admin) can upload
-        if (!$this->auth->hasRole('admin') && (int) ($session['facilitator_id'] ?? 0) !== $this->userId()) {
-            return Response::forbidden('You can only upload to your own sessions.');
-        }
-
-        return $this->render('gallery.upload', [
-            'session' => $session,
-        ], 'Upload Artworks');
+        $id = from_hex($request->param('id'));
+        try {
+            return $this->render('gallery.upload', $this->uploadData($id), 'Upload artworks')->withHeader('Cache-Control', 'private, no-store');
+        } catch (\DomainException $e) { return Response::error(e($e->getMessage()), $e->getCode() ?: 422); }
     }
 
-    /** Debug log for upload instrumentation. */
-    private function uploadLog(string $msg): void
+    private function uploadData(int $id, array $old = []): array
     {
-        $logFile = defined('LDR_ROOT') ? LDR_ROOT . '/storage/upload.log' : '/tmp/upload.log';
-        $ts = date('Y-m-d H:i:s');
-        file_put_contents($logFile, "[{$ts}] {$msg}\n", FILE_APPEND | LOCK_EX);
+        $session = \App\Services\SessionAccess::session($this->db, $id);
+        $notes = (new \App\Services\SessionNotesService($this->db))->listing($id, $this->userId());
+        $participants = $this->db->fetchAll("SELECT p.*, u.display_name FROM ld_session_participants p JOIN users u ON u.id = p.user_id WHERE p.session_id = ? ORDER BY p.role, p.id", [$id]);
+        $groups = (new \App\Services\PoseService($this->db))->groups($id);
+        $legacy = (bool) $this->db->fetchColumn("SELECT id FROM ld_artworks WHERE session_id = ? AND pose_number IS NULL LIMIT 1", [$id]);
+        return compact('session', 'notes', 'participants', 'groups', 'legacy', 'old');
     }
 
     /** Handle artwork upload (facilitator+). */
     public function upload(Request $request): Response
     {
-        $this->uploadLog('=== Upload request started ===');
-        $this->uploadLog('Memory: ' . (memory_get_usage(true) / 1024 / 1024) . 'MB');
-        $this->uploadLog('POST size: ' . ($_SERVER['CONTENT_LENGTH'] ?? 'unknown') . ' bytes');
-
-        if ($redirect = $this->requireAuth()) return $redirect;
+        if ($redirect = $this->requireAuth($request)) return $redirect;
         if ($redirect = $this->requireRole('admin', 'facilitator')) return $redirect;
-
-        $sessionId = from_hex($request->param('id'));
-        $session = $this->table('ld_sessions')->where('id', '=', $sessionId)->first();
-
-        if (!$session) {
-            return Response::notFound('Session not found.');
-        }
-
-        // IDOR check: only this session's facilitator (or admin) can upload
-        if (!$this->auth->hasRole('admin') && (int) ($session['facilitator_id'] ?? 0) !== $this->userId()) {
-            return Response::forbidden('You can only upload to your own sessions.');
-        }
-
-        $files = $request->files['artworks'] ?? [];
-        $caption = trim($request->input('caption', ''));
-        $poseLabel = trim($request->input('pose_label', '')) ?: null;
-        $uploadService = app('upload');
+        $id = from_hex($request->param('id'));
         $uploaded = 0;
-
-        $poseDuration = trim($request->input('pose_duration', '')) ?: null;
-
-        $fileCount = is_array($files['name'] ?? null) ? count($files['name']) : (empty($files['name']) ? 0 : 1);
-        $this->uploadLog("Files received: {$fileCount}");
-
-        if ($fileCount > 0 && is_array($files['name'] ?? null)) {
-            for ($i = 0; $i < $fileCount; $i++) {
-                $this->uploadLog("File {$i}: {$files['name'][$i]} ({$files['size'][$i]} bytes, error={$files['error'][$i]})");
+        $already = 0;
+        $errors = [];
+        try {
+            $metadata = [];
+            foreach (['caption' => 4000, 'pose_label' => 100, 'pose_duration' => 50] as $field => $max) {
+                $metadata[$field] = trim((string) $request->input($field, ''));
+                if (mb_strlen($metadata[$field]) > $max) throw new \DomainException('Caption or pose details are too long.', 422);
             }
-        }
-
-        // Get current max pose_index for this session (for sequential numbering across batches)
-        $maxIndex = (int) ($this->db->fetch(
-            "SELECT COALESCE(MAX(pose_index), 0) as max_idx FROM ld_artworks WHERE session_id = ?",
-            [$sessionId]
-        )['max_idx'] ?? 0);
-
-        // Handle multiple file upload
-        if (!empty($files['name']) && is_array($files['name'])) {
-            for ($i = 0; $i < count($files['name']); $i++) {
-                if ($files['error'][$i] !== UPLOAD_ERR_OK) {
-                    $this->uploadLog("File {$i}: skipped, upload error code {$files['error'][$i]}");
-                    continue;
+            $poseService = new \App\Services\PoseService($this->db);
+            $batch = $poseService->batch($id, $this->userId(), (string) $request->input('batch_key', ''), (bool) $request->input('confirm_groups'));
+            $files = $request->files['artworks'] ?? [];
+            $items = [];
+            if (is_array($files['name'] ?? null)) {
+                foreach ($files['name'] as $i => $name) {
+                    $items[] = ['name' => $name, 'type' => $files['type'][$i], 'tmp_name' => $files['tmp_name'][$i], 'error' => $files['error'][$i], 'size' => $files['size'][$i]];
                 }
-
-                $singleFile = [
-                    'name' => $files['name'][$i],
-                    'type' => $files['type'][$i],
-                    'tmp_name' => $files['tmp_name'][$i],
-                    'error' => $files['error'][$i],
-                    'size' => $files['size'][$i],
-                ];
-
+            } elseif (!empty($files['name'])) {
+                $items[] = $files;
+            }
+            if (!$items) throw new \DomainException('Select at least one image.', 422);
+            foreach ($items as $file) {
                 try {
-                    $this->uploadLog("File {$i}: storing via UploadService...");
-                    $paths = $uploadService->storeSessionArtwork($singleFile, $sessionId);
-                    $this->uploadLog("File {$i}: stored OK → {$paths['file_path']}");
-
-                    $this->uploadLog("File {$i}: inserting DB record...");
-                    $artworkId = (int) $this->table('ld_artworks')->insert([
-                        'session_id' => $sessionId,
-                        'uploaded_by' => $this->userId(),
-                        'file_path' => $paths['file_path'],
-                        'thumbnail_path' => $paths['thumbnail_path'],
-                        'caption' => $caption ?: null,
-                        'pose_index' => $maxIndex + $uploaded + 1,
-                        'pose_duration' => $poseDuration,
-                        'pose_label' => $poseLabel,
-                        'visibility' => 'public',
-                    ]);
-                    $this->uploadLog("File {$i}: DB OK, artwork_id={$artworkId}");
-
-                    $this->provenance->log(
-                        $this->userId(),
-                        'artwork.upload',
-                        'artwork',
-                        $artworkId,
-                        ['session_id' => $sessionId, 'file' => $paths['file_path'],
-                         'pose_duration' => $poseDuration, 'pose_label' => $poseLabel]
-                    );
-
-                    $uploaded++;
-                    $this->uploadLog("File {$i}: complete. Memory: " . (memory_get_usage(true) / 1024 / 1024) . 'MB');
-                } catch (\App\Exceptions\AppException $e) {
-                    $this->uploadLog("File {$i}: FAILED — " . $e->getMessage());
-                    error_log("Upload failed for file {$i}: " . $e->getMessage());
+                    if ($poseService->saveFile($batch, $this->userId(), $file, $metadata)) $uploaded++;
+                    else $already++;
                 } catch (\Throwable $e) {
-                    $this->uploadLog("File {$i}: EXCEPTION — " . get_class($e) . ': ' . $e->getMessage());
-                    error_log("Upload exception for file {$i}: " . $e->getMessage());
+                    error_log('Artwork upload failed: ' . $e->getMessage());
+                    $errors[] = basename($file['name']) . ': ' . ($e instanceof \DomainException || $e instanceof \App\Exceptions\AppException ? $e->getMessage() : 'Could not save. Please retry.');
                 }
             }
-        } elseif (!empty($files['name']) && is_string($files['name'])) {
-            // Single file upload
-            try {
-                $this->uploadLog("Single file: storing via UploadService...");
-                $paths = $uploadService->storeSessionArtwork($files, $sessionId);
-                $this->uploadLog("Single file: stored OK → {$paths['file_path']}");
-
-                $this->uploadLog("Single file: inserting DB record...");
-                $artworkId = (int) $this->table('ld_artworks')->insert([
-                    'session_id' => $sessionId,
-                    'uploaded_by' => $this->userId(),
-                    'file_path' => $paths['file_path'],
-                    'thumbnail_path' => $paths['thumbnail_path'],
-                    'caption' => $caption ?: null,
-                    'pose_index' => $maxIndex + 1,
-                    'pose_duration' => $poseDuration,
-                    'pose_label' => $poseLabel,
-                    'visibility' => 'public',
-                ]);
-                $this->uploadLog("Single file: DB OK, artwork_id={$artworkId}");
-
-                $this->provenance->log(
-                    $this->userId(),
-                    'artwork.upload',
-                    'artwork',
-                    $artworkId,
-                    ['session_id' => $sessionId]
-                );
-
-                $uploaded++;
-            } catch (\App\Exceptions\AppException $e) {
-                $this->uploadLog("Single file: FAILED — " . $e->getMessage());
-                return $this->render('gallery.upload', [
-                    'session' => $session,
-                    'error' => $e->getMessage(),
-                ], 'Upload Artworks');
-            } catch (\Throwable $e) {
-                $this->uploadLog("Single file: EXCEPTION — " . get_class($e) . ': ' . $e->getMessage());
-                return $this->render('gallery.upload', [
-                    'session' => $session,
-                    'error' => 'Upload failed: ' . $e->getMessage(),
-                ], 'Upload Artworks');
-            }
-        } else {
-            $this->uploadLog('No files in request. $_FILES keys: ' . implode(', ', array_keys($_FILES)));
-            $this->uploadLog('$files structure: ' . json_encode(array_map(function($v) { return is_array($v) ? 'array(' . count($v) . ')' : gettype($v); }, $files)));
+        } catch (\DomainException $e) {
+            if ($request->wantsJson()) return Response::json(['success' => false, 'error' => $e->getMessage()], $e->getCode() ?: 422);
+            if (in_array($e->getCode(), [403, 404], true)) return Response::error(e($e->getMessage()), $e->getCode());
+            return $this->render('gallery.upload', $this->uploadData($id, $request->post) + ['error' => $e->getMessage()], 'Upload artworks')->withStatus($e->getCode() ?: 422);
         }
-
-        if ($uploaded === 0) {
-            $this->uploadLog('Upload complete: 0 files uploaded');
-            if ($request->wantsJson()) {
-                return Response::json(['success' => false, 'error' => 'No files were uploaded. Please select at least one image.'], 422);
-            }
-            return $this->render('gallery.upload', [
-                'session' => $session,
-                'error' => 'No files were uploaded. Please select at least one image.',
-            ], 'Upload Artworks');
+        $message = $uploaded . ' image(s) saved' . ($already ? ', ' . $already . ' already saved' : '') . '.';
+        if ($errors) {
+            $message .= ' Retry this batch to finish: ' . implode(' ', $errors);
+            if ($request->wantsJson()) return Response::json(['success' => false, 'error' => $message, 'uploaded' => $uploaded], 422);
+            return $this->render('gallery.upload', $this->uploadData($id, $request->post) + ['error' => $message], 'Upload artworks')->withStatus(422);
         }
-
-        $this->uploadLog("Upload complete: {$uploaded} file(s) uploaded successfully");
-
-        $message = "{$uploaded} image(s) uploaded. Add another batch or go back to the session.";
-
-        if ($request->wantsJson()) {
-            return Response::json(['success' => true, 'message' => $message, 'uploaded' => $uploaded]);
-        }
-
-        // Redirect back to upload form for next batch (not to session view)
-        return $this->render('gallery.upload', [
-            'session' => $session,
-            'success' => $message,
-        ], 'Upload Artworks');
+        if ($request->wantsJson()) return Response::json(['success' => true, 'message' => $message . ' Ready for the next pose.', 'uploaded' => $uploaded, 'batch_key' => bin2hex(random_bytes(16))]);
+        return $this->render('gallery.upload', $this->uploadData($id) + ['success' => $message], 'Upload artworks');
     }
 
     /** Delete an artwork (facilitator+). Soft-deletes DB record, removes files from disk. */
@@ -380,11 +249,10 @@ final class GalleryController extends BaseController
             return Response::notFound('Artwork not found.');
         }
 
-        // IDOR check: only this session's facilitator (or admin) can delete
+        // All facilitators/admins may manage any session.
         $session = $this->table('ld_sessions')->where('id', '=', (int) $artwork['session_id'])->first();
-        if (!$this->auth->hasRole('admin') && (int) ($session['facilitator_id'] ?? 0) !== $this->userId()) {
-            return Response::forbidden('You can only delete artworks from your own sessions.');
-        }
+        if (!$session || $session['status'] === 'cancelled') return Response::notFound('Session unavailable.');
+        if (!can_manage_session($session)) return Response::forbidden();
 
         // Whoever holds approved claims loses an artwork from their totals.
         // Collected before the delete, refreshed after.
@@ -478,7 +346,7 @@ final class GalleryController extends BaseController
 
         // Verify artwork exists and is visible
         $artwork = $this->db->fetch(
-            "SELECT id FROM ld_artworks WHERE id = ? AND visibility IN ('claimed', 'public')",
+            "SELECT a.id FROM ld_artworks a JOIN ld_sessions s ON s.id = a.session_id WHERE a.id = ? AND a.visibility IN ('claimed', 'public') AND s.status <> 'cancelled'",
             [$artworkId]
         );
 

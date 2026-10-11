@@ -249,6 +249,7 @@ if ($opts['description-file'] !== null) {
 
 // --- Connect ---
 
+require __DIR__ . '/local-test-environment.php';
 $cfg = config('database');
 $db = new Connection(
     host: $cfg['host'],

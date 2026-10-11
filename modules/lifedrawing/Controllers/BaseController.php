@@ -174,7 +174,7 @@ abstract class BaseController
     /** Require a specific role — return 403 if not authorized. */
     protected function requireRole(string ...$roles): ?Response
     {
-        if (!$this->auth->hasRole(...$roles)) {
+        if (!in_array($this->auth->currentUser()['role'] ?? '', $roles, true)) {
             return Response::forbidden('You do not have permission for this action.');
         }
         return null;

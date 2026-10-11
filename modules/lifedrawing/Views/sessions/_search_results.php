@@ -19,6 +19,7 @@ $quickAddUrl = route('sessions.participants.quick_add_stub', ['id' => $hexId]);
         <div class="search-result-item" data-user-id="<?= $user['id'] ?>">
             <span class="search-result-name"><?= e($user['display_name']) ?></span>
             <span class="search-result-count"><?= (int) $user['recent_sessions'] ?> sessions</span>
+            <a href="<?= route('manage.person', ['user' => hex_id((int) $user['id'])]) ?>" target="_blank" rel="noopener">Contact details</a>
         </div>
     <?php endforeach; ?>
 <?php endif; ?>

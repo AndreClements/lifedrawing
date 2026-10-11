@@ -10,9 +10,16 @@
         <div class="alert alert-error"><?= e($error) ?></div>
     <?php endif; ?>
 
+    <p><a href="<?= route('manage.session', ['id' => hex_id((int) $session['id'])]) ?>">Manage session</a></p>
+    <?= app('view')->render('manage._notes', compact('session', 'participants', 'notes')) ?>
     <form method="POST" action="<?= route('gallery.upload.post', ['id' => hex_id((int) $session['id'], session_title($session))]) ?>"
           enctype="multipart/form-data">
         <?= csrf_field() ?>
+        <input type="hidden" name="batch_key" value="<?= e($old['batch_key'] ?? bin2hex(random_bytes(16))) ?>">
+        <?php if ($legacy): ?>
+            <p>Review the existing pose groups in <a href="<?= route('manage.session', ['id' => hex_id((int) $session['id'])]) ?>#photos" target="_blank" rel="noopener">Manage session</a> before this batch.</p>
+            <label><input type="checkbox" name="confirm_groups" value="1" required> Keep the existing displayed pose groups</label>
+        <?php endif; ?>
 
         <div class="form-group">
             <label for="pose_duration">Pose Duration (optional)</label>

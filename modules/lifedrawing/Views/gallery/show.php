@@ -7,6 +7,9 @@
     </div>
 
     <div class="artwork-info">
+        <?php if (can_manage_session()): ?>
+            <p><a href="<?= route('manage.session', ['id' => hex_id((int) $artwork['session_id'])]) ?>#photos">Edit caption or pose</a></p>
+        <?php endif; ?>
         <?php if ($artwork['caption']): ?>
             <h1><?= e($artwork['caption']) ?></h1>
         <?php endif; ?>

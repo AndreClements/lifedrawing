@@ -121,7 +121,8 @@ function can_see_names(): bool
 
     $userId = $auth->currentUserId();
     $row = app('db')->fetch(
-        "SELECT 1 FROM ld_session_participants WHERE user_id = ? LIMIT 1",
+        "SELECT 1 FROM ld_session_participants sp JOIN ld_sessions s ON s.id = sp.session_id
+         WHERE sp.user_id = ? AND s.status <> 'cancelled' LIMIT 1",
         [$userId]
     );
     return $result = ($row !== null && $row !== false);
@@ -317,4 +318,16 @@ function whatsapp_schedule(array $sessions, array $participantsBySession): strin
     }
 
     return $schedule;
+}
+
+/** Role-based management, shared by all session views. */
+function can_manage_session(array $session = []): bool
+{
+    return \App\Services\SessionAccess::canManage(app('auth')->currentUser());
+}
+
+/** A date alone cannot establish whether today's session has finished. */
+function session_is_over(array $session, ?int $now = null): bool
+{
+    return ($now ?? time()) > session_starts_at($session) + ((int) ($session['duration_minutes'] ?? 180) * 60);
 }

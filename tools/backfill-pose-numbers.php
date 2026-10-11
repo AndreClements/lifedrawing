@@ -79,8 +79,8 @@ foreach ($pv as $row) {
     if ($t !== false) $captureAt[(int) $row['entity_id']] = $t->getTimestamp();
 }
 
-$sessionSql = "SELECT DISTINCT session_id FROM ld_artworks";
-if ($only !== null) $sessionSql .= " WHERE session_id = " . $only;
+$sessionSql = "SELECT DISTINCT session_id FROM ld_artworks WHERE EXISTS (SELECT 1 FROM ld_sessions s WHERE s.id = ld_artworks.session_id AND s.status <> 'cancelled')";
+if ($only !== null) $sessionSql .= " AND session_id = " . $only;
 $sessionSql .= " ORDER BY session_id";
 $sessions = $pdo->query($sessionSql)->fetchAll(PDO::FETCH_COLUMN);
 

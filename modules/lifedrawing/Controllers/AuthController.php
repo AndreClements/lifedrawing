@@ -328,84 +328,16 @@ final class AuthController extends BaseController
 
         switch ($action) {
             case 'claim_artwork':
-                $artworkId = from_hex($params['artwork_id'] ?? '0');
-                $claimType = in_array($params['claim_type'] ?? '', ['artist', 'model'], true)
-                    ? $params['claim_type'] : 'artist';
-
-                $artwork = db('ld_artworks')
-                    ->where('id', '=', $artworkId)
-                    ->whereIn('visibility', ['session', 'claimed', 'public'])
-                    ->first();
-                if ($artwork) {
-                    $existing = db('ld_claims')
-                        ->where('artwork_id', '=', $artworkId)
-                        ->where('claimant_id', '=', $userId)
-                        ->where('claim_type', '=', $claimType)
-                        ->first();
-
-                    if (!$existing) {
-                        $this->db->execute(
-                            "INSERT INTO ld_claims (artwork_id, claimant_id, claim_type, status) VALUES (?, ?, ?, 'pending')",
-                            [$artworkId, $userId, $claimType]
-                        );
-                        $claimId = (int) $this->db->lastInsertId();
-                        $this->provenance->log($userId, 'claim.create', 'claim', $claimId, [
-                            'claim_type' => $claimType, 'via' => 'intent',
-                        ]);
-                        app('notifications')->claimSubmitted($artworkId, $userId, $claimType, $claimId);
-                    }
-                    return Response::redirect(route('artworks.show', ['id' => hex_id($artworkId)]));
-                }
-                break;
+                return (new ClaimController(\App\Container::getInstance()))->claim(
+                    (new Request('POST', '/', '/', [], ['claim_type' => $params['claim_type'] ?? 'artist'], [], [], []))
+                        ->withParams(['id' => $params['artwork_id'] ?? '0'])
+                );
 
             case 'join_session':
-                $sessionId = from_hex($params['session_id'] ?? '0');
-                $role = in_array($params['role'] ?? '', ['artist', 'model', 'observer'], true)
-                    ? $params['role'] : 'artist';
-
-                $session = db('ld_sessions')->where('id', '=', $sessionId)->first();
-
-                // Same gates as SessionController::join(). This path skipped
-                // both: a crafted ?intent= link could book a past session, or
-                // book as model on a session whose sitters are arranged
-                // elsewhere (model_join_enabled = 0), which is the whole point
-                // of that flag.
-                if ($session && session_starts_at($session) <= time()) {
-                    return Response::redirect(route('sessions.show', ['id' => hex_id($sessionId, session_title($session))]));
-                }
-                if ($session && $role === 'model' && !model_join_open($session)) {
-                    return Response::redirect(route('sessions.show', ['id' => hex_id($sessionId, session_title($session))]));
-                }
-
-                if ($session) {
-                    $existing = db('ld_session_participants')
-                        ->where('session_id', '=', $sessionId)
-                        ->where('user_id', '=', $userId)
-                        ->where('role', '=', $role)
-                        ->first();
-
-                    if (!$existing) {
-                        $this->db->execute(
-                            "INSERT INTO ld_session_participants (session_id, user_id, role) VALUES (?, ?, ?)",
-                            [$sessionId, $userId, $role]
-                        );
-                        app('stats')->refreshUser($userId);
-                        $this->provenance->log($userId, 'session.join', 'session_participant', $sessionId, [
-                            'role' => $role, 'via' => 'intent',
-                        ]);
-
-                        // Separate code from SessionController::join(), and easy
-                        // to miss. Without these two lines a booking made during
-                        // sign-up is silent, and a sitter booked this way stays
-                        // 'waiting' forever — the original bug, reproduced.
-                        if ($role === 'model') {
-                            app('sitterQueue')->onModelAdded($userId, $sessionId, $userId);
-                        }
-                        app('notifications')->sessionJoined($sessionId, $userId, $role);
-                    }
-                    return Response::redirect(route('sessions.show', ['id' => hex_id($sessionId, session_title($session))]));
-                }
-                break;
+                return (new SessionController(\App\Container::getInstance()))->join(
+                    (new Request('POST', '/', '/', [], ['role' => $params['role'] ?? 'artist'], [], [], []))
+                        ->withParams(['id' => $params['session_id'] ?? '0'])
+                );
 
             case 'comment_artwork':
                 $artworkId = from_hex($params['artwork_id'] ?? '0');

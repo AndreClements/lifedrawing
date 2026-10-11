@@ -32,7 +32,7 @@ final class SitemapController extends BaseController
 
         // All sessions
         $sessions = $this->db->fetchAll(
-            "SELECT id, title, session_date, updated_at FROM ld_sessions ORDER BY session_date DESC"
+            "SELECT id, title, session_date, updated_at FROM ld_sessions WHERE status <> 'cancelled' ORDER BY session_date DESC"
         );
         foreach ($sessions as $session) {
             $urls[] = [
@@ -45,8 +45,8 @@ final class SitemapController extends BaseController
 
         // All public artworks
         $artworks = $this->db->fetchAll(
-            "SELECT a.id, a.caption, a.created_at FROM ld_artworks a
-             WHERE a.visibility IN ('claimed', 'public')
+            "SELECT a.id, a.caption, a.created_at FROM ld_artworks a JOIN ld_sessions s ON s.id = a.session_id
+             WHERE a.visibility IN ('claimed', 'public') AND s.status <> 'cancelled'
              ORDER BY a.created_at DESC"
         );
         foreach ($artworks as $artwork) {
@@ -62,7 +62,7 @@ final class SitemapController extends BaseController
         $profiles = $this->db->fetchAll(
             "SELECT u.id, u.display_name FROM users u
              WHERE u.consent_state = 'granted'
-               AND (SELECT COUNT(*) FROM ld_session_participants sp WHERE sp.user_id = u.id) > 0
+               AND (SELECT COUNT(*) FROM ld_session_participants sp JOIN ld_sessions s ON s.id = sp.session_id WHERE sp.user_id = u.id AND s.status <> 'cancelled') > 0
              ORDER BY u.display_name"
         );
         foreach ($profiles as $profile) {

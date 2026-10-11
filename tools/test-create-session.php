@@ -41,6 +41,7 @@ use App\Database\Connection;
 
 const MARKER = '__TEST_CS__';
 
+require __DIR__ . '/local-test-environment.php';
 $cfg = config('database');
 $db = new Connection(
     host: $cfg['host'],

@@ -2375,3 +2375,42 @@ form.search-result-create button.btn-link-inline:hover {
 .runs-table tbody td {
     font-variant-numeric: tabular-nums;
 }
+
+/* Facilitator workspace and optional profile portraits */
+.manage-nav, .note-shortcuts, .manage-person-row { display: flex; flex-wrap: wrap; align-items: center; gap: .7rem; }
+.manage-nav { margin-bottom: 1.5rem; }
+.manage-person-row { padding: .8rem 0; border-bottom: 1px solid var(--color-border, #ddd); }
+.manage-person-row > span:first-child { flex: 1 1 14rem; }
+.manage-person-row form { display: flex; flex-wrap: wrap; align-items: end; gap: .5rem; margin: 0; }
+.session-management { max-width: 960px; margin: auto; }
+.session-management > section, .session-management > details, .session-notes { margin: 1.5rem 0; }
+.session-management details, .session-notes details { padding: .7rem 0; }
+.session-management summary, .session-notes summary { cursor: pointer; font-family: var(--font-ui); font-weight: 600; }
+.session-notes { padding: 1.2rem; border: 1px solid var(--color-border, #ddd); border-radius: 6px; }
+.session-notes h3 { margin-top: 0; }
+.session-notes label, .session-management label, #profile-picture label { display: block; margin: .7rem 0; }
+.session-notes input:not([type=checkbox]), .session-notes select, .session-notes textarea,
+.session-management input:not([type=checkbox]), .session-management select, .session-management textarea { max-width: 100%; }
+.session-notes textarea, .session-management textarea { width: 100%; box-sizing: border-box; }
+.session-note { padding: .8rem 0; border-top: 1px solid var(--color-border, #ddd); }
+.note-text { overflow-wrap: anywhere; }
+.save-feedback { display: block; margin: .5rem 0; font-size: .9rem; }
+.manage-photo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 1rem; margin-top: 1rem; }
+.manage-photo-grid img { width: 100%; height: 180px; object-fit: contain; }
+.manage-pose { margin: 1.5rem 0; padding-bottom: 1rem; border-bottom: 1px solid var(--color-border, #ddd); }
+.person-details { max-width: 760px; }
+.person-details dt { font-weight: 600; margin-top: 1rem; }
+.person-details dd { margin: .3rem 0; overflow-wrap: anywhere; }
+.person-details dd > * { margin-left: .5rem; }
+.profile-picture, .profile-picture-placeholder { width: 160px; height: 160px; border-radius: 8px; object-fit: cover; margin-bottom: 1rem; }
+.profile-picture-small { width: 72px; height: 72px; }
+.profile-picture-placeholder { display: grid; place-items: center; background: var(--color-surface); border: 1px solid var(--color-border, #ddd); color: var(--color-text-muted); }
+#profile-picture { margin-bottom: 2rem; }
+#profile-picture form { margin: 1rem 0; }
+#profile-picture .checkbox-inline { display: flex; align-items: start; gap: .5rem; }
+@media (max-width: 600px) {
+    .session-notes { padding: .8rem; }
+    .session-management .form-row, .session-notes .form-row { display: block; }
+    .note-shortcuts button, .manage-person-row button { min-height: 40px; }
+    .session-management label input:not([type=checkbox]), .session-management label select, .session-notes label select { width: 100%; }
+}

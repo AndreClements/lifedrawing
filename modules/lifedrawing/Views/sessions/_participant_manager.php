@@ -11,7 +11,7 @@ $hexId = hex_id((int) $session['id'], session_title($session));
 // A no-show is not knowable in advance, so the control only appears once the
 // session has happened. The controller enforces the same rule — this is the
 // convenience, that is the guard.
-$sessionIsPast = ($session['session_date'] ?? '') < date('Y-m-d');
+$sessionIsPast = $session['status'] !== 'cancelled' && session_is_over($session);
 ?>
 <div id="participant-manager" class="participant-manager">
     <h3>Participants</h3>
@@ -20,10 +20,11 @@ $sessionIsPast = ($session['session_date'] ?? '') < date('Y-m-d');
             <?php $isNoShow = ($p['attendance'] ?? 'booked') === 'no_show'; ?>
             <span class="participant badge-<?= $p['role'] ?><?= $p['tentative'] ? ' tentative' : '' ?><?= $isNoShow ? ' no-show' : '' ?>">
                 <?= visible_name($p['display_name']) ?><?php if ($p['tentative']): ?>?<?php endif; ?>
-                <small>(<?= e($p['role']) ?>)</small>
+                <small>(<?= $p['role'] === 'model' ? 'Sitter' : e(ucfirst($p['role'])) ?>)</small>
                 <?php if ($isNoShow): ?>
                     <small class="badge badge-muted">no-show</small>
                 <?php endif; ?>
+                <a href="<?= route('manage.person', ['user' => hex_id((int) $p['user_id'])]) ?>" target="_blank" rel="noopener" title="Contact details">Contact</a>
                 <?php if ($p['role'] !== 'facilitator'): ?>
                     <form method="POST"
                           action="<?= route('sessions.participants.tentative', ['id' => $hexId]) ?>"
@@ -33,7 +34,8 @@ $sessionIsPast = ($session['session_date'] ?? '') < date('Y-m-d');
                           class="form-inline">
                         <?= csrf_field() ?>
                         <input type="hidden" name="pid" value="<?= $p['id'] ?>">
-                        <button type="submit" class="btn-icon" title="Toggle tentative">?</button>
+                        <input type="hidden" name="tentative" value="<?= $p['tentative'] ? '0' : '1' ?>">
+                        <button type="submit" class="btn-icon" title="Change tentative booking">?</button>
                     </form>
                     <?php if ($sessionIsPast): ?>
                         <form method="POST"
@@ -44,6 +46,9 @@ $sessionIsPast = ($session['session_date'] ?? '') < date('Y-m-d');
                               class="form-inline">
                             <?= csrf_field() ?>
                             <input type="hidden" name="pid" value="<?= $p['id'] ?>">
+                            <input type="hidden" name="request_key" value="<?= bin2hex(random_bytes(16)) ?>">
+                            <input type="hidden" name="action" value="<?= $isNoShow ? 'restore' : 'no_show' ?>">
+                            <input type="hidden" name="expected_attendance" value="<?= e($p['attendance']) ?>">
                             <button type="submit" class="btn-icon"
                                     title="<?= $isNoShow ? 'Undo no-show' : 'Mark as a no-show' ?>"><?= $isNoShow ? '&#8617;' : '&#8709;' ?></button>
                         </form>
@@ -56,7 +61,7 @@ $sessionIsPast = ($session['session_date'] ?? '') < date('Y-m-d');
                           class="form-inline">
                         <?= csrf_field() ?>
                         <input type="hidden" name="pid" value="<?= $p['id'] ?>">
-                        <button type="submit" class="btn-icon btn-remove" title="Remove">&times;</button>
+                        <button type="submit" class="btn-icon btn-remove" title="Remove booking">&times;</button>
                     </form>
                 <?php endif; ?>
             </span>

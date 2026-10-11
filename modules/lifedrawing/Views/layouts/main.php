@@ -93,6 +93,8 @@ $twitterCard = !empty($og_image) ? 'summary_large_image' : 'summary';
                     <span class="nav-sep">|</span>
                     <a href="<?= route('dashboard') ?>"<?= active_if('/dashboard') ?>>Dashboard</a>
                     <?php if (app('auth')->hasRole('admin') || app('auth')->hasRole('facilitator')): ?>
+                        <a href="<?= route('manage.index') ?>"<?= active_if('/manage') ?>>Manage</a>
+                        <a href="<?= route('manage.people') ?>">People</a>
                         <a href="<?= route('claims.pending') ?>"<?= active_if('/claims') ?>>Claims</a>
                         <a href="<?= route('pose.queue') ?>"<?= active_if('/pose/queue') ?>>Queue</a>
                     <?php endif; ?>

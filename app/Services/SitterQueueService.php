@@ -166,11 +166,11 @@ final class SitterQueueService
         // 1. Scheduled for a session that has now finished.
         if ($status === 'scheduled' && $sessionId !== null) {
             $session = $this->db->fetch(
-                "SELECT id, session_date, start_time, duration_minutes FROM ld_sessions WHERE id = ?",
+                "SELECT id, session_date, start_time, duration_minutes FROM ld_sessions WHERE id = ? AND status <> 'cancelled'",
                 [$sessionId]
             );
 
-            if ($session && $this->sessionIsOver($session)) {
+            if ($session && session_is_over($session)) {
                 if ($this->wasNoShow($userId, (int) $session['id'], $forUpdate)) {
                     return $skip('marked no-show — whether they rejoin is the facilitator\'s call');
                 }
@@ -203,7 +203,7 @@ final class SitterQueueService
                      FROM ld_session_participants sp
                      JOIN ld_sessions s ON s.id = sp.session_id
                      WHERE sp.user_id = ? AND sp.role = 'model'
-                       AND s.session_date >= DATE(?)
+                       AND s.status <> 'cancelled' AND s.session_date >= DATE(?)
                        AND sp.attendance != 'no_show'
                      ORDER BY s.session_date DESC, s.start_time DESC" . ($forUpdate ? ' FOR UPDATE' : ''),
                     [$userId, $since]
@@ -214,7 +214,7 @@ final class SitterQueueService
                 // for a booking made through the site.
                 $askedAt = strtotime((string) $since);
                 foreach ($sittings as $past) {
-                    if ($this->sessionIsOver($past) && session_starts_at($past) >= $askedAt) {
+                    if (session_is_over($past) && session_starts_at($past) >= $askedAt) {
                         return [
                             'action' => 'complete', 'expect_status' => 'waiting',
                             'session_id' => (int) $past['id'], 'reason' => 'sat since joining the queue',
@@ -240,7 +240,7 @@ final class SitterQueueService
         //    waiting — the sitting demonstrably did not happen. Never completed.
         if ($status === 'scheduled') {
             $exists = $sessionId !== null
-                && $this->db->fetchColumn("SELECT id FROM ld_sessions WHERE id = ?", [$sessionId]);
+                && $this->db->fetchColumn("SELECT id FROM ld_sessions WHERE id = ? AND status <> 'cancelled'", [$sessionId]);
 
             if (!$exists) {
                 return [
@@ -431,20 +431,6 @@ final class SitterQueueService
 
     // --- Helpers -----------------------------------------------------------
 
-    /**
-     * Has this session finished?
-     *
-     * Date comparison alone was wrong in both directions: a sweep on the morning
-     * of a session would complete an entry before the sitting happened, and the
-     * facilitator's "Complete & Notify" button was a silent no-op on the evening
-     * of the session because the date was not yet in the past.
-     */
-    private function sessionIsOver(array $session): bool
-    {
-        $minutes = (int) ($session['duration_minutes'] ?? 180);
-        return time() > session_starts_at($session) + ($minutes * 60);
-    }
-
     /** The one active queue entry for a user, if any. */
     public function activeEntry(int $userId, bool $forUpdate = false): ?array
     {
@@ -471,7 +457,7 @@ final class SitterQueueService
         $sql = "SELECT s.id, s.session_date, s.start_time, s.duration_minutes
                 FROM ld_session_participants sp
                 JOIN ld_sessions s ON s.id = sp.session_id
-                WHERE sp.user_id = ? AND sp.role = 'model' AND s.session_date >= ?";
+                WHERE sp.user_id = ? AND sp.role = 'model' AND s.status <> 'cancelled' AND s.session_date >= ?";
         $params = [$userId, date('Y-m-d')];
 
         if ($excludeSessionId !== null) {
@@ -485,7 +471,7 @@ final class SitterQueueService
         }
 
         foreach ($this->db->fetchAll($sql, $params) as $row) {
-            if (!$this->sessionIsOver($row)) {
+            if (!session_is_over($row)) {
                 return (int) $row['id'];
             }
         }
@@ -515,7 +501,7 @@ final class SitterQueueService
         if ($sessionId === null) {
             return false;
         }
-        $date = $this->db->fetchColumn("SELECT session_date FROM ld_sessions WHERE id = ?", [$sessionId]);
+        $date = $this->db->fetchColumn("SELECT session_date FROM ld_sessions WHERE id = ? AND status <> 'cancelled'", [$sessionId]);
         if (!$date) {
             return false;
         }

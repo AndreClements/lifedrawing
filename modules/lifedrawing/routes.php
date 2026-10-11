@@ -20,6 +20,30 @@ use Modules\Lifedrawing\Controllers\DashboardController;
 use Modules\Lifedrawing\Controllers\PageController;
 use Modules\Lifedrawing\Controllers\PoseController;
 use Modules\Lifedrawing\Controllers\SitemapController;
+use Modules\Lifedrawing\Controllers\ManagementController;
+
+// Private facilitator workspace; every handler enforces auth and role.
+$router->get('/manage', [ManagementController::class, 'index'], 'manage.index');
+$router->get('/manage/users', [ManagementController::class, 'people'], 'manage.people');
+$router->get('/manage/users/{user}', [ManagementController::class, 'person'], 'manage.person');
+$router->get('/manage/sessions/{id}', [ManagementController::class, 'session'], 'manage.session');
+$router->get('/manage/sessions/{id}/notes', [ManagementController::class, 'notes'], 'manage.notes');
+foreach ([
+    'notes' => ['saveNote', 'manage.notes.save'], 'notes/edit' => ['editNote', 'manage.notes.edit'],
+    'attendance' => ['attendance', 'manage.attendance'], 'role' => ['role', 'manage.role'],
+    'details' => ['details', 'manage.details'], 'caption' => ['caption', 'manage.caption'],
+    'pose' => ['pose', 'manage.pose'], 'poses/normalize' => ['normalizePoses', 'manage.poses.normalize'],
+    'cancel' => ['cancel', 'manage.cancel'], 'restore' => ['restore', 'manage.restore'],
+    'refresh' => ['refresh', 'manage.refresh'],
+] as $path => [$method, $name]) {
+    $router->post('/manage/sessions/{id}/' . $path, [ManagementController::class, $method], $name);
+}
+
+$router->post('/profile/picture/remove', [ProfileController::class, 'removePicture'], 'profiles.picture.remove');
+$router->post('/manage/users/{user}/picture/remove', [ProfileController::class, 'removePicture'], 'manage.picture.remove');
+$router->group('', [\App\Middleware\AuthMiddleware::class, \App\Middleware\ConsentGate::class, \App\Middleware\RateLimitUpload::class], function ($router) {
+    $router->post('/profile/picture', [ProfileController::class, 'picture'], 'profiles.picture');
+});
 
 // --- Public routes (no auth required) ---
 $router->get('/sitemap.xml',       [SitemapController::class, 'index'], 'sitemap');

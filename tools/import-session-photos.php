@@ -33,6 +33,7 @@ declare(strict_types=1);
  */
 
 define('LDR_ROOT', getcwd());
+date_default_timezone_set('Africa/Johannesburg');
 
 // --- Load .env (CLI tools bootstrap themselves) ---
 $envFile = LDR_ROOT . '/.env';
@@ -76,16 +77,13 @@ if (!is_dir($dir)) {
 }
 
 // --- DB ---
+require __DIR__ . '/local-test-environment.php';
 $cfg = config('database');
-$pdo = new PDO(
-    "mysql:host={$cfg['host']};port={$cfg['port']};dbname={$cfg['database']};charset=utf8mb4",
-    $cfg['username'],
-    $cfg['password'],
-    [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
-);
+$db = new \App\Database\Connection($cfg['host'], $cfg['database'], $cfg['username'], $cfg['password'], $cfg['port']);
+$pdo = $db->getPdo();
 
 // --- Validate session ---
-$st = $pdo->prepare("SELECT id, facilitator_id FROM ld_sessions WHERE id = ?");
+$st = $pdo->prepare("SELECT id, facilitator_id FROM ld_sessions WHERE id = ? AND status <> 'cancelled'");
 $st->execute([$sessionId]);
 $session = $st->fetch(PDO::FETCH_ASSOC);
 if (!$session) {
@@ -93,6 +91,10 @@ if (!$session) {
     exit(1);
 }
 $uploader = $uploader ?: ((int) $session['facilitator_id'] ?: 1);
+\App\Services\SessionAccess::requireManager($db, $uploader);
+$batchKey = hash('sha256', 'cli:' . (realpath($dir) ?: $dir));
+$batch = $dryRun ? $db->fetch("SELECT * FROM ld_upload_batches WHERE session_id = ? AND request_key = ?", [$sessionId, $batchKey])
+    : (new \App\Services\PoseService($db))->batch($sessionId, $uploader, $batchKey, in_array('--confirm-groups', $argv, true));
 
 $uploadDir = LDR_ROOT . '/public/assets/uploads/sessions/' . $sessionId;
 if (!$dryRun && !is_dir($uploadDir)) {
@@ -130,7 +132,7 @@ $poseIndex = (int) $pdo->query(
 // One --dir is one pose, so every row written here shares a number. Without it two
 // poses of the same length, back to back and unlabelled, are indistinguishable in the
 // data and the session page renders them as a single block.
-$poseNumber = 1 + (int) $pdo->query(
+$poseNumber = $batch ? (int) $batch['pose_number'] : 1 + (int) $pdo->query(
     "SELECT COALESCE(MAX(pose_number), 0) AS m FROM ld_artworks WHERE session_id = " . $sessionId
 )->fetch(PDO::FETCH_ASSOC)['m'];
 
@@ -219,18 +221,45 @@ foreach ($files as $src) {
         continue;
     }
 
-    // Write first; only insert if the file is safely in place (orphan-safe).
-    $placed = $bytes !== null
-        ? @file_put_contents($dest, $bytes) === strlen($bytes)
-        : @copy($src, $dest);
-    if (!$placed) { echo "FAIL copy: $bn\n"; $failed++; continue; }
-
     try {
+        $pdo->beginTransaction();
+        $live = $pdo->prepare("SELECT status FROM ld_sessions WHERE id = ? FOR UPDATE");
+        $live->execute([$sessionId]);
+        $status = $live->fetchColumn();
+        if ($status === false || $status === 'cancelled') throw new RuntimeException('Session unavailable; import stopped.');
+        $fileKey = $bytes !== null ? hash('sha256', $bytes) : hash_file('sha256', $src);
+        $duplicate = $pdo->prepare("SELECT id FROM ld_artworks WHERE upload_batch_id = ? AND upload_file_key = ?");
+        $duplicate->execute([$batch['id'], $fileKey]);
+        if ($duplicate->fetchColumn()) {
+            $pdo->rollBack();
+            echo "SKIP saved batch file: $bn\n";
+            $skipDup++;
+            continue;
+        }
+        $last = $pdo->prepare("SELECT MAX(pose_index) FROM ld_artworks WHERE session_id = ? AND pose_number = ?");
+        $last->execute([$sessionId, $poseNumber]);
+        $lastIndex = $last->fetchColumn();
+        if ($lastIndex === null) {
+            $last = $pdo->prepare("SELECT COALESCE(MAX(pose_index), 0) FROM ld_artworks WHERE session_id = ?");
+            $last->execute([$sessionId]);
+            $lastIndex = $last->fetchColumn();
+        }
+        $nextIndex = 1 + (int) $lastIndex;
+        $savedPose = $pdo->prepare("SELECT pose_duration, pose_label FROM ld_artworks WHERE session_id = ? AND pose_number = ? ORDER BY pose_index, id LIMIT 1");
+        $savedPose->execute([$sessionId, $poseNumber]);
+        $savedMetadata = $savedPose->fetch(PDO::FETCH_ASSOC);
+        if ($savedMetadata) {
+            $poseDuration = $savedMetadata['pose_duration'];
+            $poseLabel = $savedMetadata['pose_label'];
+        }
+        $pdo->prepare("UPDATE ld_artworks SET pose_index = pose_index + 1 WHERE session_id = ? AND pose_index >= ?")->execute([$sessionId, $nextIndex]);
+        $placed = $bytes !== null ? @file_put_contents($dest, $bytes) === strlen($bytes) : @copy($src, $dest);
+        if (!$placed) throw new RuntimeException('Could not copy image.');
         $ins = $pdo->prepare(
-            "INSERT INTO ld_artworks (session_id, uploaded_by, file_path, visibility, media_type, pose_index, pose_number, pose_duration, pose_label, created_at)
-             VALUES (?, ?, ?, 'public', 'photograph', ?, ?, ?, ?, NOW())"
+            "INSERT INTO ld_artworks (session_id, uploaded_by, file_path, visibility, media_type, pose_index, pose_number, pose_duration, pose_label, created_at, upload_batch_id, upload_file_key)
+             VALUES (?, ?, ?, 'public', 'photograph', ?, ?, ?, ?, NOW(), ?, ?)"
         );
-        $ins->execute([$sessionId, $uploader, $rel, $nextIndex, $poseNumber, $poseDuration, $poseLabel]);
+        $ins->execute([$sessionId, $uploader, $rel, $nextIndex, $poseNumber, $poseDuration, $poseLabel, $batch['id'], $fileKey]);
         $artworkId = (int) $pdo->lastInsertId();
 
         // Provenance — mirror GalleryController's 'artwork.upload', plus orig name for rerun-safety
@@ -246,6 +275,7 @@ foreach ($files as $src) {
         }
 
         $prov->execute([$uploader, $artworkId, json_encode($context)]);
+        $pdo->commit();
 
         $poseIndex = $nextIndex;
         $seenHash[$h] = $bn;
@@ -255,6 +285,7 @@ foreach ($files as $src) {
         if ($trailerBytes > 0) $stripped++;
         echo "OK  $bn  ->  $rel  (artwork_id=$artworkId, pose_index=$nextIndex)$poseInfo$trailerNote\n";
     } catch (\Throwable $e) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
         @unlink($dest); // roll back the copied file so no orphan remains
         $failed++;
         echo "FAIL insert ($bn): " . $e->getMessage() . "  [removed copied file]\n";
@@ -265,3 +296,4 @@ echo "\nSession $sessionId: imported=$imported  dup-skipped=$skipDup  invalid-sk
    . ($stripped > 0 ? "  trailers-stripped=$stripped" : "")
    . ($dryRun ? "  (DRY RUN — nothing written)" : "") . "\n";
 echo $dryRun ? "" : "Next: run `php tools/process_images.php` to generate WebP derivatives.\n";
+exit($failed ? 1 : 0);

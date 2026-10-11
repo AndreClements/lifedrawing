@@ -43,7 +43,7 @@ final class StatsService
             "SELECT COUNT(DISTINCT sp.session_id)
              FROM ld_session_participants sp
              JOIN ld_sessions s ON s.id = sp.session_id
-             WHERE sp.user_id = ? AND s.session_date <= ?
+             WHERE sp.user_id = ? AND s.status <> 'cancelled' AND s.session_date <= ?
                AND sp.attendance != 'no_show'",
             [$userId, $today]
         );
@@ -56,7 +56,8 @@ final class StatsService
              FROM ld_claims c
              JOIN ld_artworks a ON a.id = c.artwork_id
              WHERE c.claimant_id = ? AND c.status = 'approved'
-               AND a.visibility NOT IN ('removed', 'private')",
+               AND a.visibility NOT IN ('removed', 'private')
+               AND EXISTS (SELECT 1 FROM ld_sessions alive WHERE alive.id = a.session_id AND alive.status <> 'cancelled')",
             [$userId]
         );
 
@@ -65,7 +66,7 @@ final class StatsService
             "SELECT MAX(s.session_date)
              FROM ld_sessions s
              JOIN ld_session_participants sp ON sp.session_id = s.id
-             WHERE sp.user_id = ? AND s.session_date <= ?
+             WHERE sp.user_id = ? AND s.status <> 'cancelled' AND s.session_date <= ?
                AND sp.attendance != 'no_show'",
             [$userId, $today]
         );
@@ -107,11 +108,12 @@ final class StatsService
         }
     }
 
-    /** Refresh stats for all users who have participated in at least one session. */
+    /** Refresh every account, including cached users whose last booking was removed. */
     public function refreshAll(): void
     {
+        $this->weekendOrder = $this->sessionOrder = null;
         $userIds = $this->db->fetchAll(
-            "SELECT DISTINCT user_id FROM ld_session_participants"
+            "SELECT id AS user_id FROM users"
         );
 
         foreach ($userIds as $row) {
@@ -164,7 +166,7 @@ final class StatsService
             "SELECT s.id, YEARWEEK(s.session_date, 1) AS yw
              FROM ld_sessions s
              JOIN ld_session_participants sp ON sp.session_id = s.id
-             WHERE sp.user_id = ? AND s.session_date <= ?
+             WHERE sp.user_id = ? AND s.status <> 'cancelled' AND s.session_date <= ?
                AND sp.attendance != 'no_show'",
             [$userId, date('Y-m-d')]
         );
@@ -274,7 +276,7 @@ final class StatsService
             "SELECT s.id, YEARWEEK(s.session_date, 1) AS yw
              FROM ld_sessions s
              JOIN ld_session_participants sp ON sp.session_id = s.id
-             WHERE sp.user_id = ? AND s.session_date <= ?
+             WHERE sp.user_id = ? AND s.status <> 'cancelled' AND s.session_date <= ?
                AND sp.attendance != 'no_show'",
             [$userId, date('Y-m-d')]
         );
@@ -350,7 +352,7 @@ final class StatsService
 
         $rows = $this->db->fetchAll(
             "SELECT DISTINCT YEARWEEK(session_date, 1) AS yw
-             FROM ld_sessions WHERE session_date <= ? ORDER BY yw ASC",
+             FROM ld_sessions WHERE status <> 'cancelled' AND session_date <= ? ORDER BY yw ASC",
             [date('Y-m-d')]
         );
 
@@ -374,7 +376,7 @@ final class StatsService
         }
 
         $rows = $this->db->fetchAll(
-            "SELECT id FROM ld_sessions WHERE session_date <= ?
+            "SELECT id FROM ld_sessions WHERE status <> 'cancelled' AND session_date <= ?
              ORDER BY session_date ASC, id ASC",
             [date('Y-m-d')]
         );
@@ -398,7 +400,8 @@ final class StatsService
              FROM ld_artworks a
              JOIN ld_claims c ON c.artwork_id = a.id
              WHERE c.claimant_id = ? AND c.status = 'approved' AND a.caption IS NOT NULL
-               AND a.visibility NOT IN ('removed', 'private')",
+               AND a.visibility NOT IN ('removed', 'private')
+               AND EXISTS (SELECT 1 FROM ld_sessions alive WHERE alive.id = a.session_id AND alive.status <> 'cancelled')",
             [$userId]
         );
 
@@ -457,7 +460,7 @@ final class StatsService
                      WHERE a2.session_id = s.id AND c.claimant_id = ? AND c.status = 'approved') as my_claimed
              FROM ld_sessions s
              JOIN ld_session_participants sp ON sp.session_id = s.id
-             WHERE sp.user_id = ? AND s.session_date <= ?
+             WHERE sp.user_id = ? AND s.status <> 'cancelled' AND s.session_date <= ?
                AND sp.attendance != 'no_show'
              GROUP BY s.id
              ORDER BY s.session_date DESC
@@ -483,8 +486,8 @@ final class StatsService
         // Shown only to this person and to the facilitator. It is a fact, not a
         // reprimand, and it never appears on a public profile.
         $noShows = (int) $this->db->fetchColumn(
-            "SELECT COUNT(*) FROM ld_session_participants
-             WHERE user_id = ? AND attendance = 'no_show'",
+            "SELECT COUNT(*) FROM ld_session_participants p JOIN ld_sessions s ON s.id = p.session_id
+             WHERE p.user_id = ? AND p.attendance = 'no_show' AND s.status <> 'cancelled'",
             [$userId]
         );
 
@@ -502,7 +505,7 @@ final class StatsService
              JOIN ld_session_participants sp ON sp.session_id = s.id
              WHERE sp.user_id = ?
                AND s.session_date >= DATE_SUB(?, INTERVAL 12 WEEK)
-               AND s.session_date <= ?
+               AND s.status <> 'cancelled' AND s.session_date <= ?
                AND sp.attendance != 'no_show'
              GROUP BY yw
              ORDER BY yw",
@@ -519,7 +522,7 @@ final class StatsService
             "SELECT sp.role, COUNT(*) as count
              FROM ld_session_participants sp
              JOIN ld_sessions s ON s.id = sp.session_id
-             WHERE sp.user_id = ? AND s.session_date <= ?
+             WHERE sp.user_id = ? AND s.status <> 'cancelled' AND s.session_date <= ?
                AND sp.attendance != 'no_show'
              GROUP BY sp.role
              ORDER BY count DESC",
@@ -536,7 +539,7 @@ final class StatsService
              JOIN ld_claims c ON c.artwork_id = a.id
              JOIN ld_sessions s ON a.session_id = s.id
              WHERE c.claimant_id = ? AND c.status = 'approved'
-               AND a.visibility IN ('claimed', 'public')
+               AND a.visibility IN ('claimed', 'public') AND s.status <> 'cancelled'
              ORDER BY s.session_date DESC
              LIMIT 6",
             [$userId]

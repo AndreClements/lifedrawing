@@ -8,7 +8,7 @@ The model is not an object but a co-participant. What emerges is not just skill,
 
 A digital home for LDR that enables:
 
-- **Session management** — schedule sessions, track participants and roles (artist, model, facilitator, observer), capacity tracking (X/7 — counts artists only, excluding the facilitator and model, so listing cards match the WhatsApp schedule numbering), cancellation, tentative bookings. Off-pattern sessions (external venue, ticketed, sitters booked elsewhere) carry three flags: `capacity_published=0` shows `X/?` instead of a number, `booking_note` appends session-specific text to the WhatsApp line (marked `[1]`, with a self-expiring footnote), and `model_join_enabled=0` closes the public "Join as Model" route in both the card and the endpoint. Set via `tools/create-session.php` — the web form doesn't expose them. The flags are ordinary columns, so an off-pattern session can converge on the regular shape as circumstances settle — e.g. publishing capacity once the booking count firms up. One-click Join buttons on listing cards (logged-in: HTMX artist join; logged-out: intent-preserving artist/model sign-up)
+- **Session management** — schedule sessions, track participants and roles (artist, model, facilitator, observer), capacity tracking (X/7 — counts artists only, excluding the facilitator and model, so listing cards match the WhatsApp schedule numbering), cancellation, tentative bookings. Off-pattern sessions (external venue, ticketed, sitters booked elsewhere) carry three flags: `capacity_published=0` shows `X/?` instead of a number, `booking_note` appends session-specific text to the WhatsApp line (marked `[1]`, with a self-expiring footnote), and `model_join_enabled=0` closes the public "Join as Model" route in both the card and the endpoint. Set during creation via `tools/create-session.php`, or change them later under Manage session. The flags are ordinary columns, so an off-pattern session can converge on the regular shape as circumstances settle — e.g. publishing capacity once the booking count firms up. One-click Join buttons on listing cards (logged-in: HTMX artist join; logged-out: intent-preserving artist/model sign-up)
 - **Participant management** — facilitator can add/remove participants, toggle tentative status, search users by name. Inline "Create stub" action in typeahead when no match — one click creates a new stub user and adds them to the session. Participants can cancel their own bookings from the session page or the dashboard; inside 48 hours the confirmation mentions the 50% contribution and still lets them proceed
 - **Attendance** — `booked` / `attended` / `no_show` on each participation row (migration 021). Statistics exclude `no_show` rather than requiring `attended`, because nothing has ever written `attended` for a web booking and requiring it would erase everyone's history. A no-show count is visible only to the facilitator and to the person themselves. Un-marking restores the prior state from the legacy `attended` column rather than flattening it to `booked`
 - **Artwork archive** — facilitator uploads batches of drawings per session with pose duration and labels, automatic image processing (EXIF rotation, 10MP cap, WebP conversion, three-tier thumbnails). Bulk backfill from phone photos via CLI (`stage-phone-photos.ps1` + `import-session-photos.php`) for whole-session imports
@@ -25,6 +25,60 @@ A digital home for LDR that enables:
 - **Historical data** — 296 sessions backfilled from facilitator's Google Sheet (2017–2026), ~214 participant stub accounts awaiting real registration and claim
 
 Eventually, this becomes the first "table" in a modular **Artistry Caffe** platform — a template for community spaces where people can define and manage their own creative gatherings.
+
+## Facilitator workspace
+
+Any logged-in facilitator or admin can use **Manage** for any session and **People**
+to find a user's recorded email, WhatsApp number and sitter preferences, including
+stubs and people without bookings. Contact details and session notes are private.
+
+- **Upload Artworks** includes quick notes for lateness, sitter loo breaks, early
+  departure and pose changes. Minutes, person and pose are optional. Save without
+  photos, use Ctrl+Enter, or let Upload Batch save a pending note first.
+- **No-show / Undo** is available after the session ends, including later that day.
+  It retains the booking and restores its previous attendance when undone.
+- **Manage session** edits details, participant roles in place, captions and pose
+  labels/durations. Older unnumbered pose groups need review before the first edit
+  or new upload. Upload retries keep the same pose and skip already saved files.
+- **Cancel** retains history, visible only through management. It is available
+  strictly before the scheduled start and only if no photos have ever been
+  recorded, including subsequently removed photos. Restore checks sitter conflicts.
+- **Edit Profile → Profile picture** accepts an optional non-nude portrait, highly
+  recommended for sitters. It is never required to book or sit. The user confirms
+  it is non-nude; facilitators can remove unsuitable photos from People. Photos
+  are re-encoded to square JPEGs, and replacement/removal removes the previous
+  public file. Consent withdrawal includes the profile photo.
+
+Assisted imports can capture private notes with `tools/session-notes.php`.
+It previews by default; writing needs an explicit actor and stable request key:
+
+```bash
+php tools/session-notes.php --session=123 --actor=1 --kind=break --text="Loo break" --minutes=5
+php tools/session-notes.php --session=123 --actor=1 --kind=break --text="Loo break" --minutes=5 --request-key=session123-break-001 --apply
+php tools/session-notes.php --session=123 --actor=1 --list
+```
+
+`--participant` takes the participation ID, not the user ID. Attendance uses
+`--attendance=no_show|restore`. Reuse the same request key for retries.
+The photo importer requires a facilitator/admin uploader and refuses cancelled
+sessions. Keep a pose's source directory stable across partial retries.
+
+Deployment requires migration **024**, the cancelled-record preflight and a full
+statistics refresh; see [deployment instructions](deploy/README.md#facilitator-management-release).
+
+Local checks: `php tools/test-facilitator-management.php` creates, migrates and
+drops a dedicated fictional test database on local MariaDB (root, empty password).
+Use `--keep` to retain it for the browser suite; its name is written to the ignored
+`storage/cache/management-test.json`. Set `LDR_TEST_DATABASE` to that name when
+running the existing booking, consent and create-session suites. This override
+accepts only generated test database names and directs mail to an unused local port.
+
+For browser checks, run `php -S 127.0.0.1:8765 -t public tools/test-management-router.php`
+in one terminal and `python tools/test-management-browser.py` in another
+(requires Python Playwright, Chromium and Pillow). The suite uses fictional logins
+and stores screenshots in ignored `storage/cache/`. It covers lost acknowledgements,
+partial retries, note/file preservation, profile photos and phone layouts. Stop the
+test server when done; do not expose it on a public interface.
 
 ## Architecture
 
@@ -77,7 +131,7 @@ file no database row points at.
 
 **Module system.** Each "table" (community space) is a self-contained module with its own controllers, views, migrations, and routes, registered via a `module.php` manifest. The life drawing module mounts at root `/` because it IS the site for now. Future modules (pottery circle, music jam) get their own URL prefix and follow the same contract.
 
-**Off-pattern session flags.** Most sessions follow the regular weekly format, but some (an external-venue ticketed workshop, sitters booked off-platform) need to present differently on the public listing and WhatsApp schedule. Migration `019_add_session_listing_flags.sql` adds three columns to `ld_sessions` — set them with `tools/create-session.php` (the web form doesn't expose them):
+**Off-pattern session flags.** Most sessions follow the regular weekly format, but some (an external-venue ticketed workshop, sitters booked off-platform) need to present differently on the public listing and WhatsApp schedule. Migration `019_add_session_listing_flags.sql` adds three columns to `ld_sessions` — set them with `tools/create-session.php` or Manage session:
 
 | Column | Default | Effect |
 |---|---|---|

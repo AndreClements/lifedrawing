@@ -3,6 +3,9 @@
     <p class="lead">We welcome models of all body types, ages, and experience levels.
     Posing for life drawing is a collaborative, dignified practice.</p>
 
+    <?php if (($loggedIn ?? false) && empty($user['avatar_path'])): ?>
+        <p class="alert">A non-nude profile photo is optional and highly recommended for sitters. <a href="<?= route('profiles.edit') ?>#profile-picture">Add your photo</a> when you're ready.</p>
+    <?php endif; ?>
     <div class="info-block">
         <h3>What to Expect</h3>
         <ul>

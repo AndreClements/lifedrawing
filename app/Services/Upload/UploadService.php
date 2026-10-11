@@ -43,7 +43,7 @@ final class UploadService
         }
 
         // Generate unique filename preserving extension
-        $ext = $this->getExtension($file['type']);
+        $ext = $this->getExtension((new \finfo(FILEINFO_MIME_TYPE))->file($file['tmp_name']));
         $filename = date('Ymd_His') . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
         $destination = $dir . '/' . $filename;
 

@@ -9,6 +9,8 @@
         <div class="alert alert-success"><?= e($success) ?></div>
     <?php endif; ?>
 
+    <?= app('view')->render('profile._picture', ['user' => $user]) ?>
+    <hr>
     <form method="POST" action="<?= route('profiles.update') ?>">
         <?= csrf_field() ?>
 

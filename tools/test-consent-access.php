@@ -36,6 +36,7 @@ $_SESSION = [];
 use App\Database\Connection;
 use App\Services\Auth\AuthService;
 
+require __DIR__ . '/local-test-environment.php';
 $cfg = config('database');
 $db = new Connection(
     host: $cfg['host'],

@@ -82,7 +82,8 @@ echo str_repeat('-', 68) . "\n";
 
 $sql = "SELECT id, file_path, web_path, thumbnail_path, visibility
         FROM ld_artworks
-        WHERE uploaded_by = ? AND visibility = 'private'";
+        WHERE uploaded_by = ? AND visibility = 'private'
+          AND EXISTS (SELECT 1 FROM ld_sessions s WHERE s.id = ld_artworks.session_id AND s.status <> 'cancelled')";
 $params = [$userId];
 
 if ($artworkId > 0) {
@@ -132,7 +133,8 @@ try {
         // Re-check under the lock. 'private' means archived and restorable;
         // 'removed' means deleted and must stay deleted. The two must never be
         // conflated, and the state can have changed since the list was built.
-        $current = $pdo->prepare("SELECT visibility FROM ld_artworks WHERE id = ?");
+        $current = $pdo->prepare("SELECT visibility FROM ld_artworks WHERE id = ?
+            AND EXISTS (SELECT 1 FROM ld_sessions s WHERE s.id = ld_artworks.session_id AND s.status <> 'cancelled')");
         $current->execute([$id]);
         if ($current->fetchColumn() !== 'private') {
             echo "  SKIP  #{$id}: no longer private - leaving it alone\n";

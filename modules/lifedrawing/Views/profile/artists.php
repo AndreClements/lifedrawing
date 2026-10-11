@@ -10,6 +10,7 @@
         <div class="card-grid">
             <?php foreach ($artists as $artist): ?>
                 <a href="<?= route('profiles.show', ['id' => hex_id((int) $artist['id'], can_see_names() ? $artist['display_name'] : '')]) ?>" class="card card-link">
+                    <?php if (!empty($artist['avatar_path'])): ?><img class="profile-picture profile-picture-small" loading="lazy" src="<?= e(app('upload')->url($artist['avatar_path'])) ?>" alt="Profile picture"><?php endif; ?>
                     <h3><?= profile_name($artist) ?></h3>
                     <?php if ($artist['bio']): ?>
                         <p class="card-bio"><?= e(excerpt($artist['bio'], 100)) ?></p>

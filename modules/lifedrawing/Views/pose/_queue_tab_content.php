@@ -51,6 +51,8 @@
                         <?php if (($entry['consent_state'] ?? '') === 'withdrawn'): ?>
                             <span class="badge badge-muted" title="This person has withdrawn consent — talk to them before scheduling">Consent withdrawn</span>
                         <?php endif; ?>
+                        <p><a target="_blank" rel="noopener" href="<?= route('manage.person', ['user' => hex_id((int) $entry['user_id'])]) ?>">Contact details</a></p>
+                        <?php if (!empty($entry['avatar_path'])): ?><img class="profile-picture profile-picture-small" loading="lazy" src="<?= e(app('upload')->url($entry['avatar_path'])) ?>" alt="Profile picture"><?php endif; ?>
                         <?php if ($entry['whatsapp_number']): ?>
                             <?php $waNum = preg_replace('/[^0-9]/', '', $entry['whatsapp_number']); ?>
                             <div class="queue-whatsapp">

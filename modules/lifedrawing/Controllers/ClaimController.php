@@ -35,7 +35,7 @@ final class ClaimController extends BaseController
             ->where('id', '=', $artworkId)
             ->whereIn('visibility', ['session', 'claimed', 'public'])
             ->first();
-        if (!$artwork) {
+        if (!$artwork || !$this->db->fetchColumn("SELECT id FROM ld_sessions WHERE id = ? AND status <> 'cancelled'", [$artwork['session_id']])) {
             return Response::notFound('Artwork not found.');
         }
 
@@ -145,6 +145,7 @@ final class ClaimController extends BaseController
         $artworkId = (int) $claim['artwork_id'];
         $artwork = $this->table('ld_artworks')->where('id', '=', $artworkId)->first();
 
+        if (!$artwork || !$this->db->fetchColumn("SELECT id FROM ld_sessions WHERE id = ? AND status <> 'cancelled'", [$artwork['session_id']])) return Response::notFound('Artwork unavailable.');
         $previous = $claim['status'];
         $done = false;
 
@@ -235,9 +236,8 @@ final class ClaimController extends BaseController
             return Response::forbidden('That artwork is no longer available.');
         }
         $session = $this->table('ld_sessions')->where('id', '=', (int) $artwork['session_id'])->first();
-        if (!$this->auth->hasRole('admin') && (int) ($session['facilitator_id'] ?? 0) !== $this->userId()) {
-            return Response::forbidden('You can only resolve claims for your own sessions.');
-        }
+        if (!$session || $session['status'] === 'cancelled') return Response::notFound('Session unavailable.');
+        if (!can_manage_session($session)) return Response::forbidden();
 
         $newStatus = $action === 'approve' ? 'approved' : 'rejected';
 
@@ -309,8 +309,8 @@ final class ClaimController extends BaseController
              JOIN ld_sessions s ON a.session_id = s.id
              WHERE c.status = 'pending'
                AND a.visibility NOT IN ('removed', 'private')
-               AND (s.facilitator_id = ? OR ? = 1)",
-            [$this->userId(), $isAdmin ? 1 : 0]
+               AND s.status <> 'cancelled'",
+            []
         );
 
         $now = date('Y-m-d H:i:s');
@@ -370,9 +370,9 @@ final class ClaimController extends BaseController
              JOIN users u ON c.claimant_id = u.id
              WHERE c.status = 'pending'
                AND a.visibility NOT IN ('removed', 'private')
-               AND (s.facilitator_id = ? OR ? = 1)
+               AND s.status <> 'cancelled'
              ORDER BY c.claimed_at DESC",
-            [$this->userId(), $isAdmin ? 1 : 0]
+            []
         );
 
         return $this->render('gallery.claims', [

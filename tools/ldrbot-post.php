@@ -127,7 +127,8 @@ $checkExisting = $pdo->prepare(
 $findArtwork = $pdo->prepare(
     "SELECT a.id, a.session_id
      FROM ld_artworks a
-     WHERE a.id = ?
+     JOIN ld_sessions s ON s.id = a.session_id
+     WHERE a.id = ? AND s.status <> 'cancelled'
        AND a.visibility NOT IN ('removed', 'private')"
 );
 

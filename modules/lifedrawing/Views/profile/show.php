@@ -2,6 +2,8 @@
 
 <section class="profile-detail">
     <div class="profile-header">
+        <?php if (!empty($profile['avatar_path'])): ?><img class="profile-picture" src="<?= e($uploadService->url($profile['avatar_path'])) ?>" alt="Profile picture"><?php endif; ?>
+        <?php if (app('auth')->hasRole('admin', 'facilitator')): ?><a href="<?= route('manage.person', ['user' => hex_id((int) $profile['id'])]) ?>" target="_blank" rel="noopener">Contact details</a><?php endif; ?>
         <h1><?= profile_name($profile) ?></h1>
         <?php if ($profile['bio']): ?>
             <p class="lead"><?= nl2br(e($profile['bio'])) ?></p>

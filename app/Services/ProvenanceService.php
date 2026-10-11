@@ -55,6 +55,18 @@ final class ProvenanceService
         }
     }
 
+    /** Checked write for operations whose audit must commit with the change. */
+    public function record(?int $userId, string $action, string $entityType, int $entityId, array $context = []): void
+    {
+        $this->db->execute(
+            "INSERT INTO provenance_log (user_id, action, entity_type, entity_id, context, ip_address)
+             VALUES (?, ?, ?, ?, ?, ?)",
+            [$userId, $action, $entityType, $entityId,
+             $context ? json_encode($context, JSON_THROW_ON_ERROR) : null,
+             $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0']
+        );
+    }
+
     /** Get provenance trail for an entity. */
     public function trail(string $entityType, int $entityId, int $limit = 50): array
     {

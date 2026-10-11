@@ -39,6 +39,7 @@ $_SESSION = ['_csrf_token' => 'test-token'];
 $_SERVER['REQUEST_URI'] = '/';
 $_SERVER['REMOTE_ADDR'] = '127.0.0.1';
 
+require __DIR__ . '/local-test-environment.php';
 $cfg = config('database');
 $db = new Connection(
     host: $cfg['host'],
@@ -256,7 +257,7 @@ $pid = (int) $db->fetchColumn(
 // to restore. This is the case that silently degrades if writers disagree.
 $db->execute("UPDATE ld_session_participants SET attended = 1, attendance = 'attended' WHERE id = ?", [$pid]);
 
-req('POST', "/sessions/{$hexPast}/participants/no-show", ['pid' => $pid]);
+req('POST', "/sessions/{$hexPast}/participants/no-show", ['pid' => $pid, 'action' => 'no_show', 'expected_attendance' => 'attended', 'request_key' => 'booking-no-show-set-0001']);
 $state = $db->fetchColumn("SELECT attendance FROM ld_session_participants WHERE id = ?", [$pid]);
 check('marking sets no_show', $state === 'no_show', "got {$state}");
 
@@ -264,13 +265,13 @@ $stats = $db->fetch("SELECT * FROM ld_artist_stats WHERE user_id = ?", [$artistI
 check('a no-show does not count as attendance', (int) ($stats['total_sessions'] ?? -1) === 0,
     'got ' . ($stats['total_sessions'] ?? 'null'));
 
-req('POST', "/sessions/{$hexPast}/participants/no-show", ['pid' => $pid]);
+req('POST', "/sessions/{$hexPast}/participants/no-show", ['pid' => $pid, 'action' => 'restore', 'expected_attendance' => 'no_show', 'request_key' => 'booking-no-show-undo-0001']);
 $state = $db->fetchColumn("SELECT attendance FROM ld_session_participants WHERE id = ?", [$pid]);
 check('un-marking restores attended, not booked', $state === 'attended',
     "got {$state} — the legacy attended column is what makes this recoverable");
 
-$futureNoShow = req('POST', "/sessions/{$hexFuture}/participants/no-show", ['pid' => $pid]);
-check('a no-show cannot be recorded before the session', $futureNoShow['status'] === 403,
+$futureNoShow = req('POST', "/sessions/{$hexFuture}/participants/no-show", ['pid' => $pid, 'action' => 'no_show', 'expected_attendance' => 'attended', 'request_key' => 'booking-no-show-future-0001']);
+check('a no-show cannot be recorded before the session', $futureNoShow['status'] === 422,
     "status {$futureNoShow['status']} — the controller must guard, not just the view");
 
 // --- 4. Claims ------------------------------------------------------------

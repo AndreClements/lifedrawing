@@ -16,6 +16,7 @@ use PDOStatement;
 final class Connection
 {
     private PDO $pdo;
+    private int $transactionDepth = 0;
 
     public function __construct(
         string $host,
@@ -77,14 +78,34 @@ final class Connection
     /** Run a callback inside a transaction. */
     public function transaction(callable $callback): mixed
     {
-        $this->pdo->beginTransaction();
+        $depth = $this->transactionDepth;
+        $savepoint = 'ldr_tx_' . $depth;
+        if ($depth === 0) {
+            $this->pdo->beginTransaction();
+        } else {
+            $this->pdo->exec("SAVEPOINT {$savepoint}");
+        }
+        $this->transactionDepth++;
         try {
             $result = $callback($this);
-            $this->pdo->commit();
+            if ($depth === 0) {
+                $this->pdo->commit();
+            } else {
+                $this->pdo->exec("RELEASE SAVEPOINT {$savepoint}");
+            }
             return $result;
         } catch (\Throwable $e) {
-            $this->pdo->rollBack();
+            if ($this->pdo->inTransaction()) {
+                if ($depth === 0) {
+                    $this->pdo->rollBack();
+                } else {
+                    $this->pdo->exec("ROLLBACK TO SAVEPOINT {$savepoint}");
+                    $this->pdo->exec("RELEASE SAVEPOINT {$savepoint}");
+                }
+            }
             throw $e;
+        } finally {
+            $this->transactionDepth = $depth;
         }
     }
 

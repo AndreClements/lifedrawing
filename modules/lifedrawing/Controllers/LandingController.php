@@ -56,7 +56,7 @@ final class LandingController extends BaseController
             "SELECT a.*, s.title as session_title, s.session_date
              FROM ld_artworks a
              JOIN ld_sessions s ON a.session_id = s.id
-             WHERE a.visibility IN ('claimed', 'public')
+             WHERE a.visibility IN ('claimed', 'public') AND s.status <> 'cancelled'
              ORDER BY a.created_at DESC
              LIMIT 8"
         );
@@ -86,10 +86,10 @@ final class LandingController extends BaseController
 
         // Community stats
         $communityStats = [
-            'total_sessions' => (int) $this->table('ld_sessions')->count(),
-            'total_artworks' => (int) $this->table('ld_artworks')->count(),
+            'total_sessions' => (int) $this->table('ld_sessions')->where('status', '<>', 'cancelled')->count(),
+            'total_artworks' => (int) $this->db->fetchColumn("SELECT COUNT(*) FROM ld_artworks a JOIN ld_sessions s ON s.id = a.session_id WHERE s.status <> 'cancelled' AND a.visibility IN ('claimed','public')"),
             'total_artists' => (int) $this->db->fetchColumn(
-                "SELECT COUNT(DISTINCT user_id) FROM ld_session_participants"
+                "SELECT COUNT(DISTINCT p.user_id) FROM ld_session_participants p JOIN ld_sessions s ON s.id = p.session_id WHERE s.status <> 'cancelled'"
             ) ?: 0,
         ];
 

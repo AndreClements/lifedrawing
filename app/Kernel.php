@@ -163,6 +163,11 @@ final class Kernel
             return new \App\Services\Upload\UploadService();
         });
 
+        // Private session notes and attendance.
+        $this->container->singleton('sessionNotes', function (Container $c) {
+            return new \App\Services\SessionNotesService($c->get('db'));
+        });
+
         // Stats service (Strava-for-artistry)
         $this->container->singleton('stats', function (Container $c) {
             return new \App\Services\StatsService($c->get('db'));

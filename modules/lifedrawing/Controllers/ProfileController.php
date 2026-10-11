@@ -85,7 +85,7 @@ final class ProfileController extends BaseController
              FROM users u
              LEFT JOIN ld_artist_stats s ON u.id = s.user_id
              WHERE u.consent_state = 'granted'
-               AND (SELECT COUNT(*) FROM ld_session_participants sp WHERE sp.user_id = u.id) > 0
+               AND EXISTS (SELECT 1 FROM ld_session_participants sp JOIN ld_sessions live ON live.id = sp.session_id WHERE sp.user_id = u.id AND live.status <> 'cancelled')
              ORDER BY s.total_sessions DESC, u.display_name ASC"
         );
 
@@ -107,7 +107,8 @@ final class ProfileController extends BaseController
                     COALESCE(s.total_sessions, 0) as total_sessions,
                     COALESCE(s.current_streak, 0) as current_streak
              FROM users u
-             JOIN ld_session_participants sp ON sp.user_id = u.id AND sp.role = 'model'
+             JOIN ld_session_participants sp ON sp.user_id = u.id AND sp.role = 'model' AND sp.attendance <> 'no_show'
+             JOIN ld_sessions live ON live.id = sp.session_id AND live.status <> 'cancelled'
              LEFT JOIN ld_artist_stats s ON u.id = s.user_id
              WHERE u.consent_state = 'granted'
              GROUP BY u.id
@@ -158,7 +159,7 @@ final class ProfileController extends BaseController
              JOIN ld_claims c ON c.artwork_id = a.id
              JOIN ld_sessions s ON a.session_id = s.id
              WHERE c.claimant_id = ? AND c.status = 'approved'
-               AND a.visibility IN ('claimed', 'public')
+               AND a.visibility IN ('claimed', 'public') AND s.status <> 'cancelled'
              ORDER BY s.session_date DESC",
             [$id]
         );
@@ -169,11 +170,11 @@ final class ProfileController extends BaseController
                     GROUP_CONCAT(sp.role ORDER BY sp.role SEPARATOR ', ') as role
              FROM ld_sessions s
              JOIN ld_session_participants sp ON sp.session_id = s.id
-             WHERE sp.user_id = ?
+             WHERE sp.user_id = ? AND s.status <> 'cancelled'
                AND s.session_date <= COALESCE(
                    (SELECT MIN(s2.session_date) FROM ld_sessions s2
                     JOIN ld_session_participants sp2 ON sp2.session_id = s2.id
-                    WHERE sp2.user_id = ? AND s2.session_date > CURDATE()),
+                    WHERE sp2.user_id = ? AND s2.status <> 'cancelled' AND s2.session_date > CURDATE()),
                    CURDATE()
                )
              GROUP BY s.id
@@ -197,7 +198,7 @@ final class ProfileController extends BaseController
         // sessions next to someone's work is a mark, not information.
         $noShows = app('auth')->hasRole('admin', 'facilitator')
             ? (int) $this->db->fetchColumn(
-                "SELECT COUNT(*) FROM ld_session_participants WHERE user_id = ? AND attendance = 'no_show'",
+                "SELECT COUNT(*) FROM ld_session_participants p JOIN ld_sessions s ON s.id = p.session_id WHERE p.user_id = ? AND p.attendance = 'no_show' AND s.status <> 'cancelled'",
                 [$id]
             )
             : null;
@@ -225,9 +226,37 @@ final class ProfileController extends BaseController
         if ($redirect = $this->requireAuth()) return $redirect;
 
         $user = $this->auth->currentUser();
+        $success = $_SESSION['profile_picture_message'] ?? null;
+        unset($_SESSION['profile_picture_message']);
         return $this->render('profile.edit', [
+            'success' => $success,
             'user' => $user,
         ], 'Edit Profile');
+    }
+
+    public function picture(Request $request): Response
+    {
+        if ($redirect = $this->requireAuth($request)) return $redirect;
+        try {
+            $warning = (new \App\Services\ProfilePictureService($this->db))->upload($this->userId(), $request->files['picture'] ?? [], (bool) $request->input('non_nude'));
+            $_SESSION['profile_picture_message'] = $warning ?: 'Profile photo saved.';
+            return Response::redirect(route('profiles.edit') . '#profile-picture');
+        } catch (\Throwable $e) {
+            error_log('Profile picture upload: ' . $e->getMessage());
+            return $this->render('profile.edit', ['user' => $this->auth->currentUser(),
+                'error' => $e instanceof \DomainException ? $e->getMessage() : 'Could not save the photo. Please retry.'], 'Edit profile')->withStatus($e instanceof \DomainException ? ($e->getCode() ?: 422) : 500);
+        }
+    }
+
+    public function removePicture(Request $request): Response
+    {
+        if ($redirect = $this->requireAuth($request)) return $redirect;
+        $target = $request->param('user') ? from_hex($request->param('user')) : $this->userId();
+        try {
+            (new \App\Services\ProfilePictureService($this->db))->remove($target, $this->userId());
+            $_SESSION['profile_picture_message'] = 'Profile photo removed.';
+            return Response::redirect($target === $this->userId() ? route('profiles.edit') : route('manage.person', ['user' => hex_id($target)]));
+        } catch (\DomainException $e) { return Response::error(e($e->getMessage()), $e->getCode() ?: 422); }
     }
 
     /** Update own profile (authenticated). */

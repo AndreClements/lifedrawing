@@ -34,7 +34,7 @@ document.addEventListener('click', function(e) {
  * the hidden #add-participant-form and triggers HTMX submission. */
 document.addEventListener('click', function(e) {
     var item = e.target.closest('.search-result-item');
-    if (!item || !item.dataset.userId) return;
+    if (!item || !item.dataset.userId || e.target.closest('a')) return;
 
     var manager = document.getElementById('participant-manager');
     if (!manager) return;
@@ -172,88 +172,161 @@ document.addEventListener('click', function(e) {
     if (form) form.classList.toggle('hidden');
 });
 
-/* Upload progress bar — intercepts upload form, shows real-time progress */
+/* Private session notes: separate requests and DOM targets from image uploads. */
+document.addEventListener('input', function(e) {
+    var form = e.target.closest('[data-note-create]');
+    if (form) form.dataset.dirty = '1';
+});
+document.addEventListener('change', function(e) {
+    var form = e.target.closest('[data-note-create]');
+    if (form) form.dataset.dirty = '1';
+});
+document.addEventListener('click', function(e) {
+    var chip = e.target.closest('[data-note-kind]');
+    if (chip) {
+        var form = document.querySelector('[data-note-create]');
+        if (!form || form._saving) return;
+        form.elements.kind.value = chip.dataset.noteKind;
+        if (chip.dataset.noteText) form.elements.text.value = chip.dataset.noteText;
+        if (chip.hasAttribute('data-sitter-id')) form.elements.participant_id.value = chip.dataset.sitterId;
+        form.dataset.dirty = '1';
+        form.elements.text.focus();
+    }
+    var copy = e.target.closest('[data-copy]');
+    if (copy && navigator.clipboard) navigator.clipboard.writeText(copy.dataset.copy).then(function() {
+        copy.textContent = 'Copied';
+    }).catch(function() { copy.textContent = 'Select the text to copy'; });
+    var confirmButton = e.target.closest('button[data-confirm]');
+    if (confirmButton && !confirm(confirmButton.dataset.confirm)) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+    }
+});
+document.addEventListener('keydown', function(e) {
+    var form = e.target.closest('[data-note-create]');
+    if (form && (e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault();
+        form.requestSubmit();
+    }
+});
+async function saveSessionNoteForm(form, submitter) {
+    if (form._saving) return form._saving;
+    form._saving = (async function() {
+        var feedback = form.querySelector('.save-feedback');
+        var data = new FormData(form);
+        var controls = Array.from(form.querySelectorAll('input, select, textarea, button')).filter(function(control) { return !control.disabled; });
+        if (submitter && submitter.name) data.set(submitter.name, submitter.value);
+        controls.forEach(function(control) { control.disabled = true; });
+        if (feedback) feedback.textContent = 'Saving…';
+        try {
+            var response = await fetch(form.action, {method: 'POST', body: data, headers: {'Accept': 'application/json'}, credentials: 'same-origin'});
+            var result = await response.json();
+            if (!response.ok || !result.success) throw new Error(result.error || 'Could not save. Your input has been kept.');
+            var panel = document.getElementById('session-notes');
+            if (panel && result.notes_html) {
+                // Preserve a separate unfinished draft while an existing note is edited.
+                var draft = panel.querySelector('[data-note-create]');
+                var keep = draft && draft !== form && draft.dataset.dirty === '1' ? new FormData(draft) : null;
+                panel.outerHTML = result.notes_html;
+                var fresh = document.querySelector('[data-note-create]');
+                if (fresh && keep) {
+                    keep.forEach(function(value, name) { if (fresh.elements[name]) fresh.elements[name].value = value; });
+                    fresh.dataset.dirty = '1';
+                }
+                var status = document.querySelector('#session-notes .save-feedback');
+                if (status) status.textContent = result.message;
+                if (window.htmx) htmx.process(document.getElementById('session-notes'));
+            } else if (feedback) feedback.textContent = result.message;
+            return true;
+        } catch (error) {
+            if (feedback) feedback.textContent = error.message || 'Could not save. Please retry.';
+            return false;
+        } finally {
+            controls.forEach(function(control) { control.disabled = false; });
+            form._saving = null;
+        }
+    })();
+    return form._saving;
+}
 document.addEventListener('submit', function(e) {
+    var form = e.target.closest('[data-manage-form]');
+    if (!form) return;
+    e.preventDefault();
+    saveSessionNoteForm(form, e.submitter);
+});
+document.addEventListener('htmx:responseError', function(e) {
+    if ([404, 409, 422, 500].indexOf(e.detail.xhr.status) === -1) return;
+    var message = e.detail.xhr.responseText;
+    try { message = JSON.parse(message).error || message; } catch (_) {}
+    var status = document.getElementById('management-error');
+    if (!status) {
+        status = document.createElement('p');
+        status.id = 'management-error';
+        status.className = 'alert alert-error';
+        status.setAttribute('role', 'alert');
+        var target = e.detail.elt.closest('section') || document.querySelector('main');
+        if (target) target.prepend(status);
+    }
+    status.textContent = message.replace(/<[^>]*>/g, '');
+});
+
+/* Uploads never reload the page on errors, or reset an unfinished note. */
+document.addEventListener('submit', async function(e) {
     var form = e.target;
     if (!form.querySelector('#upload-progress')) return;
-
-    var fileInput = form.querySelector('input[type="file"]');
-    if (!fileInput || !fileInput.files || fileInput.files.length === 0) return;
-
     e.preventDefault();
-
-    var progress = document.getElementById('upload-progress');
-    var bar = document.getElementById('upload-progress-bar');
-    var text = document.getElementById('upload-progress-text');
-    var btn = document.getElementById('upload-btn');
-    var errorDiv = form.closest('section').querySelector('.alert-error');
-    var successDiv = form.closest('section').querySelector('.alert-success');
-
-    // Hide any previous messages
-    if (errorDiv) errorDiv.style.display = 'none';
-    if (successDiv) successDiv.style.display = 'none';
-
-    // Show progress, disable button
+    if (form.dataset.uploading === '1') return;
+    var fileInput = form.querySelector('input[type="file"]');
+    if (!fileInput || !fileInput.files.length) return;
+    form.dataset.uploading = '1';
+    var btn = form.querySelector('#upload-btn');
+    btn.disabled = true;
+    var pending = document.querySelector('[data-note-create]');
+    if (pending && (pending.dataset.dirty === '1' || pending._saving)) {
+        if (!await saveSessionNoteForm(pending)) {
+            form.dataset.uploading = '';
+            btn.disabled = false;
+            return;
+        }
+    }
+    var progress = form.querySelector('#upload-progress');
+    var bar = form.querySelector('#upload-progress-bar');
+    var text = form.querySelector('#upload-progress-text');
     progress.hidden = false;
     bar.style.width = '0%';
-    text.textContent = 'Uploading...';
-    btn.disabled = true;
-    btn.textContent = 'Uploading...';
-
-    var data = new FormData(form);
+    bar.style.background = '';
+    text.textContent = 'Uploading…';
+    btn.textContent = 'Uploading…';
     var xhr = new XMLHttpRequest();
-
-    xhr.upload.addEventListener('progress', function(evt) {
-        if (evt.lengthComputable) {
-            var pct = Math.round((evt.loaded / evt.total) * 100);
-            bar.style.width = pct + '%';
-            text.textContent = 'Uploading... ' + pct + '%';
-        }
-    });
-
-    xhr.addEventListener('load', function() {
-        try {
-            var resp = JSON.parse(xhr.responseText);
-            if (resp.success) {
-                bar.style.width = '100%';
-                text.textContent = resp.message || 'Done!';
-                // Reset form for next batch
-                fileInput.value = '';
-                btn.disabled = false;
-                btn.textContent = 'Upload Batch';
-                // Show success message
-                if (!successDiv) {
-                    successDiv = document.createElement('div');
-                    successDiv.className = 'alert alert-success';
-                    form.parentNode.insertBefore(successDiv, form);
-                }
-                successDiv.textContent = resp.message;
-                successDiv.style.display = '';
-                // Fade out progress after a moment
-                setTimeout(function() { progress.hidden = true; }, 2000);
-            } else {
-                bar.style.width = '100%';
-                bar.style.background = 'var(--color-error, #c33)';
-                text.textContent = resp.error || 'Upload failed';
-                btn.disabled = false;
-                btn.textContent = 'Upload Batch';
-            }
-        } catch (ex) {
-            // Non-JSON response — likely a redirect or HTML error page
-            // Fall back to reloading
-            window.location.reload();
-        }
-    });
-
-    xhr.addEventListener('error', function() {
-        bar.style.width = '100%';
-        bar.style.background = 'var(--color-error, #c33)';
-        text.textContent = 'Network error — please retry';
+    function finish(message, failed) {
+        text.textContent = message;
+        if (failed) bar.style.background = 'var(--color-error, #c33)';
         btn.disabled = false;
         btn.textContent = 'Upload Batch';
+        form.dataset.uploading = '';
+    }
+    xhr.upload.addEventListener('progress', function(event) {
+        if (!event.lengthComputable) return;
+        var pct = Math.round(event.loaded / event.total * 100);
+        bar.style.width = pct + '%';
+        text.textContent = 'Uploading… ' + pct + '%';
     });
-
+    xhr.addEventListener('load', function() {
+        try {
+            var result = JSON.parse(xhr.responseText);
+            if (xhr.status >= 200 && xhr.status < 300 && result.success) {
+                fileInput.value = '';
+                if (result.batch_key) form.elements.batch_key.value = result.batch_key;
+                bar.style.width = '100%';
+                finish(result.message, false);
+            } else finish(result.error || 'Upload failed. Your selection has been kept; please retry.', true);
+        } catch (_) {
+            finish('The server returned an unexpected response. Your files and notes have been kept; please retry.', true);
+        }
+    });
+    xhr.addEventListener('error', function() { finish('Network error. Your files and notes have been kept; please retry.', true); });
+    xhr.addEventListener('abort', function() { finish('Upload interrupted. Please retry this batch.', true); });
     xhr.open('POST', form.action);
     xhr.setRequestHeader('Accept', 'application/json');
-    xhr.send(data);
+    xhr.send(new FormData(form));
 });

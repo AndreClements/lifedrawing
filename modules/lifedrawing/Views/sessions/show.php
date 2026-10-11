@@ -30,15 +30,7 @@
         <div class="session-actions">
             <?php if (app('auth')->hasRole('admin', 'facilitator')): ?>
                 <a href="<?= route('gallery.upload', ['id' => hex_id((int) $session['id'], session_title($session))]) ?>" class="btn">Upload Artworks</a>
-                <?php if ($session['status'] !== 'cancelled'): ?>
-                    <form method="POST" action="<?= route('sessions.cancel', ['id' => hex_id((int) $session['id'], session_title($session))]) ?>"
-                          class="form-inline confirm-action" data-confirm="Cancel this session?">
-                        <?= csrf_field() ?>
-                        <button type="submit" class="btn btn-outline btn-danger">Cancel Session</button>
-                    </form>
-                <?php else: ?>
-                    <span class="badge-cancelled">Cancelled</span>
-                <?php endif; ?>
+                <a href="<?= route('manage.session', ['id' => hex_id((int) $session['id'])]) ?>" class="btn btn-outline">Manage session</a>
             <?php endif; ?>
             <?php
             // One shared control for join and cancel. This page used never to

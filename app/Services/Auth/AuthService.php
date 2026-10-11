@@ -232,7 +232,8 @@ final class AuthService
 
     public function hasRole(string ...$roles): bool
     {
-        $userRole = $_SESSION['user_role'] ?? '';
+        $id = $this->currentUserId();
+        $userRole = $id === null ? '' : $this->db->fetchColumn("SELECT role FROM users WHERE id = ?", [$id]);
         return in_array($userRole, $roles, true);
     }
 
@@ -395,6 +396,7 @@ final class AuthService
 
         $uploadDir    = LDR_ROOT . '/public/assets/uploads';
         $withdrawnDir = LDR_ROOT . '/storage/withdrawn/' . $userId;
+        $avatar = $this->db->fetchColumn("SELECT avatar_path FROM users WHERE id = ?", [$userId]);
         $moved = 0;
         $paths = [];
         $remaining = [];
@@ -431,6 +433,7 @@ final class AuthService
                 [$userId]
             );
 
+            if ($avatar && is_file($uploadDir . '/' . $avatar)) $remaining[] = $avatar;
             $this->reportIncompleteWithdrawal($userId, $remaining);
 
             return ['complete' => false, 'moved' => 0, 'remaining' => $remaining, 'locked' => false];
@@ -461,6 +464,7 @@ final class AuthService
                 [$userId]
             );
 
+            if ($avatar && preg_match('~\Aavatars/' . $userId . '/[a-f0-9]{32}\\.jpg\z~', $avatar)) $paths[] = $avatar;
             foreach ($paths as $rel) {
                 $src = $uploadDir . '/' . $rel;
                 if (!is_file($src)) {
@@ -492,6 +496,9 @@ final class AuthService
             \App\Services\ImageLock::release();
         }
 
+        if ($avatar && !is_file($uploadDir . '/' . $avatar)) {
+            $this->db->execute("UPDATE users SET avatar_path = NULL WHERE id = ? AND avatar_path = ?", [$userId, $avatar]);
+        }
         $complete = ($remaining === []);
 
         $this->logProvenance(

@@ -201,7 +201,7 @@ final class PoseController extends BaseController
 
         if ($activeView === 'active') {
             $entries = $this->db->fetchAll(
-                "SELECT q.*, u.display_name, u.email, u.whatsapp_number, u.consent_state,
+                "SELECT q.*, u.avatar_path, u.display_name, u.email, u.whatsapp_number, u.consent_state,
                         u.sitter_pref_friday, u.sitter_pref_saturday, u.sitter_pref_sunday,
                         u.sitter_auto_rejoin, u.sitter_notes,
                         s.title as session_title, s.session_date, s.id as sid
@@ -213,7 +213,7 @@ final class PoseController extends BaseController
             );
         } else {
             $entries = $this->db->fetchAll(
-                "SELECT q.*, u.display_name, u.email, u.whatsapp_number, u.consent_state,
+                "SELECT q.*, u.avatar_path, u.display_name, u.email, u.whatsapp_number, u.consent_state,
                         u.sitter_pref_friday, u.sitter_pref_saturday, u.sitter_pref_sunday,
                         u.sitter_notes,
                         s.title as session_title, s.session_date, s.id as sid,
@@ -252,71 +252,24 @@ final class PoseController extends BaseController
      */
     public function schedule(Request $request): Response
     {
-        if ($redirect = $this->requireAuth()) return $redirect;
+        if ($redirect = $this->requireAuth($request)) return $redirect;
         if ($redirect = $this->requireRole('admin', 'facilitator')) return $redirect;
-
         $entryId = from_hex($request->param('id'));
         $sessionId = (int) $request->input('session_id', 0);
-
-        $entry = $this->table('ld_sitter_queue')
-            ->where('id', '=', $entryId)
-            ->where('status', '=', 'waiting')
-            ->first();
-
-        if (!$entry) {
-            return Response::notFound('Queue entry not found.');
-        }
-
-        // A real session is now required. "No specific session" left
-        // scheduled_session_id NULL, which the auto-complete could never match,
-        // so those entries sat in the queue forever.
-        $session = $sessionId > 0
-            ? $this->table('ld_sessions')->where('id', '=', $sessionId)->first()
-            : null;
-
-        if (!$session) {
-            return Response::error('Pick the session they are booked for.', 400);
-        }
-
-        // The dropdown only offers upcoming sessions, but the POST was not
-        // checked. Scheduling onto a past session inserts a participant row and
-        // rewrites attendance history, which leave() explicitly refuses to do
-        // for exactly the same reason.
-        if (session_starts_at($session) <= time()) {
-            return Response::error('That session has already started.', 400);
-        }
-
-        $userId = (int) $entry['user_id'];
-
-        // Scheduling must also produce the booking. Marking the queue entry
-        // without adding the participant left the queue saying "scheduled"
-        // while the session itself had no model.
-        $already = $this->table('ld_session_participants')
-            ->where('session_id', '=', $sessionId)
-            ->where('user_id', '=', $userId)
-            ->where('role', '=', 'model')
-            ->first();
-
-        if (!$already) {
-            $this->table('ld_session_participants')->insert([
-                'session_id' => $sessionId,
-                'user_id'    => $userId,
-                'role'       => 'model',
-            ]);
-            $this->provenance->log(
-                $this->userId(),
-                'participant.add',
-                'session',
-                $sessionId,
-                ['added_user' => $userId, 'role' => 'model', 'via' => 'sitter_queue']
-            );
-            app('stats')->refreshUser($userId);
-        }
-
-        // One code path owns the queue state.
-        app('sitterQueue')->onModelAdded($userId, $sessionId, $this->userId());
-
-        return Response::redirect(route('pose.queue'));
+        try {
+            $userId = $this->db->transaction(function () use ($entryId, $sessionId) {
+                $session = \App\Services\SessionAccess::session($this->db, $sessionId, true);
+                if (time() >= session_starts_at($session)) throw new \DomainException('That session has already started.', 422);
+                $entry = $this->db->fetch("SELECT * FROM ld_sitter_queue WHERE id = ? AND status = 'waiting' FOR UPDATE", [$entryId]);
+                if (!$entry) throw new \DomainException('Queue entry is no longer waiting.', 409);
+                $userId = (int) $entry['user_id'];
+                (new \App\Services\ParticipationService($this->db))->add($sessionId, $this->userId(), $userId, 'model', true);
+                app('sitterQueue')->onModelAdded($userId, $sessionId, $this->userId());
+                return $userId;
+            });
+            (new \App\Services\SessionManagementService($this->db))->refreshStats($userId);
+            return Response::redirect(route('pose.queue'));
+        } catch (\DomainException $e) { return Response::error(e($e->getMessage()), $e->getCode() ?: 422); }
     }
 
     /**
@@ -404,7 +357,7 @@ final class PoseController extends BaseController
         $this->autoCompleteExpired();
 
         $entries = $this->db->fetchAll(
-            "SELECT q.*, u.display_name, u.whatsapp_number, u.consent_state,
+            "SELECT q.*, u.avatar_path, u.display_name, u.whatsapp_number, u.consent_state,
                     u.sitter_pref_friday, u.sitter_pref_saturday, u.sitter_pref_sunday,
                     u.sitter_notes
              FROM ld_sitter_queue q
