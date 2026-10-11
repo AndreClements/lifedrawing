@@ -90,21 +90,13 @@ eight considered images than a dump of twenty.
 - **Legible** — the figure reads at Instagram thumbnail size.
 - **Clean enough** — in focus; glare fixable with levels, tilt with a small rotate, framing with a
   crop. **Keystone/perspective is not fixable** — badly keystoned shots are out.
-- **Dignity — flag it, never cut it.** *(Changed 2026-08-16, on André's instruction: "stop making
-  dignity cuts".)* If an image gives you pause — a crop or emphasis you think might read as
-  objectifying once separated from the session — **leave it in the proposed set**, say so plainly,
-  and name exactly what triggered it. The facilitator decides. He was in the room, knows the model
-  and knows what she has agreed to; a reading of a single frame from outside that room is not a
-  better guide than that, and cutting unilaterally quietly removes work the artists made and the
-  model sat for. Record the flag in `curation.md` so the reasoning stays on file either way.
-
-  The case still worth flagging is the close anatomical study — a sheet cropped tight on the
-  pelvis or hips. In the room it is ordinary, legitimate, often the most accomplished work of the
-  day; the question is only how it behaves alone in a feed. Ask the question; don't answer it.
-
-  **Likeness is a separate question, and also his.** Where the model's face is a recognisable
-  portrait, that is a *consent* matter, not a dignity one. Surface it as such and let him answer —
-  once for the whole set rather than image by image.
+- **Nudity and likeness are not gates, so there is nothing to cut or flag.** This is life
+  drawing, and the models consent to it in the room. Recognisable faces, private areas and close
+  anatomical studies are all fine, and are often the most accomplished work of the day. Don't
+  cut them, don't flag them, and don't ask about them, not even once for the set. The same goes
+  for anyone else who appears inside a drawing, such as an artist at an easel: they are part of
+  the room. *(Settled 2026-10-11, superseding the 2026-08-16 "flag, don't cut" rule, which still
+  produced likeness and close-study questions the facilitator had already answered.)*
 - **Not a near-duplicate** — drop the weaker of two near-identical shots unless they're a
   deliberate contrast pair.
 - **A drawing** — room/candid snapshots are not the carousel (keep them aside, or use at most one

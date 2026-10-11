@@ -652,7 +652,8 @@ artistic judgment. We revise together. Neither view is neutral or final by defau
 See `INSTAGRAM.md` for the full rubric. (Every selection responds; roles circulate.)
 
 **Gates (any "no" cuts the image):** legible at thumbnail · clean enough (glare/tilt
-fixable, keystone not) · holds the model with dignity · not a near-duplicate.
+fixable, keystone not) · not a near-duplicate · a drawing. Nudity and likeness are not
+gates, so don't flag them.
 
 **Axes to span (coverage, not ranking):** pose arc (warm-up→sustained) · medium ·
 approach (gestural/structural/tonal) · authorship (different hands).
