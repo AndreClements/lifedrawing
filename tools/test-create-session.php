@@ -232,6 +232,15 @@ try {
     check('footnote marker is not an asterisk', !str_contains($withNote, 'R150 *'));
     check('unnoted line unchanged by a noted neighbour', str_contains($withNote, 'Sat 01 Aug _Plain_ (f) 0/7'));
 
+    // Unnamed sessions: no borrowed axiom, just the date on WhatsApp and "Life Drawing" as a heading.
+    $unnamed = ['id' => 3, 'title' => null, 'session_date' => '2026-08-08',
+        'model_sex' => 'm', 'max_capacity' => 7, 'capacity_published' => 1, 'booking_note' => null];
+    check('unnamed session line carries no title', str_contains(whatsapp_schedule([$unnamed], []), 'Sat 08 Aug (m) 0/7'));
+    check('unnamed session heading is Life Drawing', session_title($unnamed) === 'Life Drawing');
+    check('a set title is kept', session_title($plain) === 'Plain' && session_has_title($plain));
+    check('a blank title counts as unnamed', !session_has_title(['title' => '   ']));
+    check('artwork rows read the session_title alias', session_has_title(['session_title' => 'Mini Tour']));
+
     // Ordering: same date, different times — start_time then id must break the tie.
     $ids = [];
     foreach ([['2099-04-04', '15:00:00'], ['2099-04-04', '10:00:00']] as [$d, $t]) {

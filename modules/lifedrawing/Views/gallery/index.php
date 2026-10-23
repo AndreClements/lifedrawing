@@ -11,7 +11,7 @@
                 <option value="">All sessions</option>
                 <?php foreach ($sessions as $s): ?>
                     <option value="<?= $s['id'] ?>" <?= ($currentSession ?? '') == $s['id'] ? 'selected' : '' ?>>
-                        <?= format_date($s['session_date']) ?> — <?= e(session_title($s)) ?>
+                        <?= format_date($s['session_date']) ?><?php if (session_has_title($s)): ?> — <?= e(session_title($s)) ?><?php endif; ?>
                     </option>
                 <?php endforeach; ?>
             </select>

@@ -123,7 +123,7 @@
             <?php foreach ($sessions as $s): ?>
                 <li>
                     <a href="<?= route('sessions.show', ['id' => hex_id((int) $s['id'], session_title($s))]) ?>">
-                        <?= format_date($s['session_date']) ?> — <em><?= e(session_title($s)) ?></em>
+                        <?= format_date($s['session_date']) ?><?php if (session_has_title($s)): ?> — <em><?= e(session_title($s)) ?></em><?php endif; ?>
                     </a>
                     <small>(<?= e($s['role']) ?>)</small>
                 </li>

@@ -103,7 +103,7 @@
                                         <?php foreach ($upcomingSessions as $s): ?>
                                             <option value="<?= $s['id'] ?>">
                                                 <?= date('D j M', strtotime($s['session_date'])) ?>
-                                                &mdash; <?= e(session_title($s)) ?>
+                                                <?php if (session_has_title($s)): ?>&mdash; <?= e(session_title($s)) ?><?php endif; ?>
                                             </option>
                                         <?php endforeach; ?>
                                     </select>

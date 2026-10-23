@@ -87,8 +87,8 @@ if (!$session) {
 
 $sessionId = (int) $session['id'];
 
-// Resolve title (axiom fallback for NULL titles)
-$sessionTitle = $session['title'] ?? session_title($session);
+// Resolve title ("Life Drawing" when the session was never named)
+$sessionTitle = session_title($session);
 
 // --- Build base URL for image links ---
 

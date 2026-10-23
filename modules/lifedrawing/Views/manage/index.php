@@ -10,7 +10,7 @@
     <?php if (!$sessions): ?><p>No sessions here.</p><?php endif; ?>
     <div class="manage-session-list">
         <?php foreach ($sessions as $s): ?>
-            <p><a href="<?= route('manage.session', ['id' => hex_id((int) $s['id'])]) ?>"><?= format_date($s['session_date']) ?> · <?= e(session_title($s)) ?></a>
+            <p><a href="<?= route('manage.session', ['id' => hex_id((int) $s['id'])]) ?>"><?= format_date($s['session_date']) ?><?php if (session_has_title($s)): ?> · <?= e(session_title($s)) ?><?php endif; ?></a>
                 <?php if ($cancelled && $s['cancellation_reason']): ?><small><?= e($s['cancellation_reason']) ?></small><?php endif; ?></p>
         <?php endforeach; ?>
     </div>

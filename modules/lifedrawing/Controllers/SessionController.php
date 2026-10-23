@@ -188,11 +188,16 @@ final class SessionController extends BaseController
         $endMinutes = (int) ($session['duration_minutes'] ?? 180);
         $startDt = $session['session_date'] . $startTime . '+02:00';
         $endDt = date('Y-m-d\TH:i:s', strtotime($session['session_date'] . ' ' . ($session['start_time'] ?: '10:00:00')) + $endMinutes * 60) . '+02:00';
+        // An unnamed session's page needs its date in the title, or every one of
+        // them is "Life Drawing — Life Drawing Randburg" in search and link previews.
+        $pageTitle = session_has_title($session)
+            ? session_title($session)
+            : 'Life Drawing, ' . format_date($session['session_date']);
         $eventJsonLd = '<script type="application/ld+json">'
             . json_encode([
                 '@context' => 'https://schema.org',
                 '@type' => 'Event',
-                'name' => session_title($session),
+                'name' => $pageTitle,
                 'startDate' => $startDt,
                 'endDate' => $endDt,
                 'eventAttendanceMode' => 'https://schema.org/OfflineEventAttendanceMode',
@@ -227,7 +232,7 @@ final class SessionController extends BaseController
         $breadcrumbs = self::breadcrumbJsonLd([
             ['Home', '/'],
             ['Sessions', '/sessions'],
-            [session_title($session), '/sessions/' . hex_id($id, session_title($session))],
+            [$pageTitle, '/sessions/' . hex_id($id, session_title($session))],
         ]);
 
         return $this->render('sessions.show', [
@@ -237,7 +242,7 @@ final class SessionController extends BaseController
             'sessionHasKnownModel' => $modelClaimContext['sessionHasKnownModel'],
             'isSessionModel' => $modelClaimContext['isSessionModel'],
             'joinedRoles' => $joinedRoles,
-        ], session_title($session), [
+        ], $pageTitle, [
             'meta_description' => $sessionDesc,
             'json_ld' => $eventJsonLd . $breadcrumbs,
         ]);

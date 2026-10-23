@@ -146,7 +146,7 @@ Required:
   --venue="..."              Venue name
 
 Optional:
-  --title="..."              Explicit title (default: rotating axiom)
+  --title="..."              Explicit title (default: none; shown as "Life Drawing")
   --subtitle="..."           Default: "Regular Session Format"
   --time=HH:MM               Start time (default: none)
   --duration=N               Minutes, 30-480 (default: 180)

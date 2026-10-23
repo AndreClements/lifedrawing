@@ -131,7 +131,7 @@ final class NotificationService
             [$artworkId]
         );
 
-        $sessionTitle = $artwork ? session_title($artwork) : 'Unknown session';
+        $sessionTitle = $artwork ? $this->sessionName($artwork) : 'Unknown session';
         $artworkLink = $this->baseUrl . route('artworks.show', ['id' => hex_id($artworkId)]);
         $action = $status === 'approved' ? 'approved' : 'rejected';
         $emoji = $status === 'approved' ? 'Great news!' : 'Unfortunately,';
@@ -145,7 +145,7 @@ final class NotificationService
             $claimant['email'],
             'claimResolved',
             $subject,
-            "{$emoji} Your {$claim['claim_type']} claim on an artwork from \"{$sessionTitle}\" has been {$action}.",
+            "{$emoji} Your {$claim['claim_type']} claim on an artwork from {$this->sessionPhrase($artwork)} has been {$action}.",
             $artwork ? (int) $artwork['session_id'] : null,
             "View the artwork: {$artworkLink}",
             $footer,
@@ -179,7 +179,6 @@ final class NotificationService
              WHERE a.id = ?",
             [$artworkId]
         );
-        $sessionTitle = $artwork ? session_title($artwork) : 'Unknown session';
         $claimsLink = $this->baseUrl . route('claims.pending');
 
         foreach ($facilitators as $user) {
@@ -189,7 +188,7 @@ final class NotificationService
                 $user['email'],
                 'claimSubmitted',
                 "New {$claimType} claim from {$claimantName}",
-                "{$claimantName} has submitted a {$claimType} claim on an artwork from \"{$sessionTitle}\".",
+                "{$claimantName} has submitted a {$claimType} claim on an artwork from {$this->sessionPhrase($artwork)}.",
                 $artwork ? (int) $artwork['session_id'] : null,
                 "Review pending claims: {$claimsLink}",
                 null,
@@ -596,6 +595,23 @@ Artists still booked: {$artists}{$late}",
         }
 
         return $cancelled;
+    }
+
+    /** Short name for a subject line: the session's title, or its date when unnamed. */
+    private function sessionName(array $session): string
+    {
+        return session_has_title($session)
+            ? session_title($session)
+            : format_date($session['session_date']);
+    }
+
+    /** "from …" wording: a quoted title, or "the session on <date>" when unnamed. */
+    private function sessionPhrase(?array $session): string
+    {
+        if (!$session) return 'an unknown session';
+        return session_has_title($session)
+            ? '"' . session_title($session) . '"'
+            : 'the session on ' . format_date($session['session_date']);
     }
 
     /**

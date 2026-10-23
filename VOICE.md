@@ -26,11 +26,11 @@ From `config/axioms.php`. Short, verb-driven, present tense. The compositional r
 | Practice made visible. | Dashboard lead |
 | The body teaches the hand. | Sitters lead |
 | Sometimes you draw, sometimes you model, sometimes you watch. | Artists lead, philosophy block |
-| We draw to attend. | Rotating pool |
-| Presence before technique. | Rotating pool |
-| Showing up is the practice. | Rotating pool |
-| Roles circulate. / Each position teaches. | Rotating pool |
-| The room holds. | Rotating pool |
+| We draw to attend. | Rotating pool (Instagram captions; no longer used as session titles) |
+| Presence before technique. | Rotating pool (Instagram captions; no longer used as session titles) |
+| Showing up is the practice. | Rotating pool (Instagram captions; no longer used as session titles) |
+| Roles circulate. / Each position teaches. | Rotating pool (Instagram captions; no longer used as session titles) |
+| The room holds. | Rotating pool (Instagram captions; no longer used as session titles) |
 
 ---
 

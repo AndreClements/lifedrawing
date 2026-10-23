@@ -39,7 +39,7 @@ $whatsapp = $callable && str_starts_with($dial, '+') ? substr($dial, 1) : null;
     <h3>Recent bookings and session history</h3>
     <?php if (!$history): ?><p>No bookings recorded.</p><?php endif; ?>
     <?php foreach ($history as $s): ?>
-        <p><a href="<?= route('manage.session', ['id' => hex_id((int) $s['id'])]) ?>"><?= format_date($s['session_date']) ?> · <?= e(session_title($s)) ?></a>
+        <p><a href="<?= route('manage.session', ['id' => hex_id((int) $s['id'])]) ?>"><?= format_date($s['session_date']) ?><?php if (session_has_title($s)): ?> · <?= e(session_title($s)) ?><?php endif; ?></a>
             — <?= $s['role'] === 'model' ? 'Sitter' : e(ucfirst($s['role'])) ?> · <?= e($s['status'] === 'cancelled' ? 'Cancelled' : $s['attendance']) ?></p>
     <?php endforeach; ?>
 </section>

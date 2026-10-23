@@ -189,22 +189,21 @@ function axiom(string $key = 'rotating'): string
     return $axioms[$key] ?? '';
 }
 
-/** Get a deterministic axiom from the rotating pool (stable per seed value). */
-function axiom_at(int $seed): string
+/** Has a facilitator actually named this session? Most sessions are not named.
+ *  Works with both $session (has 'title') and $artwork (has 'session_title'). */
+function session_has_title(array $row): bool
 {
-    static $pool = null;
-    $pool ??= config('axioms')['rotating'] ?? [];
-    return $pool ? $pool[$seed % count($pool)] : '';
+    return trim((string) ($row['title'] ?? $row['session_title'] ?? '')) !== '';
 }
 
-/** Display title for a session — explicit title if set, else deterministic axiom.
- *  Works with both $session (has 'title','id') and $artwork (has 'session_title','session_id'). */
+/** Heading for a session: its title if one was set, else plainly "Life Drawing".
+ *  Unnamed sessions used to borrow a rotating axiom; that read as a title nobody
+ *  chose. Where a date is already shown, check session_has_title() and omit it. */
 function session_title(array $row): string
 {
-    $title = $row['title'] ?? $row['session_title'] ?? null;
-    if (!empty($title)) return $title;
-    $id = (int) ($row['id'] ?? $row['session_id'] ?? 0);
-    return axiom_at($id);
+    return session_has_title($row)
+        ? trim((string) ($row['title'] ?? $row['session_title']))
+        : 'Life Drawing';
 }
 
 /** Capacity as shown publicly: the number, or "?" when the session withholds it.
@@ -288,7 +287,9 @@ function whatsapp_schedule(array $sessions, array $participantsBySession): strin
         $sexModel = trim(($s['model_sex'] ?? '') . ' ' . implode(', ', $models));
         $artistStr = implode(', ', $artists);
 
-        $line = "{$day} {$date} _" . session_title($s) . "_ ({$sexModel})";
+        $line = "{$day} {$date}"
+            . (session_has_title($s) ? ' _' . session_title($s) . '_' : '')
+            . " ({$sexModel})";
         if ($artistStr) {
             $line .= " {$artistStr}";
         }

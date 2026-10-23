@@ -95,8 +95,9 @@ final class GalleryController extends BaseController
         $imageUrl = rtrim(config('app.url', 'http://localhost/lifedrawing'), '/')
             . $uploadService->url($artwork['web_path'] ?? $artwork['file_path']);
         $pageUrl = full_url(route('artworks.show', ['id' => hex_id($id)]));
-        $ogDesc = 'Artwork from ' . session_title($artwork)
-            . ' (' . format_date($artwork['session_date']) . ')';
+        $ogDesc = session_has_title($artwork)
+            ? 'Artwork from ' . session_title($artwork) . ' (' . format_date($artwork['session_date']) . ')'
+            : 'Artwork from the life drawing session on ' . format_date($artwork['session_date']);
 
         $artworkLabel = $artwork['caption'] ?: 'Artwork #' . $id;
         $breadcrumbs = self::breadcrumbJsonLd([

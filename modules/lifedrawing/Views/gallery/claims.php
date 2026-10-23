@@ -27,7 +27,7 @@
                         <strong><?= e($claim['claimant_name']) ?></strong>
                         claims as <em><?= e($claim['claim_type']) ?></em>
                         <br>
-                        <small>Session: <em><?= e(session_title($claim)) ?></em> (<?= format_date($claim['session_date']) ?>)</small>
+                        <small>Session: <?php if (session_has_title($claim)): ?><em><?= e(session_title($claim)) ?></em> (<?= format_date($claim['session_date']) ?>)<?php else: ?><?= format_date($claim['session_date']) ?><?php endif; ?></small>
                     </div>
 
                     <div class="claim-actions">

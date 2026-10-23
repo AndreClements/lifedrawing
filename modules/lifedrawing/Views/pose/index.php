@@ -45,8 +45,12 @@
                 <div class="alert alert-info">
                     <strong>You're scheduled to pose!</strong>
                     <?php if ($scheduledSession): ?>
-                        Session: <em><?= e(session_title($scheduledSession)) ?></em>
-                        on <?= format_date($scheduledSession['session_date']) ?>.
+                        <?php if (session_has_title($scheduledSession)): ?>
+                            Session: <em><?= e(session_title($scheduledSession)) ?></em>
+                            on <?= format_date($scheduledSession['session_date']) ?>.
+                        <?php else: ?>
+                            Session on <?= format_date($scheduledSession['session_date']) ?>.
+                        <?php endif; ?>
                     <?php endif; ?>
                     Andr&eacute; will be in touch with details via WhatsApp.
                 </div>
