@@ -1,6 +1,6 @@
 # Quick session notes during uploads
 
-Status: implemented locally on 2026-09-26; not deployed. Uses migration 024.
+Status: implemented 2026-09-26; deployed to production 2026-10-11 (migration 024).
 Created and revised: 2026-09-26.
 Companion: [Facilitator editing and management](facilitator-management.md).
 

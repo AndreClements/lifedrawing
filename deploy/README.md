@@ -108,6 +108,34 @@ From local machine:
 ssh -i ~/.ssh/dreamhost_ldr ldrusr@69.163.140.7 'cd ~/lifedrawing.andresclements.com/randburg && git pull && ~/bin/composer install --no-dev --optimize-autoloader'
 ```
 
+### Back up the database first
+
+Before any migration, any data repair, and any deploy you would not want to
+re-type by hand. The credentials stay on the server: they are read from `.env`
+into a private temporary client file that is deleted on exit, never echoed and
+never on a command line, where `ps` would show them.
+
+```bash
+ssh -i ~/.ssh/dreamhost_ldr ldrusr@69.163.140.7 'bash -s' <<'EOF'
+set -e
+cd ~/lifedrawing.andresclements.com/randburg
+get(){ grep "^$1=" .env | head -1 | cut -d= -f2- | sed -e "s/^[\"']//" -e "s/[\"']\$//" -e 's/\r$//'; }
+umask 077; CNF=$(mktemp ~/.ldr-my.XXXXXX); trap 'rm -f "$CNF"' EXIT
+printf '[client]\nhost="%s"\nuser="%s"\npassword="%s"\n' "$(get DB_HOST)" "$(get DB_USERNAME)" "$(get DB_PASSWORD)" > "$CNF"
+mkdir -p ~/db-backups && chmod 700 ~/db-backups
+OUT=~/db-backups/ldr-$(date +%F-%H%M).sql.gz
+mysqldump --defaults-extra-file="$CNF" --single-transaction --no-tablespaces "$(get DB_DATABASE)" | gzip > "$OUT"
+ls -la "$OUT"; gunzip -c "$OUT" | tail -1    # must end "-- Dump completed on ..."
+EOF
+```
+
+`~/db-backups/` sits outside the document root. The same `CNF` preamble runs any
+read-only preflight query: replace the `mysqldump` lines with `mysql
+--defaults-extra-file="$CNF" "$(get DB_DATABASE)" -t -e "SELECT ..."`.
+
+This covers the database only. Uploaded images are not backed up by this, or by
+anything else yet.
+
 ### Deploys that carry a migration
 
 `git pull && composer && migrate` joined by `&&` sequences only those commands. Apache keeps
@@ -188,6 +216,9 @@ Remove the marker with `git checkout -- public/index.php`.
 SSH="ssh -i ~/.ssh/dreamhost_ldr ldrusr@69.163.140.7"
 APP=~/lifedrawing.andresclements.com/randburg
 
+# 0. Back up the database (above) and run the release's read-only preflight.
+#    Check nobody is mid-import: ~/photo-import should be empty.
+
 # 1. Pause both crons and WAIT for in-flight workers. Commenting out a cron line
 #    does not stop a process already running mid-batch — storage/process_images.lock
 #    and the notification lock are the signals.
@@ -211,15 +242,26 @@ $SSH "cd $APP && php tools/migrate.php status | tail -5"
 #    raise the gate again and leave the crons paused while you diagnose.
 $SSH "rm ~/lifedrawing.andresclements.com/maintenance.flag"
 curl -s https://lifedrawing.andresclements.com/randburg/_health
+#    ...then the access checks under Post-Deploy Verification.
 
-# 7. Restore the crons, only after the checks pass.
+# 7. Restore the crons, only after the checks pass, and confirm nothing is
+#    still commented out. Watch the first run's log lines.
+$SSH "crontab ~/crontab.backup-deploy.txt && crontab -l | grep -c DEPLOYPAUSE"   # expect 0
 ```
 
 The first release with this gate pulled *then* touched, chained, because the gate
 itself arrived with that pull. Now that the gate is installed, raise it first:
 pulling before it is up serves new code against an unmigrated schema.
 
+### Release notes
+
+The sections below record what particular releases needed beyond the generic
+steps. Each says whether it has shipped; keep them as the record of why prod
+looks the way it does. Write a new one for any release with its own preflight.
+
 ### What actually deploys as one unit
+
+*Shipped 2026-09-11 (migrations 020 and 021 are applied on prod).*
 
 **Deploy the branch tip, not an individual commit.** The three commits on
 `bookings-release-2` are a reading order, not a release boundary.
@@ -249,6 +291,8 @@ radius is worth that.
 
 ### Consent and access release — extra steps
 
+*Shipped 2026-09-11, in the same window as the bookings release.*
+
 - Confirm `storage/withdrawn/` exists, is writable, and sits **outside** the document root.
 - Run the cutover purge **inside the window, while the notification cron is still paused**, so
   nothing is delivered between the purge and the restart:
@@ -267,6 +311,8 @@ radius is worth that.
   directly**. It must 404. The database column alone has never proved anything.
 
 ### Bookings and sitter-queue release — extra steps
+
+*Shipped 2026-09-11.*
 
 Ship with automatic sitter-queue completion **off**, sweep the backlog, then turn it on.
 
@@ -299,11 +345,71 @@ the flag.
 The repair sends no email at all: `sitterSessionCompleted()` delivers immediately rather than
 queueing, so replaying months of history would blast old sitters with thank-you notes.
 
+### Facilitator management release — extra steps
+
+*Shipped 2026-10-11 (commit `291659d`, migration 024). Backup:
+`~/db-backups/ldr-pre024-2026-10-11-1235.sql.gz`. Preflight: 3 cancelled sessions,
+4 bookings on them, no photos on any, no legacy `session_notes`.*
+
+Coordinate the migration with ongoing uploads and CLI imports. Apply additive
+migration `024_facilitator_management.sql` before serving the new application code.
+Take a database backup first (see Updating).
+
+Read-only preflight against the target database:
+
+```sql
+SELECT COUNT(*) AS cancelled_sessions FROM ld_sessions WHERE status = 'cancelled';
+SELECT COUNT(*) AS cancelled_bookings
+FROM ld_session_participants p JOIN ld_sessions s ON s.id = p.session_id
+WHERE s.status = 'cancelled';
+SELECT s.id, COUNT(a.id) AS recorded_photos
+FROM ld_sessions s JOIN ld_artworks a ON a.session_id = s.id
+WHERE s.status = 'cancelled' GROUP BY s.id;
+SELECT COUNT(*) AS sessions_with_legacy_notes
+FROM ld_sessions WHERE NULLIF(TRIM(session_notes), '') IS NOT NULL;
+```
+
+The cancelled-photo query must return no rows for the expected existing records.
+If it finds a legacy exception, resolve that record individually before claiming
+it is hidden: filtering pages does not remove existing static image URLs.
+New cancellations are permitted only before the start and before any recorded
+photos, so no cancellation image archive is needed.
+
+After installing the release in the agreed deployment window:
+
+```bash
+php tools/migrate.php run
+php tools/migrate.php status
+php tools/refresh-stats.php
+```
+
+Verify Manage/People as a facilitator, and that guests/participants cannot access
+those routes or cancelled session pages. Check upload notes, a reviewed legacy
+pose group, caption edits and the optional profile picture form. Use fictional
+fixtures locally for cancellation and withdrawal checks; do not cancel real
+sessions or alter participant attendance as a production smoke test.
+
+Profile pictures need PHP GD (JPEG, PNG, WebP support) and writable
+`public/assets/uploads/avatars/`, `storage/cache/` and the existing withdrawal
+storage. The photo policy is a non-nude user declaration with facilitator removal,
+not automated image classification. Keep browser/test credentials and fixtures
+local.
+
+The CLI importer now uses a durable batch per session/source directory; keep that
+directory name unchanged for partial retries. If it reports legacy unnumbered
+poses, review their displayed groups in Manage session before confirming them
+there or using `--confirm-groups`. Do not blanket-confirm unfamiliar groupings.
+
 ## Creating Sessions (incl. off-pattern)
 
-Regular sessions are created through the web form. **Off-pattern sessions** (external venue,
-ticketed, sitters booked off-platform) can't be — the form doesn't expose the listing flags —
-so create them on prod with `tools/create-session.php`:
+Regular sessions are created through the web form. Leave the title empty unless the
+session really has a name (the Mini Tour, a workshop). Unnamed sessions show as
+"Life Drawing" with their date; nothing is invented for them.
+
+**Off-pattern sessions** (external venue, ticketed, sitters booked off-platform)
+need the listing flags. Either create the session normally and set the flags under
+**Manage session → Details**, or create it in one step on prod with
+`tools/create-session.php`:
 
 ```bash
 ssh -i ~/.ssh/dreamhost_ldr ldrusr@69.163.140.7 'cd ~/lifedrawing.andresclements.com/randburg && \
@@ -420,65 +526,19 @@ The importer is rerun-safe and orphan-safe; derivatives are generated by `proces
 
 1. Visit `https://lifedrawing.andresclements.com/randburg/_health` — should return JSON with `status: ok`
 2. Check sessions page loads with correct data
-3. Test login with facilitator account
-4. If migrations ran, verify with `php tools/migrate.php status`
-5. Check `storage/logs/` for any errors
+3. Test login with facilitator account, and open Manage on a session and People
+4. Logged out, these must refuse: `/manage`, `/manage/users` and `/manage/sessions/{hex}` redirect
+   to `/login`; a cancelled session's `/sessions/{hex}` returns 404
+5. If migrations ran, verify with `php tools/migrate.php status`
+6. Check `storage/php_errors.log` and `storage/logs/` for anything new, including the first
+   cron run after the crontab is restored
 
 ## Key Gotchas
 
 - **APP_BASE_PATH**: Must be set to `/randburg` — `Request::capture()` uses this to strip the URL prefix since `.htaccess` hides `/public`
 - **Composer path**: Dreamhost doesn't have Composer globally; use `~/bin/composer`
 - **CLI tools**: Must load `.env` themselves — they don't go through `public/index.php`
-- **flock**: The image processing cron uses `flock` to prevent overlapping runs
-
-## Facilitator management release
-
-This release has been tested locally; these are deployment steps, not a record
-that production has been changed. Coordinate the migration with ongoing uploads
-and CLI imports. Apply additive migration `024_facilitator_management.sql` before
-serving the new application code. Take the normal database backup first.
-
-Read-only preflight against the target database:
-
-```sql
-SELECT COUNT(*) AS cancelled_sessions FROM ld_sessions WHERE status = 'cancelled';
-SELECT COUNT(*) AS cancelled_bookings
-FROM ld_session_participants p JOIN ld_sessions s ON s.id = p.session_id
-WHERE s.status = 'cancelled';
-SELECT s.id, COUNT(a.id) AS recorded_photos
-FROM ld_sessions s JOIN ld_artworks a ON a.session_id = s.id
-WHERE s.status = 'cancelled' GROUP BY s.id;
-SELECT COUNT(*) AS sessions_with_legacy_notes
-FROM ld_sessions WHERE NULLIF(TRIM(session_notes), '') IS NOT NULL;
-```
-
-The cancelled-photo query must return no rows for the expected existing records.
-If it finds a legacy exception, resolve that record individually before claiming
-it is hidden: filtering pages does not remove existing static image URLs.
-New cancellations are permitted only before the start and before any recorded
-photos, so no cancellation image archive is needed.
-
-After installing the release in the agreed deployment window:
-
-```bash
-php tools/migrate.php
-php tools/migrate.php status
-php tools/refresh-stats.php
-```
-
-Verify Manage/People as a facilitator, and that guests/participants cannot access
-those routes or cancelled session pages. Check upload notes, a reviewed legacy
-pose group, caption edits and the optional profile picture form. Use fictional
-fixtures locally for cancellation and withdrawal checks; do not cancel real
-sessions or alter participant attendance as a production smoke test.
-
-Profile pictures need PHP GD (JPEG, PNG, WebP support) and writable
-`public/assets/uploads/avatars/`, `storage/cache/` and the existing withdrawal
-storage. The photo policy is a non-nude user declaration with facilitator removal,
-not automated image classification. Keep browser/test credentials and fixtures
-local.
-
-The CLI importer now uses a durable batch per session/source directory; keep that
-directory name unchanged for partial retries. If it reports legacy unnumbered
-poses, review their displayed groups in Manage session before confirming them
-there or using `--confirm-groups`. Do not blanket-confirm unfamiliar groupings.
+- **Locks, not `flock` wrappers**: both cron tools take their own internal lock
+  (`storage/process_images.lock`, `storage/flush_notifications.lock`); the crontab has no `flock`.
+  Use `flock -n` on those files only to check that a worker has finished.
+- **Database backups**: `~/db-backups/` on the server, made with the recipe under Updating.

@@ -20,7 +20,7 @@ A digital home for LDR that enables:
 - **Sitter queue** — models join a waiting list with day preferences and WhatsApp contact; facilitators schedule, complete, and manage entries from `/pose/queue`. Auto-rejoin option. Consent-gated join, provenance-logged. Booking a sitter as a session `model` — by any route, including the add-participant typeahead the facilitator actually uses — now resolves their queue entry, and removing them returns it to `waiting` with their original place preserved unless they are still booked elsewhere. Waiting sitters sort above a "Scheduled" divider. `SitterQueueService::classify()` is the single rule set shared by the live sweep and `tools/fix-sitter-queue.php`. The rules compare times, not dates: a sitting counts against a waiting entry only if it *started* after the request, and an upcoming booking is one that has not yet *finished*, so a sitter queued the evening after sitting stays queued
 - **Notifications** — opt-in email alerts for new sessions, cancellations, claim resolution, comments, and sitter queue activity. Facilitators automatically receive operational emails for new bookings, booking cancellations, new registrations, new claims, stub account registrations, and queue joins. Buffered via `ld_notification_queue` with 5-minute digest batching. Every queued row carries a `source_type`/`source_id` so deleting the thing it refers to cancels the mail before it goes out, and eligibility (consent, preference, stub address) is re-checked at send time rather than only when queued
 - **LDRBot feedback** — AI-generated artwork feedback posted as comments after each session. Two CLI tools (`ldrbot-query.php`, `ldrbot-post.php`) handle data gathering and posting; feedback is written by Claude viewing each image, guided by `VOICE.md`. LDRBot name always visible, notifications target artist claimant only
-- **WhatsApp schedule** — facilitator-facing formatted session schedule for sharing to the community WhatsApp group. Italic session titles, bold header, and a trailing sign-up URL so recipients can tap through
+- **WhatsApp schedule** — facilitator-facing formatted session schedule for sharing to the community WhatsApp group. Italic session titles where a session has been named (unnamed sessions show just the date), bold header, and a trailing sign-up URL so recipients can tap through
 - **FAQ** — community information page with CSS-only accordion layout (no inline JS, CSP-safe)
 - **Historical data** — 296 sessions backfilled from facilitator's Google Sheet (2017–2026), ~214 participant stub accounts awaiting real registration and claim
 
@@ -63,8 +63,8 @@ php tools/session-notes.php --session=123 --actor=1 --list
 The photo importer requires a facilitator/admin uploader and refuses cancelled
 sessions. Keep a pose's source directory stable across partial retries.
 
-Deployment requires migration **024**, the cancelled-record preflight and a full
-statistics refresh; see [deployment instructions](deploy/README.md#facilitator-management-release).
+Shipped 2026-10-11 with migration **024**, after the cancelled-record preflight, and
+followed by a full statistics refresh; see [deployment instructions](deploy/README.md#facilitator-management-release--extra-steps).
 
 Local checks: `php tools/test-facilitator-management.php` creates, migrates and
 drops a dedicated fictional test database on local MariaDB (root, empty password).

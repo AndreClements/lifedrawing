@@ -1,6 +1,6 @@
 # Facilitator editing and management
 
-Status: implemented locally on 2026-09-26; not deployed. Migration 024 and deployment preflight are required.
+Status: implemented 2026-09-26; deployed to production 2026-10-11 (commit 291659d, migration 024).
 Created and revised: 2026-09-26.
 Companion: [Quick session notes during uploads](session-upload-notes.md).
 
@@ -41,7 +41,7 @@ Local checks: 77 management/CLI integration checks, the existing booking (50), c
 stale edits, nested rollback, post-commit statistics failure, cancellation racing
 an upload, upload retry identity and profile picture withdrawal.
 The production legacy-cancellation counts remain a deployment preflight.
-See [release instructions](../deploy/README.md#facilitator-management-release).
+See [release instructions](../deploy/README.md#facilitator-management-release--extra-steps).
 
 ## Original code review findings
 
