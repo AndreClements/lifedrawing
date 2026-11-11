@@ -57,7 +57,14 @@
             <div hx-get="<?= route('pose.queue.panel') ?>?day=<?= e($sessionDayName) ?>" hx-trigger="load" hx-swap="innerHTML">
             </div>
         <?php endif; ?>
-    <?php elseif (!empty($participants)): ?>
+    <?php else: ?>
+        <?php
+        // A count only, never names: being on a waiting list is not taking part,
+        // and does not unlock anyone's name.
+        $publicWaiting = $session['status'] !== 'cancelled' && $session['session_date'] >= date('Y-m-d')
+            ? (new \App\Services\WaitlistService(app('db')))->count((int) $session['id']) : 0;
+        ?>
+        <?php if (!empty($participants) || $publicWaiting > 0): ?>
         <div class="participants-section">
             <h3>Participants</h3>
             <div class="participant-list">
@@ -68,7 +75,11 @@
                     </span>
                 <?php endforeach; ?>
             </div>
+            <?php if ($publicWaiting > 0): ?>
+                <p class="text-muted text-sm">Waiting list: <?= $publicWaiting ?></p>
+            <?php endif; ?>
         </div>
+        <?php endif; ?>
     <?php endif; ?>
 
     <!-- Artworks -->

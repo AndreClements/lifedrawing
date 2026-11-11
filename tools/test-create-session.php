@@ -232,6 +232,24 @@ try {
     check('footnote marker is not an asterisk', !str_contains($withNote, 'R150 *'));
     check('unnoted line unchanged by a noted neighbour', str_contains($withNote, 'Sat 01 Aug _Plain_ (f) 0/7'));
 
+    // Observers and the waiting list: indented lines under their session, only when present.
+    $people = [1 => [
+        ['role' => 'model', 'tentative' => 0, 'display_name' => 'Ailyn Smith'],
+        ['role' => 'artist', 'tentative' => 0, 'display_name' => 'Ann Lee'],
+        ['role' => 'observer', 'tentative' => 0, 'display_name' => 'Sam Wu'],
+        ['role' => 'observer', 'tentative' => 1, 'display_name' => 'Tom Ng'],
+        ['role' => 'facilitator', 'tentative' => 0, 'display_name' => 'Host Person'],
+    ]];
+    $listed = whatsapp_schedule([$plain, $noted], $people, [1 => ['Xavier', 'Dee Dee']]);
+    check('observers on an indented line, tentative marked',
+        str_contains($listed, "Sat 01 Aug _Plain_ (f Ailyn) Ann 1/7\n   observing: Sam, Tom?"));
+    check('waiting list on the next indented line, first names in order',
+        str_contains($listed, "\n   observing: Sam, Tom?\n   waiting list: Xavier, Dee\nFri 07 Aug"));
+    check('observers do not count towards the artist total', str_contains($listed, ' 1/7'));
+    check('a session with neither gets no extra lines', str_contains($listed, "0/? — R150 [1]\n\n"));
+    check('no extra lines at all without observers or a waiting list',
+        !str_contains(whatsapp_schedule([$plain], [1 => [['role' => 'artist', 'tentative' => 0, 'display_name' => 'Ann']]]), '   '));
+
     // Unnamed sessions: no borrowed axiom, just the date on WhatsApp and "Life Drawing" as a heading.
     $unnamed = ['id' => 3, 'title' => null, 'session_date' => '2026-08-08',
         'model_sex' => 'm', 'max_capacity' => 7, 'capacity_published' => 1, 'booking_note' => null];

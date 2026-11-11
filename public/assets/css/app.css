@@ -623,12 +623,14 @@ textarea {
 .badge-active { background: #dcfce7; color: #166534; }
 .badge-completed { background: #f3f4f6; color: #4b5563; }
 .badge-cancelled { background: #fee2e2; color: #991b1b; }
+.badge-waiting { background: #fef3c7; color: #92400e; }
 
 @media (prefers-color-scheme: dark) {
     .badge-scheduled { background: #1e3a5f; color: #93c5fd; }
     .badge-active { background: #14532d; color: #86efac; }
     .badge-completed { background: #374151; color: #9ca3af; }
     .badge-cancelled { background: #7f1d1d; color: #fca5a5; }
+    .badge-waiting { background: #78350f; color: #fcd34d; }
 }
 
 /* === Tab bar === */

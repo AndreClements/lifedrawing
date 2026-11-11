@@ -45,6 +45,11 @@ if (isset($old['session_date'])) {
                 <?php else: ?><span><?= $p['role'] === 'model' ? 'Sitter' : e(ucfirst($p['role'])) ?></span><?php endif; ?>
             </div>
         <?php endforeach; ?>
+        <?php $waiting = (new \App\Services\WaitlistService(app('db')))->listing((int) $session['id']); ?>
+        <?php if ($waiting): ?>
+            <p>Waiting list, in order: <?= e(implode(', ', array_map(static fn($w) => $w['display_name'], $waiting))) ?>.
+                <small>Manage it under "Add or remove bookings".</small></p>
+        <?php endif; ?>
         <?php if (!$cancelled): ?><details><summary>Add or remove bookings</summary><?= app('view')->render('sessions._participant_manager', compact('session', 'participants')) ?></details><?php endif; ?>
     </section>
 

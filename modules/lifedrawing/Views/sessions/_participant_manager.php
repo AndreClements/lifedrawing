@@ -71,6 +71,47 @@ $sessionIsPast = $session['status'] !== 'cancelled' && session_is_over($session)
         <?php endif; ?>
     </div>
 
+    <?php
+    // Loaded here rather than passed in, so every place that renders this
+    // partial (session page, manage page, HTMX swaps) shows it without change.
+    $waitlist = (new \App\Services\WaitlistService(app('db')))->listing((int) $session['id']);
+    ?>
+    <?php if ($waitlist): ?>
+        <h4>Waiting list</h4>
+        <p class="form-hint">First in line gets the next artist place automatically, and is emailed.</p>
+        <div class="participant-list waitlist">
+            <?php foreach ($waitlist as $i => $w): ?>
+                <span class="participant badge-waiting">
+                    <?= $i + 1 ?>. <?= visible_name($w['display_name']) ?>
+                    <a href="<?= route('manage.person', ['user' => hex_id((int) $w['user_id'])]) ?>" target="_blank" rel="noopener" title="Contact details">Contact</a>
+                    <?php if ($session['status'] !== 'cancelled' && !session_is_over($session)): ?>
+                        <form method="POST"
+                              action="<?= route('sessions.waitlist.promote', ['id' => $hexId]) ?>"
+                              hx-post="<?= route('sessions.waitlist.promote', ['id' => $hexId]) ?>"
+                              hx-target="#participant-manager"
+                              hx-swap="outerHTML"
+                              class="form-inline confirm-action"
+                              data-confirm="Give <?= e($w['display_name']) ?> a place now, even if the session is full?">
+                            <?= csrf_field() ?>
+                            <input type="hidden" name="wid" value="<?= (int) $w['id'] ?>">
+                            <button type="submit" class="btn-icon" title="Give a place now">&uarr;</button>
+                        </form>
+                    <?php endif; ?>
+                    <form method="POST"
+                          action="<?= route('sessions.waitlist.remove', ['id' => $hexId]) ?>"
+                          hx-post="<?= route('sessions.waitlist.remove', ['id' => $hexId]) ?>"
+                          hx-target="#participant-manager"
+                          hx-swap="outerHTML"
+                          class="form-inline">
+                        <?= csrf_field() ?>
+                        <input type="hidden" name="wid" value="<?= (int) $w['id'] ?>">
+                        <button type="submit" class="btn-icon btn-remove" title="Take off the waiting list">&times;</button>
+                    </form>
+                </span>
+            <?php endforeach; ?>
+        </div>
+    <?php endif; ?>
+
     <div class="add-participant">
         <h4>Add participant</h4>
         <div class="add-participant-controls">
@@ -82,6 +123,9 @@ $sessionIsPast = $session['status'] !== 'cancelled' && session_is_over($session)
             </label>
             <label class="radio-inline">
                 <input type="radio" name="add-role" value="observer"> Observer
+            </label>
+            <label class="radio-inline" title="Only for a full session that shows its capacity">
+                <input type="radio" name="add-role" value="waitlist"> Waiting list
             </label>
             <label class="checkbox-inline">
                 <input type="checkbox" name="add-tentative" value="1"> Tentative

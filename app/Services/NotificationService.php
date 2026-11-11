@@ -12,7 +12,8 @@ use App\Database\Connection;
  * Checks user preferences before sending. All prefs default to off (opt-in).
  * Buffered notifications are queued to ld_notification_queue and sent by
  * tools/flush_notifications.php. Immediate notifications send synchronously.
- * This service never throws — enqueue failures are logged.
+ * Enqueue failures are logged and swallowed, with one exception: a
+ * waiting-list promotion notice throws, so the promotion rolls back with it.
  */
 final class NotificationService
 {
@@ -290,6 +291,111 @@ This is inside 48 hours of the session."
 {$title}
 {$date}
 Artists still booked: {$artists}{$late}",
+                $sessionId,
+                "View the session: {$link}",
+                null,
+                'session',
+                $sessionId
+            );
+        }
+    }
+
+    /**
+     * Operational: someone joined a full session's waiting list.
+     *
+     * Informational, so it uses the ordinary enqueue(): a failure here loses an
+     * email, not a booking.
+     */
+    public function waitlistJoined(int $sessionId, int $userId, int $position): void
+    {
+        $facilitators = $this->facilitators($userId);
+        if (empty($facilitators)) return;
+
+        $session = $this->db->fetch("SELECT * FROM ld_sessions WHERE id = ?", [$sessionId]);
+        if (!$session) return;
+
+        $user = $this->db->fetch("SELECT display_name FROM users WHERE id = ?", [$userId]);
+        $name = $user['display_name'] ?? 'Someone';
+        $title = session_title($session);
+        $date = format_date($session['session_date']);
+        $link = $this->baseUrl . route('sessions.show', ['id' => hex_id($sessionId, $title)]);
+
+        foreach ($facilitators as $fac) {
+            $this->enqueue(
+                (int) $fac['id'],
+                $fac['display_name'],
+                $fac['email'],
+                'waitlistJoined',
+                "Waiting list: {$name} for {$title}",
+                "{$name} joined the waiting list (#{$position}). The session is full.
+
+{$title}
+{$date}",
+                $sessionId,
+                "View the session: {$link}",
+                null,
+                'session',
+                $sessionId
+            );
+        }
+    }
+
+    /**
+     * Transactional: a waiting person was moved into an open place.
+     *
+     * The one notice in this service that must not fail quietly. The person now
+     * holds a booking they did not just make, and if they never hear about it
+     * the place goes unused. So it queues through enqueueChecked(), inside the
+     * promotion's transaction: if the notice cannot be queued, the promotion
+     * rolls back with it. Sent regardless of notification preferences, since it
+     * is about their own booking. Stubs have no address and are skipped before
+     * queueing, so they cannot cause a failure.
+     */
+    public function waitlistPromoted(int $sessionId, int $userId): void
+    {
+        $session = $this->db->fetch("SELECT * FROM ld_sessions WHERE id = ?", [$sessionId]);
+        $user = $this->db->fetch("SELECT id, email, display_name, consent_state FROM users WHERE id = ?", [$userId]);
+        if (!$session || !$user) throw new \RuntimeException('Promotion notice: session or user not found.');
+
+        $name = $user['display_name'];
+        $title = session_title($session);
+        $date = format_date($session['session_date']);
+        $link = $this->baseUrl . route('sessions.show', ['id' => hex_id($sessionId, $title)]);
+        $late = is_late_cancel($session);
+
+        if (!str_ends_with((string) $user['email'], '.stub@local') && $user['consent_state'] !== 'withdrawn') {
+            $free = $late
+                ? "\n\nThis is close to the session, so if you can no longer make it, cancelling is free - no contribution is expected."
+                : '';
+            $this->enqueueChecked(
+                $userId,
+                $name,
+                $user['email'],
+                'waitlistPromoted',
+                "You have a place: {$title}",
+                "A place opened up and you were next on the waiting list, so you are now booked.
+
+{$title}
+{$date}{$free}",
+                $sessionId,
+                "If you can't come, please cancel your place so it goes to the next person: {$link}",
+                null,
+                'session',
+                $sessionId
+            );
+        }
+
+        foreach ($this->facilitators($userId) as $fac) {
+            $this->enqueueChecked(
+                (int) $fac['id'],
+                $fac['display_name'],
+                $fac['email'],
+                'waitlistPromoted',
+                "From the waiting list: {$name} for {$title}",
+                "{$name} was moved from the waiting list into an open place.
+
+{$title}
+{$date}" . ($late ? "\n\nThis is inside 48 hours of the session." : ''),
                 $sessionId,
                 "View the session: {$link}",
                 null,
@@ -648,5 +754,33 @@ Artists still booked: {$artists}{$late}",
         } catch (\Throwable $e) {
             error_log("Notification enqueue failed ({$type} to {$recipientEmail}): " . $e->getMessage());
         }
+    }
+
+    /**
+     * enqueue() that throws. For notices whose loss would leave someone in a
+     * state they don't know about (a waiting-list promotion); the caller's
+     * transaction then rolls back the change along with the missing notice.
+     */
+    private function enqueueChecked(
+        int $recipientId,
+        string $recipientName,
+        string $recipientEmail,
+        string $type,
+        string $subject,
+        string $summary,
+        ?int $sessionId = null,
+        ?string $detail = null,
+        ?string $footer = null,
+        ?string $sourceType = null,
+        ?int $sourceId = null
+    ): void {
+        $this->db->execute(
+            "INSERT INTO ld_notification_queue
+             (recipient_id, recipient_name, recipient_email, notification_type, session_id,
+              source_type, source_id, subject, summary, detail, footer)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [$recipientId, $recipientName, $recipientEmail, $type, $sessionId,
+             $sourceType, $sourceId, $subject, $summary, $detail, $footer]
+        );
     }
 }

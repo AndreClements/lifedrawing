@@ -77,6 +77,8 @@ $router->post('/sessions/{id}/participants/remove', [SessionController::class, '
 $router->post('/sessions/{id}/participants/tentative', [SessionController::class, 'toggleTentative'], 'sessions.participants.tentative');
 $router->post('/sessions/{id}/cancel',     [SessionController::class, 'cancel'], 'sessions.cancel');
 $router->post('/sessions/{id}/participants/no-show', [SessionController::class, 'toggleNoShow'], 'sessions.participants.noshow');
+$router->post('/sessions/{id}/waitlist/remove',  [SessionController::class, 'removeWaiting'], 'sessions.waitlist.remove');
+$router->post('/sessions/{id}/waitlist/promote', [SessionController::class, 'promoteWaiting'], 'sessions.waitlist.promote');
 
 // --- Undoing your own actions ---
 // These sit OUTSIDE the consent-gated group deliberately. Claiming a stub
@@ -86,6 +88,7 @@ $router->post('/sessions/{id}/participants/no-show', [SessionController::class, 
 // would bounce them off their own cancel button. Undoing must never be harder
 // than doing. Auth is enforced in the controllers.
 $router->post('/sessions/{id}/leave',      [SessionController::class, 'leave'], 'sessions.leave');
+$router->post('/sessions/{id}/waitlist/leave', [SessionController::class, 'leaveWaitlist'], 'sessions.waitlist.leave');
 $router->post('/claims/{id}/withdraw',     [ClaimController::class, 'withdraw'], 'claims.withdraw');
 $router->get('/schedule/whatsapp',         [SessionController::class, 'whatsappSchedule'], 'schedule.whatsapp');
 $router->post('/claims/resolve-all',        [ClaimController::class, 'resolveAll'], 'claims.resolveAll');

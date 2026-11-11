@@ -146,7 +146,14 @@ $memberSince = $stats['member_since'] ?? null;
                                 ?>
                                 <?php if ($cancellable): ?>
                                     <?php
-                                    $confirmText = is_late_cancel($booking)
+                                    // The button cancels $cancellable[0]. Only an
+                                    // artist booking can come from the waiting list,
+                                    // so only then can promoted_at waive the note;
+                                    // model and observer bookings are unchanged.
+                                    $isLate = $cancellable[0] === 'artist'
+                                        ? booking_is_late_cancel($booking, ['role' => 'artist', 'promoted_at' => $booking['artist_promoted_at'] ?? null])
+                                        : is_late_cancel($booking);
+                                    $confirmText = $isLate
                                         ? 'This session starts in under 48 hours. A 50% contribution is appreciated for late cancellations. Cancel your place?'
                                         : 'Cancel your place at this session?';
                                     ?>
@@ -161,6 +168,38 @@ $memberSince = $stats['member_since'] ?? null;
                                 <?php else: ?>
                                     <span class="text-muted text-sm">hosting</span>
                                 <?php endif; ?>
+                            </div>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+            <?php endif; ?>
+
+            <?php if (!empty($waitlists)): ?>
+                <h4>Waiting lists</h4>
+                <p class="text-muted text-sm">If a place opens you'll be booked automatically and emailed.</p>
+                <div class="upcoming-list">
+                    <?php foreach ($waitlists as $w): ?>
+                        <?php $waitHex = hex_id((int) $w['id'], session_title($w)); ?>
+                        <div class="upcoming-entry">
+                            <div class="upcoming-when">
+                                <strong><?= date('j', strtotime($w['session_date'])) ?></strong>
+                                <small><?= date('M', strtotime($w['session_date'])) ?></small>
+                            </div>
+                            <div class="upcoming-what">
+                                <a href="<?= route('sessions.show', ['id' => $waitHex]) ?>">
+                                    <em><?= e(session_title($w)) ?></em>
+                                </a>
+                                <div class="text-muted text-sm">
+                                    <?= format_date($w['session_date']) ?>
+                                    &middot; waiting list #<?= (int) $w['position'] ?>
+                                </div>
+                            </div>
+                            <div class="upcoming-action">
+                                <form method="POST" action="<?= route('sessions.waitlist.leave', ['id' => $waitHex]) ?>" class="form-inline">
+                                    <?= csrf_field() ?>
+                                    <input type="hidden" name="return" value="dashboard">
+                                    <button type="submit" class="btn-sm btn-outline">Leave</button>
+                                </form>
                             </div>
                         </div>
                     <?php endforeach; ?>

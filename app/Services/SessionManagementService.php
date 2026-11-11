@@ -27,12 +27,12 @@ final class SessionManagementService
     {
         SessionAccess::requireManager($this->db, $actorId);
         if (!in_array($role, ['artist', 'model', 'observer'], true)) throw new DomainException('Choose Artist, Sitter or Observer.', 422);
-        $userId = $this->db->transaction(function () use ($sessionId, $actorId, $pid, $expected, $role) {
+        [$userId, $promoted] = $this->db->transaction(function () use ($sessionId, $actorId, $pid, $expected, $role) {
             $session = SessionAccess::session($this->db, $sessionId, true);
             $p = $this->db->fetch("SELECT * FROM ld_session_participants WHERE id = ? AND session_id = ? FOR UPDATE", [$pid, $sessionId]);
             if (!$p) throw new DomainException('Participation not found.', 404);
             if ($p['role'] === 'facilitator') throw new DomainException('Facilitator reassignment is separate from a role correction.', 422);
-            if ($p['role'] === $role) return (int) $p['user_id'];
+            if ($p['role'] === $role) return [(int) $p['user_id'], []];
             if ($p['role'] !== $expected) throw new DomainException('The role changed. Reload and review before saving.', 409);
             $collision = $this->db->fetchColumn("SELECT id FROM ld_session_participants WHERE session_id = ? AND user_id = ? AND role = ?", [$sessionId, $p['user_id'], $role]);
             if ($collision) throw new DomainException('This person already has that role (booking #' . $collision . '). Review both bookings; neither has been removed.', 409);
@@ -42,8 +42,15 @@ final class SessionManagementService
             if ($role === 'model' && !session_is_over($session)) $queue->onModelAdded((int) $p['user_id'], $sessionId, $actorId);
             (new ProvenanceService($this->db))->record($actorId, 'participant.role', 'session', $sessionId,
                 ['participant_id' => $pid, 'from' => $p['role'], 'to' => $role]);
-            return (int) $p['user_id'];
+            // This UPDATE bypasses ParticipationService::add(), so it keeps the
+            // waiting-list invariant itself: a new artist stops waiting, and a
+            // vacated artist place goes to the next person in line.
+            $waitlist = new WaitlistService($this->db);
+            if ($role === 'artist') $waitlist->clearFor($sessionId, (int) $p['user_id'], $actorId);
+            $promoted = $p['role'] === 'artist' ? $waitlist->fillOpenPlaces($sessionId) : [];
+            return [(int) $p['user_id'], $promoted];
         });
+        foreach ($promoted as $promotedId) $this->refreshStats($promotedId);
         return $this->refreshStats($userId);
     }
 
@@ -71,7 +78,7 @@ final class SessionManagementService
         if (!in_array($sex, ['', 'f', 'm'], true)) throw new DomainException('Invalid sitter listing value.', 422);
         $values['model_sex'] = $sex ?: null;
         foreach (['capacity_published', 'model_join_enabled'] as $flag) $values[$flag] = empty($data[$flag]) ? 0 : 1;
-        $dateChanged = $this->db->transaction(function () use ($sessionId, $actorId, $data, $values) {
+        $outcome = $this->db->transaction(function () use ($sessionId, $actorId, $data, $values) {
             $old = SessionAccess::session($this->db, $sessionId, true);
             if (($data['expected_updated_at'] ?? '') !== $old['updated_at']) throw new DomainException('Session details changed. Reload and review before saving.', 409);
             $scheduleChanged = $old['session_date'] !== $values['session_date'] || substr((string) $old['start_time'], 0, 5) !== substr((string) $values['start_time'], 0, 5)
@@ -95,9 +102,15 @@ final class SessionManagementService
             $this->db->execute("UPDATE ld_sessions SET {$assign}, updated_at = GREATEST(NOW(6), updated_at + INTERVAL 1 MICROSECOND) WHERE id = ?", [...array_values($values), $sessionId]);
             (new ProvenanceService($this->db))->record($actorId, 'session.edit', 'session', $sessionId,
                 ['before' => array_intersect_key($old, $values), 'after' => $values]);
-            return $old['session_date'] !== $values['session_date'];
+            // More places, or a capacity newly published: fill from the waiting list.
+            $promoted = (new WaitlistService($this->db))->fillOpenPlaces($sessionId);
+            return [$old['session_date'] !== $values['session_date'], $promoted];
         });
-        return $dateChanged ? $this->refreshStats() : null;
+        [$dateChanged, $promoted] = $outcome;
+        if ($dateChanged) return $this->refreshStats();
+        $warning = null;
+        foreach ($promoted as $promotedId) $warning = $this->refreshStats($promotedId) ?? $warning;
+        return $warning;
     }
 
     public function cancel(int $sessionId, int $actorId, string $reason): array

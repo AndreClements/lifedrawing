@@ -44,6 +44,16 @@ final class DashboardController extends BaseController
             ->where('user_id', '=', $userId)
             ->whereIn('status', ['waiting', 'scheduled'])
             ->first();
+        // Session waiting lists this person is on, with their place in line.
+        $data['waitlists'] = $this->db->fetchAll(
+            "SELECT s.id, s.title, s.session_date, s.start_time, s.venue,
+                    (SELECT COUNT(*) FROM ld_session_waitlist ahead
+                     WHERE ahead.session_id = w.session_id AND ahead.id <= w.id) AS position
+             FROM ld_session_waitlist w JOIN ld_sessions s ON s.id = w.session_id
+             WHERE w.user_id = ? AND s.session_date >= ? AND s.status <> 'cancelled'
+             ORDER BY s.session_date ASC",
+            [$userId, date('Y-m-d')]
+        );
 
         return $this->render('dashboard.index', $data, 'My Dashboard');
     }

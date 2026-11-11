@@ -98,7 +98,17 @@
             <summary>What does it cost?</summary>
             <div class="faq-answer">
                 <p>The suggested contribution is <strong>R 350</strong>, or as near as is affordable to you.</p>
-                <p>If you cancel less than 48 hours before a session, a 50% contribution is appreciated.</p>
+                <p>If you cancel less than 48 hours before a session, a 50% contribution is appreciated.
+                   That doesn't apply if you were given your place from the waiting list inside those 48 hours.</p>
+            </div>
+        </details>
+
+        <details class="faq-item">
+            <summary>What if a session is full?</summary>
+            <div class="faq-answer">
+                <p>Join the waiting list on the session's page. If someone cancels, the first person waiting
+                   is booked automatically and emailed, so keep an eye on your inbox. You can leave the waiting
+                   list at any time from the session page or your dashboard.</p>
             </div>
         </details>
     </div>

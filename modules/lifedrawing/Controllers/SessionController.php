@@ -66,20 +66,24 @@ final class SessionController extends BaseController
             );
         }
 
-        // Pre-compute "joined as artist" flag per session for the current user
+        // Pre-compute the current user's artist booking per session. The row, not
+        // just a flag: the cancel control needs promoted_at to decide whether the
+        // late-cancellation note applies.
         $auth = app('auth');
         if ($sessions && $activeView === 'upcoming' && $auth->isLoggedIn()) {
             $userId = $auth->currentUserId();
             $ids = array_column($sessions, 'id');
             $placeholders = implode(',', array_fill(0, count($ids), '?'));
             $joined = $this->db->fetchAll(
-                "SELECT session_id FROM ld_session_participants
+                "SELECT id, session_id, role, promoted_at FROM ld_session_participants
                  WHERE user_id = ? AND role = 'artist' AND session_id IN ($placeholders)",
                 array_merge([$userId], $ids)
             );
-            $joinedSet = array_column($joined, 'session_id');
+            $bySession = [];
+            foreach ($joined as $row) $bySession[(int) $row['session_id']] = $row;
             foreach ($sessions as &$s) {
-                $s['joined_as_artist'] = in_array((int) $s['id'], array_map('intval', $joinedSet), true);
+                $s['my_artist_booking'] = $bySession[(int) $s['id']] ?? null;
+                $s['joined_as_artist'] = $s['my_artist_booking'] !== null;
             }
             unset($s);
         }
@@ -177,7 +181,7 @@ final class SessionController extends BaseController
         $participantCount = count($participants);
         $artworkCount = count($artworks);
         $modelClaimContext = $this->sessionModelClaimContext($id);
-        $joinedRoles = $this->joinedRoles($id, $this->userId());
+        $myBookings = $this->myBookings($id, $this->userId());
         $sessionDesc = 'Life drawing session on ' . format_date($session['session_date'])
             . ' at ' . $session['venue'] . '. '
             . $participantCount . ' participant' . ($participantCount !== 1 ? 's' : '')
@@ -241,7 +245,7 @@ final class SessionController extends BaseController
             'artworks' => $artworks,
             'sessionHasKnownModel' => $modelClaimContext['sessionHasKnownModel'],
             'isSessionModel' => $modelClaimContext['isSessionModel'],
-            'joinedRoles' => $joinedRoles,
+            'myBookings' => $myBookings,
         ], $pageTitle, [
             'meta_description' => $sessionDesc,
             'json_ld' => $eventJsonLd . $breadcrumbs,
@@ -409,8 +413,7 @@ final class SessionController extends BaseController
                 \App\Services\SessionAccess::session($this->db, $id, true);
                 $existing = $this->db->fetchColumn("SELECT id FROM users WHERE display_name = ? LIMIT 1", [$name]);
                 $userId = $existing ? (int) $existing : $this->auth->createStub($name);
-                (new \App\Services\ParticipationService($this->db))->add($id, $this->userId(), $userId,
-                    (string) $request->input('role', 'artist'), true, (bool) $request->input('tentative'));
+                $this->addBookingOrWaiting($id, $userId, $request);
                 return $userId;
             });
             $warning = (new \App\Services\SessionManagementService($this->db))->refreshStats($userId);
@@ -427,10 +430,49 @@ final class SessionController extends BaseController
         $id = from_hex($request->param('id'));
         $userId = (int) $request->input('user_id');
         try {
-            (new \App\Services\ParticipationService($this->db))->add($id, $this->userId(), $userId,
-                (string) $request->input('role', 'artist'), true, (bool) $request->input('tentative'));
+            $this->addBookingOrWaiting($id, $userId, $request);
             $warning = (new \App\Services\SessionManagementService($this->db))->refreshStats($userId);
             if ($warning) $_SESSION['management_message'] = $warning;
+            return $this->participantResponse($request, $id);
+        } catch (\DomainException $e) { return Response::error(e($e->getMessage()), $e->getCode() ?: 422); }
+    }
+
+    /** The participant manager's "Waiting list" radio posts role=waitlist through the same add form. */
+    private function addBookingOrWaiting(int $sessionId, int $userId, Request $request): void
+    {
+        $role = (string) $request->input('role', 'artist');
+        if ($role === 'waitlist') {
+            (new \App\Services\WaitlistService($this->db))->add($sessionId, $this->userId(), $userId);
+            return;
+        }
+        (new \App\Services\ParticipationService($this->db))->add($sessionId, $this->userId(), $userId,
+            $role, true, (bool) $request->input('tentative'));
+    }
+
+    /** Take someone off a waiting list (facilitator). */
+    public function removeWaiting(Request $request): Response
+    {
+        if ($redirect = $this->requireAuth($request)) return $redirect;
+        if ($redirect = $this->requireRole('admin', 'facilitator')) return $redirect;
+        $id = from_hex($request->param('id'));
+        try {
+            (new \App\Services\WaitlistService($this->db))->remove($id, $this->userId(), (int) $request->input('wid'));
+            return $this->participantResponse($request, $id);
+        } catch (\DomainException $e) { return Response::error(e($e->getMessage()), $e->getCode() ?: 422); }
+    }
+
+    /** Give a waiting person a place now, out of turn if need be (facilitator). */
+    public function promoteWaiting(Request $request): Response
+    {
+        if ($redirect = $this->requireAuth($request)) return $redirect;
+        if ($redirect = $this->requireRole('admin', 'facilitator')) return $redirect;
+        $id = from_hex($request->param('id'));
+        try {
+            $userId = (new \App\Services\WaitlistService($this->db))->promote($id, $this->userId(), (int) $request->input('wid'));
+            if ($userId) {
+                $warning = (new \App\Services\SessionManagementService($this->db))->refreshStats($userId);
+                if ($warning) $_SESSION['management_message'] = $warning;
+            }
             return $this->participantResponse($request, $id);
         } catch (\DomainException $e) { return Response::error(e($e->getMessage()), $e->getCode() ?: 422); }
     }
@@ -444,7 +486,9 @@ final class SessionController extends BaseController
         try {
             $p = (new \App\Services\ParticipationService($this->db))->remove($id, $this->userId(), (int) $request->input('pid'), true);
             if ($p) {
-                $warning = (new \App\Services\SessionManagementService($this->db))->refreshStats((int) $p['user_id']);
+                $management = new \App\Services\SessionManagementService($this->db);
+                $warning = $management->refreshStats((int) $p['user_id']);
+                foreach ($p['promoted'] as $promotedId) $warning = $management->refreshStats($promotedId) ?? $warning;
                 if ($warning) $_SESSION['management_message'] = $warning;
             }
             return $this->participantResponse($request, $id);
@@ -503,8 +547,23 @@ final class SessionController extends BaseController
             }
         }
 
+        // Waiting lists, in queue order.
+        $waitlists = [];
+        if (!empty($sessionIds)) {
+            $placeholders = implode(',', array_fill(0, count($sessionIds), '?'));
+            foreach ($this->db->fetchAll(
+                "SELECT w.session_id, u.display_name
+                 FROM ld_session_waitlist w JOIN users u ON u.id = w.user_id
+                 WHERE w.session_id IN ({$placeholders})
+                 ORDER BY w.session_id, w.id ASC",
+                $sessionIds
+            ) as $row) {
+                $waitlists[(int) $row['session_id']][] = $row['display_name'];
+            }
+        }
+
         return $this->render('sessions.whatsapp', [
-            'schedule' => whatsapp_schedule($sessions, $allParticipants),
+            'schedule' => whatsapp_schedule($sessions, $allParticipants, $waitlists),
         ], 'WhatsApp Schedule');
     }
 
@@ -522,15 +581,54 @@ final class SessionController extends BaseController
         $role = (string) $request->input('role', 'artist');
         if (!in_array($role, ['artist','model','observer'], true)) $role = 'artist';
         try {
-            $changed = (new \App\Services\ParticipationService($this->db))->add($id, $this->userId(), $this->userId(), $role);
-            if ($changed) {
+            if ($role === 'artist') {
+                // A place if there is one, otherwise the waiting list - decided
+                // under the session lock. Covers register-with-intent too, which
+                // arrives here.
+                $outcome = (new \App\Services\WaitlistService($this->db))->joinOrBook($id, $this->userId());
+            } else {
+                $outcome = (new \App\Services\ParticipationService($this->db))->add($id, $this->userId(), $this->userId(), $role)
+                    ? 'booked' : 'unchanged';
+            }
+            if ($outcome === 'booked') {
                 (new \App\Services\SessionManagementService($this->db))->refreshStats($this->userId());
                 app('notifications')->sessionJoined($id, $this->userId(), $role);
+            } elseif ($outcome === 'waitlisted') {
+                $position = (new \App\Services\WaitlistService($this->db))->position($id, $this->userId()) ?? 0;
+                app('notifications')->waitlistJoined($id, $this->userId(), $position);
             }
-            $session = \App\Services\SessionAccess::session($this->db, $id);
-            if ($request->isHtmx()) return $this->partial('sessions._join_control', ['session' => $session, 'joinedRoles' => $this->joinedRoles($id, $this->userId())]);
-            return Response::redirect(route('sessions.show', ['id' => hex_id($id)]));
+            return $this->joinControlResponse($request, $id);
         } catch (\DomainException $e) { return Response::error(e($e->getMessage()), $e->getCode() ?: 422); }
+    }
+
+    /**
+     * POST /sessions/{id}/waitlist/leave - take yourself off a waiting list.
+     *
+     * Auth only, outside ConsentGate, beside leave(): undoing is never harder than doing.
+     */
+    public function leaveWaitlist(Request $request): Response
+    {
+        if ($redirect = $this->requireAuth($request)) return $redirect;
+        $id = from_hex($request->param('id'));
+        try {
+            (new \App\Services\WaitlistService($this->db))->leave($id, $this->userId());
+            if ($request->isHtmx()) {
+                $session = $this->db->fetch("SELECT * FROM ld_sessions WHERE id = ?", [$id]);
+                if ($session && $session['status'] !== 'cancelled') return $this->joinControlResponse($request, $id);
+                return Response::html('');
+            }
+            return Response::redirect($request->input('return') === 'dashboard' ? route('dashboard') : route('sessions.show', ['id' => hex_id($id)]));
+        } catch (\DomainException $e) { return Response::error(e($e->getMessage()), $e->getCode() ?: 422); }
+    }
+
+    private function joinControlResponse(Request $request, int $id): Response
+    {
+        $session = \App\Services\SessionAccess::session($this->db, $id);
+        if ($request->isHtmx()) {
+            return $this->partial('sessions._join_control', ['session' => $session, 'myBookings' => $this->myBookings($id, $this->userId())])
+                ->withHeader('Cache-Control', 'private, no-store');
+        }
+        return Response::redirect(route('sessions.show', ['id' => hex_id($id)]));
     }
 
     /**
@@ -544,14 +642,16 @@ final class SessionController extends BaseController
         $id = from_hex($request->param('id'));
         $role = (string) $request->input('role', 'artist');
         try {
-            $session = \App\Services\SessionAccess::session($this->db, $id);
             $pid = (int) $this->db->fetchColumn("SELECT id FROM ld_session_participants WHERE session_id = ? AND user_id = ? AND role = ?", [$id, $this->userId(), $role]);
             $p = (new \App\Services\ParticipationService($this->db))->remove($id, $this->userId(), $pid);
             if ($p) {
-                (new \App\Services\SessionManagementService($this->db))->refreshStats($this->userId());
-                app('notifications')->sessionLeft($id, $this->userId(), $role, is_late_cancel($session));
+                $management = new \App\Services\SessionManagementService($this->db);
+                $management->refreshStats($this->userId());
+                foreach ($p['promoted'] as $promotedId) $management->refreshStats($promotedId);
+                // Per booking: someone promoted inside the 48 hours is never late.
+                app('notifications')->sessionLeft($id, $this->userId(), $role, $p['late_notice']);
             }
-            if ($request->isHtmx()) return $this->partial('sessions._join_control', ['session' => $session, 'joinedRoles' => $this->joinedRoles($id, $this->userId())]);
+            if ($request->isHtmx()) return $this->joinControlResponse($request, $id);
             return Response::redirect($request->input('return') === 'dashboard' ? route('dashboard') : route('sessions.show', ['id' => hex_id($id)]));
         } catch (\DomainException $e) { return Response::error(e($e->getMessage()), $e->getCode() ?: 422); }
     }
@@ -587,15 +687,20 @@ final class SessionController extends BaseController
         return Response::redirect(route('manage.session', ['id' => hex_id($id)]));
     }
 
-    /** Roles the given user already holds on a session. */
-    private function joinedRoles(int $sessionId, ?int $userId): array
+    /**
+     * The given user's bookings on a session, keyed by role.
+     *
+     * Rows rather than role names: the cancel control needs the booking's
+     * promoted_at to decide whether the late-cancellation note applies.
+     */
+    private function myBookings(int $sessionId, ?int $userId): array
     {
         if (!$userId) return [];
 
         $rows = $this->db->fetchAll(
-            "SELECT role FROM ld_session_participants WHERE session_id = ? AND user_id = ?",
+            "SELECT id, role, promoted_at FROM ld_session_participants WHERE session_id = ? AND user_id = ?",
             [$sessionId, $userId]
         );
-        return array_column($rows, 'role');
+        return array_column($rows, null, 'role');
     }
 }

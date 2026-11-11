@@ -471,9 +471,12 @@ final class StatsService
         // Sessions they have booked but not yet been to. These used to sort to
         // the top of the list above, which is headed "Recent Sessions" - so a
         // booking for next month read as the most recent thing they had done.
+        // artist_promoted_at feeds the cancel button: a place given from the
+        // waiting list inside the 48 hours carries no late-cancellation note.
         $upcoming = $this->db->fetchAll(
             "SELECT s.id, s.title, s.session_date, s.start_time, s.venue, s.status,
-                    GROUP_CONCAT(sp.role ORDER BY sp.role SEPARATOR ', ') as role
+                    GROUP_CONCAT(sp.role ORDER BY sp.role SEPARATOR ', ') as role,
+                    MAX(CASE WHEN sp.role = 'artist' THEN sp.promoted_at END) AS artist_promoted_at
              FROM ld_sessions s
              JOIN ld_session_participants sp ON sp.session_id = s.id
              WHERE sp.user_id = ? AND s.session_date >= ?

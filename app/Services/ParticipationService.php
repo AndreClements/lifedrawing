@@ -24,12 +24,19 @@ final class ParticipationService
             if (!$this->db->fetchColumn("SELECT id FROM users WHERE id = ?", [$userId])) throw new DomainException('User not found.', 404);
             if ($this->db->fetchColumn("SELECT id FROM ld_session_participants WHERE session_id = ? AND user_id = ? AND role = ?", [$sessionId, $userId, $role])) return false;
             $this->db->execute("INSERT INTO ld_session_participants (session_id, user_id, role, tentative) VALUES (?, ?, ?, ?)", [$sessionId, $userId, $role, $tentative ? 1 : 0]);
+            // Booked as an artist now, so no longer waiting for a place.
+            if ($role === 'artist') (new WaitlistService($this->db))->clearFor($sessionId, $userId, $actorId);
             if ($role === 'model' && !session_is_over($session)) (new SitterQueueService($this->db))->onModelAdded($userId, $sessionId, $actorId);
             (new ProvenanceService($this->db))->record($actorId, $manager ? 'participant.add' : 'session.join', 'session', $sessionId, ['user_id' => $userId, 'role' => $role]);
             return true;
         });
     }
 
+    /**
+     * Returns the removed row, with 'late_notice' (whether the late-cancellation
+     * note applies to this booking) and 'promoted' (user ids moved off the
+     * waiting list into the freed place, whose stats the caller refreshes).
+     */
     public function remove(int $sessionId, int $actorId, int $pid, bool $manager = false): ?array
     {
         if ($manager) SessionAccess::requireManager($this->db, $actorId);
@@ -41,8 +48,12 @@ final class ParticipationService
             if ($p['role'] === 'facilitator' || (!$manager && (int) $p['user_id'] !== $actorId)) throw new DomainException('This booking cannot be removed here.', 403);
             $this->db->execute("DELETE FROM ld_session_participants WHERE id = ?", [$pid]);
             if ($p['role'] === 'model') (new SitterQueueService($this->db))->onModelRemoved((int) $p['user_id'], $sessionId, $actorId);
+            $p['late_notice'] = booking_is_late_cancel($session, $p);
             (new ProvenanceService($this->db))->record($actorId, $manager ? 'participant.remove' : 'session.leave', 'session', $sessionId,
-                ['user_id' => (int) $p['user_id'], 'role' => $p['role'], 'late_notice' => is_late_cancel($session)]);
+                ['user_id' => (int) $p['user_id'], 'role' => $p['role'], 'late_notice' => $p['late_notice']]);
+            // An artist place just opened: the waiting list fills it, in this
+            // same transaction, under the same lock.
+            $p['promoted'] = $p['role'] === 'artist' ? (new WaitlistService($this->db))->fillOpenPlaces($sessionId) : [];
             return $p;
         });
     }

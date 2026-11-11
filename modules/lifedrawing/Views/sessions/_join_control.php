@@ -3,26 +3,31 @@
  * Join / cancel control for one session.
  *
  * One partial for three places — the session page, the listing cards, and the
- * HTMX responses from both join() and leave() — so the button flips correctly
- * in both directions and the three stop disagreeing with each other. They used
- * to: the listing card checked whether you had already joined, the session page
- * never did, and after an HTMX join you got a dead badge with no way back.
+ * HTMX responses from join(), leave() and leaveWaitlist() — so the button flips
+ * correctly in every direction and the three stop disagreeing with each other.
+ *
+ * Four states for an upcoming session: booked (cancel), on the waiting list
+ * (leave it), full (join the waiting list), or open (join as artist).
  *
  * @var array $session
- * @var array $joinedRoles  roles the current viewer already holds on this session
+ * @var array $myBookings  the current viewer's bookings on this session, keyed by role
+ *                         (rows with id, role, promoted_at)
  */
 
 $hexId       = hex_id((int) $session['id'], session_title($session));
 $isPast      = ($session['session_date'] ?? '') < date('Y-m-d');
 $isCancelled = ($session['status'] ?? '') === 'cancelled';
-$joinedRoles = $joinedRoles ?? [];
-$joinedAs    = in_array('artist', $joinedRoles, true) ? 'artist'
-             : (in_array('model', $joinedRoles, true) ? 'model'
-             : (in_array('observer', $joinedRoles, true) ? 'observer' : null));
+$myBookings  = $myBookings ?? [];
+$joinedAs    = isset($myBookings['artist']) ? 'artist'
+             : (isset($myBookings['model']) ? 'model'
+             : (isset($myBookings['observer']) ? 'observer' : null));
+$waitState   = (!$isPast && !$isCancelled)
+    ? session_waitlist_state($session, app('auth')->currentUserId())
+    : ['full' => false, 'count' => 0, 'position' => null];
 
-// The contribution note only applies inside 48 hours, so it only appears then.
-// Showing it on every cancellation would train people to click past it.
-$confirmText = is_late_cancel($session)
+// The contribution note only appears inside 48 hours, and never for a place
+// someone was given from the waiting list inside that window.
+$confirmText = ($joinedAs !== null && booking_is_late_cancel($session, $myBookings[$joinedAs]))
     ? 'This session starts in under 48 hours. A 50% contribution is appreciated for late cancellations. Cancel your place?'
     : 'Cancel your place at this session?';
 ?>
@@ -34,7 +39,7 @@ $confirmText = is_late_cancel($session)
 
 <?php elseif (!app('auth')->isLoggedIn()): ?>
     <a href="<?= route('auth.register') ?>?intent=join_session&amp;session_id=<?= $hexId ?>&amp;role=artist"
-       class="btn btn-outline">Join as Artist</a>
+       class="btn btn-outline"><?= $waitState['full'] ? 'Join waiting list' : 'Join as Artist' ?></a>
 
 <?php elseif ($joinedAs !== null): ?>
     <span class="card-badge badge-active">Booked as <?= e($joinedAs) ?></span>
@@ -49,6 +54,17 @@ $confirmText = is_late_cancel($session)
         <button type="submit" class="btn-sm btn-outline">Cancel my place</button>
     </form>
 
+<?php elseif ($waitState['position'] !== null): ?>
+    <span class="card-badge badge-waiting">On the waiting list (#<?= (int) $waitState['position'] ?>)</span>
+    <form method="POST" action="<?= route('sessions.waitlist.leave', ['id' => $hexId]) ?>"
+          hx-post="<?= route('sessions.waitlist.leave', ['id' => $hexId]) ?>"
+          hx-target="closest .join-control"
+          hx-swap="outerHTML"
+          class="form-inline">
+        <?= csrf_field() ?>
+        <button type="submit" class="btn-sm btn-outline">Leave waiting list</button>
+    </form>
+
 <?php else: ?>
     <form method="POST" action="<?= route('sessions.join', ['id' => $hexId]) ?>"
           hx-post="<?= route('sessions.join', ['id' => $hexId]) ?>"
@@ -57,7 +73,11 @@ $confirmText = is_late_cancel($session)
           class="form-inline">
         <?= csrf_field() ?>
         <input type="hidden" name="role" value="artist">
-        <button type="submit" class="btn btn-outline">Join as Artist</button>
+        <?php if ($waitState['full']): ?>
+            <button type="submit" class="btn btn-outline" title="The session is full. You'll be booked automatically if a place opens, and emailed.">Join waiting list</button>
+        <?php else: ?>
+            <button type="submit" class="btn btn-outline">Join as Artist</button>
+        <?php endif; ?>
     </form>
 <?php endif; ?>
 </div>

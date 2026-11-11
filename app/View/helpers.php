@@ -253,11 +253,50 @@ function is_late_cancel(array $session): bool
     return $starts > time() && ($starts - time()) < 48 * 3600;
 }
 
+/**
+ * The same question for one booking.
+ *
+ * Someone moved off the waiting list inside the 48 hours didn't choose the late
+ * booking, so they are never asked for the late-cancellation contribution.
+ * promoted_at is written from PHP in the app timezone, as session_starts_at()
+ * reads, so the comparison never depends on the database clock.
+ *
+ * @param array|null $booking A participant row (needs 'promoted_at'), or null.
+ */
+function booking_is_late_cancel(array $session, ?array $booking): bool
+{
+    if (!is_late_cancel($session)) return false;
+    $promotedAt = $booking['promoted_at'] ?? null;
+    if ($promotedAt === null || $promotedAt === '') return true;
+    return strtotime((string) $promotedAt) < session_starts_at($session) - 48 * 3600;
+}
+
+/**
+ * Waiting-list state of a session for the join control and listing cards:
+ * whether it's full, how many are waiting, and the viewer's own position.
+ *
+ * @return array{full: bool, count: int, position: ?int}
+ */
+function session_waitlist_state(array $session, ?int $userId = null): array
+{
+    $db = app('db');
+    $waitlist = new \App\Services\WaitlistService($db);
+    $id = (int) $session['id'];
+    return [
+        'full' => \App\Services\WaitlistService::isFull($db, $session),
+        'count' => $waitlist->count($id),
+        'position' => $userId ? $waitlist->position($id, $userId) : null,
+    ];
+}
+
 /** Format the facilitator's WhatsApp schedule for pasting into the group.
- *  Pure: sessions in display order, participants keyed by session id.
+ *  Pure: sessions in display order, participants keyed by session id, and
+ *  waiting-list display names keyed by session id, in queue order.
+ *  Observers and the waiting list go on indented lines under their session,
+ *  only when there are any, so a session with neither reads as it always has.
  *  Asterisks bold, underscores italicise — hence [1] for the footnote marker,
  *  which would otherwise pair with the header's asterisks. */
-function whatsapp_schedule(array $sessions, array $participantsBySession): string
+function whatsapp_schedule(array $sessions, array $participantsBySession, array $waitlistBySession = []): string
 {
     $lines = [];
     $hasBookingNote = false;
@@ -265,6 +304,7 @@ function whatsapp_schedule(array $sessions, array $participantsBySession): strin
     foreach ($sessions as $s) {
         $models = [];
         $artists = [];
+        $observers = [];
         $artistCount = 0;
 
         foreach ($participantsBySession[(int) $s['id']] ?? [] as $p) {
@@ -277,6 +317,8 @@ function whatsapp_schedule(array $sessions, array $participantsBySession): strin
             } elseif ($p['role'] === 'artist') {
                 $artists[] = $firstName . $suffix;
                 $artistCount++;
+            } elseif ($p['role'] === 'observer') {
+                $observers[] = $firstName . $suffix;
             }
         }
 
@@ -299,6 +341,17 @@ function whatsapp_schedule(array $sessions, array $participantsBySession): strin
         if (!empty($s['booking_note'])) {
             $line .= " — {$s['booking_note']} [1]";
             $hasBookingNote = true;
+        }
+
+        if ($observers) {
+            $line .= "\n   observing: " . implode(', ', $observers);
+        }
+        $waiting = array_map(
+            static fn($name) => explode(' ', (string) $name)[0],
+            $waitlistBySession[(int) $s['id']] ?? []
+        );
+        if ($waiting) {
+            $line .= "\n   waiting list: " . implode(', ', $waiting);
         }
 
         $lines[] = $line;
