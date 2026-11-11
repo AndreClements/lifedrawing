@@ -9,7 +9,7 @@ The model is not an object but a co-participant. What emerges is not just skill,
 A digital home for LDR that enables:
 
 - **Session management** — schedule sessions, track participants and roles (artist, model, facilitator, observer), capacity tracking (X/7 — counts artists only, excluding the facilitator and model, so listing cards match the WhatsApp schedule numbering), cancellation, tentative bookings. Off-pattern sessions (external venue, ticketed, sitters booked elsewhere) carry three flags: `capacity_published=0` shows `X/?` instead of a number, `booking_note` appends session-specific text to the WhatsApp line (marked `[1]`, with a self-expiring footnote), and `model_join_enabled=0` closes the public "Join as Model" route in both the card and the endpoint. Set during creation via `tools/create-session.php`, or change them later under Manage session. The flags are ordinary columns, so an off-pattern session can converge on the regular shape as circumstances settle — e.g. publishing capacity once the booking count firms up. One-click Join buttons on listing cards (logged-in: HTMX artist join; logged-out: intent-preserving artist/model sign-up)
-- **Waiting list** — when a session with a published capacity is full, "Join as Artist" becomes "Join waiting list" (migration 025, `ld_session_waitlist`). When an artist place opens (a cancellation, a role change away from artist, or a capacity raise), the first person in line is booked automatically in the same transaction, and they and the facilitators are emailed; the email is queued checked, so if it can't be queued the promotion rolls back. A waiting-list entry is a separate table, not a booking state, so nothing that counts bookings (stats, name visibility, capacity) can mistake it for one. A person is never both booked as an artist and waiting. A place given from the waiting list inside the 48 hours carries no late-cancellation note (`promoted_at`, written in app time). Facilitators can add people, take them off, or give a place out of turn from the participant manager. Sessions with `capacity_published=0` have no waiting list. The WhatsApp schedule lists observers and the waiting list on indented lines under each session.
+- **Waiting list** (shipped 2026-11-11, migration 025) — when a session with a published capacity is full, "Join as Artist" becomes "Join waiting list" (migration 025, `ld_session_waitlist`). When an artist place opens (a cancellation, a role change away from artist, or a capacity raise), the first person in line is booked automatically in the same transaction, and they and the facilitators are emailed; the email is queued checked, so if it can't be queued the promotion rolls back. A waiting-list entry is a separate table, not a booking state, so nothing that counts bookings (stats, name visibility, capacity) can mistake it for one. A person is never both booked as an artist and waiting. A place given from the waiting list inside the 48 hours carries no late-cancellation note (`promoted_at`, written in app time). Facilitators can add people, take them off, or give a place out of turn from the participant manager. Sessions with `capacity_published=0` have no waiting list. The WhatsApp schedule lists observers and the waiting list on indented lines under each session.
 - **Participant management** — facilitator can add/remove participants, toggle tentative status, search users by name. Inline "Create stub" action in typeahead when no match — one click creates a new stub user and adds them to the session. Participants can cancel their own bookings from the session page or the dashboard; inside 48 hours the confirmation mentions the 50% contribution and still lets them proceed
 - **Attendance** — `booked` / `attended` / `no_show` on each participation row (migration 021). Statistics exclude `no_show` rather than requiring `attended`, because nothing has ever written `attended` for a web booking and requiring it would erase everyone's history. A no-show count is visible only to the facilitator and to the person themselves. Un-marking restores the prior state from the legacy `attended` column rather than flattening it to `booked`
 - **Artwork archive** — facilitator uploads batches of drawings per session with pose duration and labels, automatic image processing (EXIF rotation, 10MP cap, WebP conversion, three-tier thumbnails). Bulk backfill from phone photos via CLI (`stage-phone-photos.ps1` + `import-session-photos.php`) for whole-session imports
@@ -41,6 +41,12 @@ stubs and people without bookings. Contact details and session notes are private
 - **Manage session** edits details, participant roles in place, captions and pose
   labels/durations. Older unnumbered pose groups need review before the first edit
   or new upload. Upload retries keep the same pose and skip already saved files.
+- **Waiting list** (participant manager, under "Add or remove bookings"): the
+  "Waiting list" radio adds someone to a full session's list; ↑ gives them a place
+  now, out of turn and past capacity if need be; × takes them off. Otherwise the
+  first in line is booked automatically when an artist place opens, and emailed.
+  Use it instead of the old habit of booking a waiting person as an observer:
+  observer bookings count as attendance once the date passes.
 - **Cancel** retains history, visible only through management. It is available
   strictly before the scheduled start and only if no photos have ever been
   recorded, including subsequently removed photos. Restore checks sitter conflicts.
@@ -66,12 +72,17 @@ sessions. Keep a pose's source directory stable across partial retries.
 
 Shipped 2026-10-11 with migration **024**, after the cancelled-record preflight, and
 followed by a full statistics refresh; see [deployment instructions](deploy/README.md#facilitator-management-release--extra-steps).
+The waiting list shipped 2026-11-11 with migration **025**; see
+[its release notes](deploy/README.md#waiting-list-release--extra-steps).
 
 Local checks: `php tools/test-facilitator-management.php` creates, migrates and
 drops a dedicated fictional test database on local MariaDB (root, empty password).
 Use `--keep` to retain it for the browser suite; its name is written to the ignored
 `storage/cache/management-test.json`. Set `LDR_TEST_DATABASE` to that name when
-running the existing booking, consent and create-session suites. This override
+running the booking, consent, create-session and waiting-list suites
+(`test-waitlist.php` refuses to run without it). In a fresh checkout or worktree,
+create `storage/cache/` and `storage/logs/` first, or `--keep` cannot write its
+state file. This override
 accepts only generated test database names and directs mail to an unused local port.
 
 For browser checks, run `php -S 127.0.0.1:8765 -t public tools/test-management-router.php`
@@ -362,7 +373,10 @@ The same staged originals also feed the Instagram pipeline (`tools/instagram-pre
 | POST | `/sessions/{id}/participants/remove` | Remove participant | Facilitator |
 | POST | `/sessions/{id}/participants/tentative` | Toggle tentative status | Facilitator |
 | POST | `/sessions/{id}/participants/no-show` | Mark / un-mark a no-show | Facilitator, past sessions only |
+| POST | `/sessions/{id}/waitlist/remove` | Take someone off the waiting list | Facilitator |
+| POST | `/sessions/{id}/waitlist/promote` | Give a waiting person a place now (out of turn, past capacity) | Facilitator |
 | POST | `/sessions/{id}/leave` | Cancel your own booking | Auth (not consent-gated) |
+| POST | `/sessions/{id}/waitlist/leave` | Leave a waiting list | Auth (not consent-gated) |
 | POST | `/claims/{id}/withdraw` | Undo your own claim | Auth (not consent-gated) |
 | GET | `/schedule/whatsapp` | WhatsApp-formatted schedule | Facilitator |
 | GET | `/pose/queue` | Sitter queue management | Facilitator |
@@ -375,7 +389,7 @@ The same staged originals also feed the Instagram pipeline (`tools/instagram-pre
 
 | Method | Path | Description |
 |---|---|---|
-| POST | `/sessions/{id}/join` | Join a session |
+| POST | `/sessions/{id}/join` | Join a session; as an artist on a full session, joins its waiting list |
 | POST | `/artworks/{id}/claim` | Claim an artwork |
 | POST | `/artworks/{id}/comment` | Comment on artwork |
 | POST | `/profile/edit` | Update profile |
@@ -490,6 +504,15 @@ where it meant moments. A session that ended at lunchtime still counted as
 made after it ended, so a sitter added to the queue after sitting fell straight
 back out, and a same-day auto-rejoin completed and rejoined on every sweep until
 midnight. The existing tests all used sessions ten days away and could not see it.
+
+**A workaround becomes data.** For months a full session's waiting list was
+an `observer` booking. It worked on the WhatsApp line, and it was wrong
+everywhere else: about twenty queries count every participant row, so a person
+who waited and never got a place was credited with attending, had their streak
+extended, and could see real names. The fix was not another filter on those
+twenty queries but a separate table none of them can see, the same reasoning as
+the sitter queue. Where a new state would have to be excluded in many places,
+put it somewhere those places never look.
 
 **Small codebases surface bugs.** Every bug — hex_id misuse, PSR-4 case sensitivity, CSP blocking inline scripts, HEREDOC ternary incompatibility — was visible and fixable because the code was small enough to read. The Router is ~200 lines. The Container is ~80. The whole kernel reads in an afternoon.
 
